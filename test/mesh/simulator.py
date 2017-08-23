@@ -17,14 +17,12 @@ import sys
 
 class H4Parser:
     state = "H4_W4_PACKET_TYPE"
-    # H4_W4_PACKET_TYPE,
-    # H4_W4_EVENT_HEADER,
-    # H4_W4_ACL_HEADER,
-    # H4_W4_SCO_HEADER,
-    # H4_W4_PAYLOAD,
     packet_type = "NONE"
     bytes_to_read = 1
     buffer = []
+
+    def __init__(self):
+        self.reset()
 
     def set_packet_handler(self, handler):
         self.handler = handler
@@ -70,17 +68,29 @@ class H4Parser:
                 self.reset()
                 return
 
-def packet_handler(packet_type, packet):
-    print (packet_type, packet)
+class HCIController:
 
-parser = H4Parser()
-parser.set_packet_handler(packet_handler)
-# parser.parse(chr(0x01))
-# parser.parse(chr(0x03))
-# parser.parse(chr(0x0c))
-# parser.parse(chr(0x00))
-# sys.exit(0)
+    parser = H4Parser()
+    fd = -1
 
+    def __init__(self):
+        print('HCI Controller()')
+        self.parser.set_packet_handler(self.packet_handler)
+
+    def parse(self, data):
+        self.parser.parse(data)
+
+    def packet_handler(self, packet_type, packet):
+        print (packet_type, packet)
+        print ('Received HCI Reset, sending Command Complete')
+        # TODO: check command, send appropriate response
+        os.write(self.fd, "\x04\x0e\x04\x01\x03\x0c\x00")
+
+    def set_fd(self,fd):
+        self.fd = fd
+
+# parser = H4Parser()
+# parser.set_packet_handler(packet_handler)
 
 # parse configuration file passed in via cmd line args
 # TODO
@@ -91,6 +101,9 @@ parser.set_packet_handler(packet_handler)
 slave_ttyname = os.ttyname(slave)
 print('slave  %u %s' % (slave, slave_ttyname))
 
+controller = HCIController()
+controller.set_fd(master)
+
 # start up nodes 
 subprocess.Popen(['./le_counter', '-u', slave_ttyname])
 
@@ -99,6 +112,6 @@ while True:
     (read_ready, write_ready, exception_ready) = select.select([master],[],[])
     print(read_ready, write_ready, exception_ready)    
     c = os.read(master, 1)
-    parser.parse(c)
+    controller.parse(c)
 
 
