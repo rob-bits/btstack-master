@@ -144,6 +144,14 @@ int main(int argc, const char * argv[]){
     // pick serial port
     config.device_name = "/dev/ttys001";
 
+    // accept path from command line
+    if (argc >= 3 && strcmp(argv[1], "-u") == 0){
+        config.device_name = argv[2];
+        argc -= 2;
+        memmove(&argv[0], &argv[2], argc * sizeof(char *));
+    }
+    printf("H4 device: %s\n", config.device_name);
+    
     // init HCI
     const btstack_uart_block_t * uart_driver = btstack_uart_block_posix_instance();
 	const hci_transport_t * transport = hci_transport_h4_instance(uart_driver);

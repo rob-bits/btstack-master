@@ -92,7 +92,7 @@ slave_ttyname = os.ttyname(slave)
 print('slave  %u %s' % (slave, slave_ttyname))
 
 # start up nodes 
-subprocess.Popen(['./le_counter', slave_ttyname])
+subprocess.Popen(['./le_counter', '-u', slave_ttyname])
 
 # get response from more than one
 while True:
