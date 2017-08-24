@@ -21,6 +21,14 @@ from Crypto import Random
 def little_endian_read_16(buffer, pos):
     return ord(buffer[pos]) + (ord(buffer[pos+1]) << 8)
 
+def as_hex(data):
+    str_list = []
+    for byte in data:
+        str_list.append("{0:02x} ".format(ord(byte)))
+    return ''.join(str_list)
+
+adv_type_names = ['ADV_IND', 'ADV_DIRECT_IND_HIGH', 'ADV_SCAN_IND', 'ADV_NONCONN_IND', 'ADV_DIRECT_IND_LOW']
+
 class H4Parser:
 
     def __init__(self):
@@ -78,6 +86,11 @@ class HCIController:
         self.bd_addr = 'aaaaaa'
         self.parser = H4Parser()
         self.parser.set_packet_handler(self.packet_handler)
+        self.adv_enabled = 0
+        self.adv_type = 0
+        self.adv_interval_min = 0
+        self.adv_interval_max = 0
+        self.adv_data = ''
 
     def parse(self, data):
         self.parser.parse(data)
@@ -91,9 +104,33 @@ class HCIController:
     def set_name(self, name):
         self.name = name
 
+    def set_adv_handler(self, adv_handler, adv_handler_context):
+        print('controller %s' % self.name)
+        self.adv_handler         = adv_handler
+        self.adv_handler_context = adv_handler_context
+
     def emit_command_complete(self, opcode, result):
         # type, event, len, num commands, opcode, result
         os.write(self.fd, '\x04\x0e' + chr(3 + len(result)) + chr(1) + chr(opcode & 255)  + chr(opcode >> 8) + result)
+    
+    def emit_adv_report(self, event_type, rssi):
+        # type, event, len, Subevent_Code, Num_Reports, Event_Type[i], Address_Type[i], Address[i], Length[i], Data[i], RSSI[i]
+        event = '\x04\x3e' + chr(12 + len(self.adv_data)) + chr(2) + chr(1) + chr(event_type) + chr(0) + self.bd_addr[::-1] + chr(len(self.adv_data)) + self.adv_data + chr(rssi)
+        self.adv_handler(self.adv_handler_context, event)
+
+    def handle_set_adv_enable(self, enable):
+        self.adv_enabled = enable
+        print('Node %s adv enable %u' % (self.name, self.adv_enabled))
+
+    def handle_set_adv_data(self, data):
+        self.adv_data = data
+        print('Node %s adv data %s' % (self.name, as_hex(self.adv_data)))
+
+    def handle_set_adv_params(self, interval_min, interval_max, adv_type):
+        self.adv_interval_min = interval_min
+        self.adv_interval_max = interval_max
+        self.adv_type         = adv_type
+        print('Node %s adv interval min/max %u/%u ms, type %s' % (self.name, self.adv_interval_min * 0.625, self.adv_interval_max * 0.625, adv_type_names[self.adv_type]))
 
     def packet_handler(self, packet_type, packet):
         opcode = little_endian_read_16(packet, 0)
@@ -155,15 +192,21 @@ class HCIController:
             return
         if opcode == 0x2006:
             # Set Adv Params
+            self.handle_set_adv_params(little_endian_read_16(packet,3), little_endian_read_16(packet,5), ord(packet[6]))
             self.emit_command_complete(opcode, '\x00')
             return
         if opcode == 0x2008:
             # Set Adv Data
+            len = ord(packet[3])
+            self.handle_set_adv_data(packet[4:4+len])
             self.emit_command_complete(opcode, '\x00')
             return
         if opcode == 0x200a:
             # Set Adv Enable
+            self.handle_set_adv_enable(ord(packet[3]))
             self.emit_command_complete(opcode, '\x00')
+            # test
+            self.emit_adv_report(0, 0)
             return
         print("Opcode 0x%0x not handled!" % opcode)
 
@@ -201,6 +244,12 @@ class Node:
     def parse(self, c):
         self.controller.parse(c)
 
+    def set_adv_handler(self, adv_handler, adv_handler_context):
+        self.controller.set_adv_handler(adv_handler, adv_handler_context)
+
+    def inject_packet(self, event):
+        os.write(self.master, event)
+
 def run(nodes):
     # create map fd -> node
     nodes_by_fd = { node.get_master():node for node in nodes}
@@ -208,12 +257,21 @@ def run(nodes):
 
     # get response from more than one
     while True:
-        (read_ready, write_ready, exception_ready) = select.select(read_fds,[],[])
+        (read_ready, write_ready, exception_ready) = select.select(read_fds,[],[], 1)
         # print(read_ready)
         for fd in read_ready:
             node = nodes_by_fd[fd]
-            c = os.read(node.get_master(), 1)
+            c = os.read(fd, 1)
             node.parse(c)
+
+def adv_handler(src_node, event):
+    global nodes
+    print('adv from %s' % src_node.get_name())
+    for dst_node in nodes:
+        if src_node == dst_node:
+            continue
+        print('Adv %s -> %s' % (src_node.get_name(), dst_node.get_name()))
+        dst_node.inject_packet(event)
 
 # parse configuration file passed in via cmd line args
 # TODO
@@ -221,12 +279,15 @@ def run(nodes):
 node1 = Node()
 node1.set_name('node_1')
 node1.set_bd_addr('aaaaaa')
+node1.set_adv_handler(adv_handler, node1)
 node1.start_process()
 
 node2 = Node()
 node2.set_name('node_2')
 node2.set_bd_addr('bbbbbb')
+node2.set_adv_handler(adv_handler, node2)
 node2.start_process()
 
 nodes = [node1, node2]
 
+run(nodes)
