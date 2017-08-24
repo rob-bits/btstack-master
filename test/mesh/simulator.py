@@ -38,7 +38,6 @@ class H4Parser:
     def parse(self, data):
         self.buffer += data
         self.bytes_to_read -= 1
-        # print(self.buffer, self.bytes_to_read, self.state)
         if self.bytes_to_read == 0:
             if self.state == "H4_W4_PACKET_TYPE":
                 self.buffer = ''
@@ -58,13 +57,13 @@ class H4Parser:
                 self.state = "H4_W4_PAYLOAD"
                 if self.bytes_to_read > 0:
                     return
-                # fall through
+                # fall through to handle payload len = 0
             if self.state == "W4_ACL_HEADER":
                 self.bytes_to_read = little_endian_read_16(buffer, 2)
                 self.state = "H4_W4_PAYLOAD"
                 if self.bytes_to_read > 0:
                     return
-                # fall through
+                # fall through to handle payload len = 0
             if self.state == "H4_W4_PAYLOAD":
                 self.handler(self.packet_type, self.buffer)
                 self.reset()
@@ -81,7 +80,6 @@ class HCIController:
         self.parser.set_packet_handler(self.packet_handler)
 
     def parse(self, data):
-        # print('HCIController.parse %s fd %u' % (self.name, self.fd))
         self.parser.parse(data)
 
     def set_fd(self,fd):
@@ -177,7 +175,6 @@ class Node:
         self.slave  = -1
         self.slave_ttyname = ''
         self.controller = HCIController()
-        # print("Node() " + str(self.controller))
 
     def set_name(self, name):
         self.controller.set_name(name)
@@ -189,13 +186,11 @@ class Node:
     def set_bd_addr(self, bd_addr):
         self.controller.set_bd_addr(bd_addr)
 
-    def create_pty(self):
+    def start_process(self):
+        print('Node: %s' % self.name)
         (self.master, self.slave) = pty.openpty()
         self.slave_ttyname = os.ttyname(self.slave)
-        print('Node %s' % self.name)
         print('- tty %s' % self.slave_ttyname)
-
-    def start_process(self):
         print('- fd %u' % self.master)
         self.controller.set_fd(self.master)
         subprocess.Popen(['./le_counter', '-u', self.slave_ttyname])
@@ -204,8 +199,21 @@ class Node:
         return self.master
 
     def parse(self, c):
-        # print('Node.parse %s fd %u' % (self.name, self.master))
         self.controller.parse(c)
+
+def run(nodes):
+    # create map fd -> node
+    nodes_by_fd = { node.get_master():node for node in nodes}
+    read_fds = nodes_by_fd.keys()
+
+    # get response from more than one
+    while True:
+        (read_ready, write_ready, exception_ready) = select.select(read_fds,[],[])
+        # print(read_ready)
+        for fd in read_ready:
+            node = nodes_by_fd[fd]
+            c = os.read(node.get_master(), 1)
+            node.parse(c)
 
 # parse configuration file passed in via cmd line args
 # TODO
@@ -213,26 +221,12 @@ class Node:
 node1 = Node()
 node1.set_name('node_1')
 node1.set_bd_addr('aaaaaa')
-node1.create_pty()
 node1.start_process()
 
 node2 = Node()
 node2.set_name('node_2')
 node2.set_bd_addr('bbbbbb')
-node2.create_pty()
 node2.start_process()
 
 nodes = [node1, node2]
 
-# create map fd -> node
-nodes_by_fd = { node.get_master():node for node in nodes}
-read_fds = nodes_by_fd.keys()
-
-# get response from more than one
-while True:
-    (read_ready, write_ready, exception_ready) = select.select(read_fds,[],[])
-    # print(read_ready)
-    for fd in read_ready:
-        node = nodes_by_fd[fd]
-        c = os.read(node.get_master(), 1)
-        node.parse(c)
