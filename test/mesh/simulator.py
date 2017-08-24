@@ -76,17 +76,18 @@ class H4Parser:
 class HCIController:
 
     # fields
-    parser = H4Parser()
     fd = -1
     random = Random.new()
     name = 'BTstack Mesh Simulator'
-    bd_addr = '\x11\x22\x33\x44\x55\x66'
+    bd_addr = 'aaaaaa'
 
     def __init__(self):
-        print('HCI Controller()')
+        self.parser = H4Parser()
+        # print('HCI Controller(), parser ' + str(self.parser))
         self.parser.set_packet_handler(self.packet_handler)
 
     def parse(self, data):
+        # print('HCIController.parse %s fd %u' % (self.name, self.fd))
         self.parser.parse(data)
 
     def set_fd(self,fd):
@@ -95,7 +96,7 @@ class HCIController:
     def set_bd_addr(self, bd_addr):
         self.bd_addr = bd_addr
 
-    def set_name(self, bd_addr):
+    def set_name(self, name):
         self.name = name
 
     def emit_command_complete(self, opcode, result):
@@ -103,8 +104,8 @@ class HCIController:
         os.write(self.fd, '\x04\x0e' + chr(3 + len(result)) + chr(1) + chr(opcode & 255)  + chr(opcode >> 8) + result)
 
     def packet_handler(self, packet_type, packet):
-        # print (packet_type, packet)
         opcode = little_endian_read_16(packet, 0)
+        # print ("%s, opcode 0x%04x" % (self.name, opcode))
         if opcode == 0x0c03:
             self.emit_command_complete(opcode, '\x00')
             return
@@ -174,25 +175,70 @@ class HCIController:
             return
         print("Opcode 0x%0x not handled!" % opcode)
 
+class Node:
+    name = 'node'
+    master = -1
+    slave  = -1
+    slave_ttyname = ''
+
+    def __init__(self):
+        self.controller = HCIController()
+        # print("Node() " + str(self.controller))
+
+    def set_name(self, name):
+        self.controller.set_name(name)
+        self.name = name
+
+    def get_name(self):
+        return self.name
+
+    def set_bd_addr(self, bd_addr):
+        self.controller.set_bd_addr(bd_addr)
+
+    def create_pty(self):
+        (self.master, self.slave) = pty.openpty()
+        self.slave_ttyname = os.ttyname(self.slave)
+        print('Node %s' % self.name)
+        print('- tty %s' % self.slave_ttyname)
+
+    def start_process(self):
+        print('- fd %u' % self.master)
+        self.controller.set_fd(self.master)
+        subprocess.Popen(['./le_counter', '-u', self.slave_ttyname])
+
+    def get_master(self):
+        return self.master
+
+    def parse(self, c):
+        # print('Node.parse %s fd %u' % (self.name, self.master))
+        self.controller.parse(c)
+
 # parse configuration file passed in via cmd line args
 # TODO
 
-# create ptys
-(master, slave) = pty.openpty()
-slave_ttyname = os.ttyname(slave)
-print('slave  %u %s' % (slave, slave_ttyname))
+node1 = Node()
+node1.set_name('node_1')
+node1.set_bd_addr('aaaaaa')
+node1.create_pty()
+node1.start_process()
 
-controller = HCIController()
-controller.set_fd(master)
+node2 = Node()
+node2.set_name('node_2')
+node2.set_bd_addr('bbbbbb')
+node2.create_pty()
+node2.start_process()
 
-# start up nodes 
-subprocess.Popen(['./le_counter', '-u', slave_ttyname])
+nodes = [node1, node2]
+
+# create map fd -> node
+nodes_by_fd = { node.get_master():node for node in nodes}
+read_fds = nodes_by_fd.keys()
 
 # get response from more than one
 while True:
-    (read_ready, write_ready, exception_ready) = select.select([master],[],[])
-    # print(read_ready, write_ready, exception_ready)    
-    c = os.read(master, 1)
-    controller.parse(c)
-
-
+    (read_ready, write_ready, exception_ready) = select.select(read_fds,[],[])
+    # print(read_ready)
+    for fd in read_ready:
+        node = nodes_by_fd[fd]
+        c = os.read(node.get_master(), 1)
+        node.parse(c)
