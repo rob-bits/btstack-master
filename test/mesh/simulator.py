@@ -22,12 +22,9 @@ def little_endian_read_16(buffer, pos):
     return ord(buffer[pos]) + (ord(buffer[pos+1]) << 8)
 
 class H4Parser:
-    state = "H4_W4_PACKET_TYPE"
-    packet_type = "NONE"
-    bytes_to_read = 1
-    buffer = ''
 
     def __init__(self):
+        self.packet_type = "NONE"
         self.reset()
 
     def set_packet_handler(self, handler):
@@ -75,15 +72,12 @@ class H4Parser:
 
 class HCIController:
 
-    # fields
-    fd = -1
-    random = Random.new()
-    name = 'BTstack Mesh Simulator'
-    bd_addr = 'aaaaaa'
-
     def __init__(self):
+        self.fd = -1
+        self.random = Random.new()
+        self.name = 'BTstack Mesh Simulator'
+        self.bd_addr = 'aaaaaa'
         self.parser = H4Parser()
-        # print('HCI Controller(), parser ' + str(self.parser))
         self.parser.set_packet_handler(self.packet_handler)
 
     def parse(self, data):
@@ -176,12 +170,12 @@ class HCIController:
         print("Opcode 0x%0x not handled!" % opcode)
 
 class Node:
-    name = 'node'
-    master = -1
-    slave  = -1
-    slave_ttyname = ''
 
     def __init__(self):
+        self.name = 'node'
+        self.master = -1
+        self.slave  = -1
+        self.slave_ttyname = ''
         self.controller = HCIController()
         # print("Node() " + str(self.controller))
 
