@@ -170,9 +170,7 @@ int main(int argc, const char * argv[]){
     // init HCI
     const btstack_uart_block_t * uart_driver = btstack_uart_block_posix_instance();
 	const hci_transport_t * transport = hci_transport_h4_instance(uart_driver);
-    const btstack_link_key_db_t * link_key_db = btstack_link_key_db_fs_instance();
 	hci_init(transport, (void*) &config);
-    hci_set_link_key_db(link_key_db);
     
     // inform about BTstack state
     hci_event_callback_registration.callback = &packet_handler;
