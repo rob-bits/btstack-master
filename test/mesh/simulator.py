@@ -128,6 +128,10 @@ class HCIController:
     def handle_set_adv_enable(self, enable):
         self.adv_enabled = enable
         print('Node %s adv enable %u' % (self.name, self.adv_enabled))
+        if self.adv_enabled:
+            add_timer(1, self.handle_adv_timer, self)
+        else:
+            remove_timer(self.handle_adv_timer, self)
 
     def handle_set_adv_data(self, data):
         self.adv_data = data
@@ -222,8 +226,6 @@ class HCIController:
             # Set Adv Enable
             self.handle_set_adv_enable(ord(packet[3]))
             self.emit_command_complete(opcode, '\x00')
-            # start timer
-            add_timer(1, self.handle_adv_timer, self)
             return
         print("Opcode 0x%0x not handled!" % opcode)
 
@@ -282,6 +284,13 @@ def add_timer(timeout_ms, callback, context):
     timers_timeouts.insert(pos, timeout)
     timers_callbacks.insert(pos, (callback, context))
 
+def remove_timer(callback, context):
+    if (callback, context) in timers_callbacks:
+        indices = [timers_callbacks.index(t) for t in timers_callbacks if t[0] == callback and t[1] == context]
+        index = indices[0]
+        timers_callbacks.pop(index)
+        timers_timeouts.pop(index)
+
 def run(nodes):
     # create map fd -> node
     nodes_by_fd = { node.get_master():node for node in nodes}
@@ -331,11 +340,5 @@ node2.set_adv_handler(adv_handler, node2)
 node2.start_process()
 
 nodes = [node1, node2]
-
-def heartbeat(context):
-    print("beat")
-    add_timer(1000, heartbeat, None)
-
-# heartbeat(None)
 
 run(nodes)
