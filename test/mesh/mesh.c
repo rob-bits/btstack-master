@@ -44,7 +44,6 @@
 
 #include "btstack.h"
 
-
 static btstack_packet_callback_registration_t hci_event_callback_registration;
 
 static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
@@ -71,10 +70,18 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                     gap_set_scan_parameters(0, 0x30, 0x30);
                     gap_start_scan();
                     break;
-                    
+
                 default:
                     break;
             }
+            break;
+    }
+}
+
+static void stdin_process(char cmd){
+    switch (cmd){
+        default:
+            printf("Command: '%c'\n", cmd);
             break;
     }
 }
@@ -96,6 +103,9 @@ int btstack_main(void)
     gap_advertisements_set_data(adv_data_len, (uint8_t*) adv_data);
     gap_advertisements_enable(1);
 
+
+    // console
+    btstack_stdin_setup(stdin_process);
 
     // turn on!
 	hci_power_control(HCI_POWER_ON);
