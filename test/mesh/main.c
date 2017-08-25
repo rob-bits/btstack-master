@@ -156,15 +156,17 @@ int main(int argc, const char * argv[]){
     char *       dst = &log_path[strlen(log_path)]; 
     while (*src){
         if (*src == '/'){
-            *dst++ = '-';
+            *dst++ = '_';
         } else {
             *dst++ = *src;
         }
-        dst++;
+        src++;
     }
     *dst = 0;
+    strcat(log_path, ".pklg");
+
     // use logger: format HCI_DUMP_PACKETLOGGER, HCI_DUMP_BLUEZ or HCI_DUMP_STDOUT
-    printf("Log: %s", log_path);
+    printf("Log: %s\n", log_path);
     hci_dump_open(log_path, HCI_DUMP_PACKETLOGGER);
     
     // init HCI
