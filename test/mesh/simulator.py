@@ -14,6 +14,8 @@ import pty
 import select
 import subprocess
 import sys
+import bisect
+import time
 
 from Crypto.Cipher import AES
 from Crypto import Random
@@ -28,6 +30,8 @@ def as_hex(data):
     return ''.join(str_list)
 
 adv_type_names = ['ADV_IND', 'ADV_DIRECT_IND_HIGH', 'ADV_SCAN_IND', 'ADV_NONCONN_IND', 'ADV_DIRECT_IND_LOW']
+timers_timeouts = []
+timers_callbacks = []
 
 class H4Parser:
 
@@ -105,7 +109,6 @@ class HCIController:
         self.name = name
 
     def set_adv_handler(self, adv_handler, adv_handler_context):
-        print('controller %s' % self.name)
         self.adv_handler         = adv_handler
         self.adv_handler_context = adv_handler_context
 
@@ -250,15 +253,35 @@ class Node:
     def inject_packet(self, event):
         os.write(self.master, event)
 
+def get_time_millis():
+    return int(round(time.time() * 1000))
+
+def add_timer(timeout_ms, callback, context):
+    global timers_timeouts
+    global timers_callbacks
+
+    timeout = get_time_millis() + timeout_ms;
+    pos = bisect.bisect(timers_timeouts, timeout)
+    timers_timeouts.insert(pos, timeout)
+    timers_callbacks.insert(pos, (callback, context))
+
 def run(nodes):
     # create map fd -> node
     nodes_by_fd = { node.get_master():node for node in nodes}
     read_fds = nodes_by_fd.keys()
-
-    # get response from more than one
     while True:
-        (read_ready, write_ready, exception_ready) = select.select(read_fds,[],[], 1)
-        # print(read_ready)
+        # process expired timers
+        time_ms = get_time_millis()
+        while len(timers_timeouts) and timers_timeouts[0] < time_ms:
+            timers_timeouts.pop(0)
+            (callback,context) = timers_callbacks.pop(0)
+            callback(context)
+        # timer timers_timeouts?
+        if len(timers_timeouts):
+            timeout = (timers_timeouts[0] - time_ms) / 1000.0
+            (read_ready, write_ready, exception_ready) = select.select(read_fds,[],[], timeout)
+        else:
+            (read_ready, write_ready, exception_ready) = select.select(read_fds,[],[])
         for fd in read_ready:
             node = nodes_by_fd[fd]
             c = os.read(fd, 1)
@@ -289,5 +312,11 @@ node2.set_adv_handler(adv_handler, node2)
 node2.start_process()
 
 nodes = [node1, node2]
+
+def heartbeat(context):
+    print("beat")
+    add_timer(1000, heartbeat, None)
+
+# heartbeat(None)
 
 run(nodes)
