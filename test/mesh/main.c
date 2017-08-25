@@ -138,9 +138,6 @@ int main(int argc, const char * argv[]){
 	btstack_memory_init();
     btstack_run_loop_init(btstack_run_loop_posix_get_instance());
 	    
-    // use logger: format HCI_DUMP_PACKETLOGGER, HCI_DUMP_BLUEZ or HCI_DUMP_STDOUT
-    hci_dump_open("/tmp/hci_dump.pklg", HCI_DUMP_PACKETLOGGER);
-
     // pick serial port
     config.device_name = "/dev/ttys001";
 
@@ -151,6 +148,24 @@ int main(int argc, const char * argv[]){
         memmove(&argv[0], &argv[2], argc * sizeof(char *));
     }
     printf("H4 device: %s\n", config.device_name);
+
+    // base logger output file on device_name
+    char log_path[100];
+    strcpy(log_path, "/tmp/hci_dump");
+    const char * src = config.device_name;
+    char *       dst = &log_path[strlen(log_path)]; 
+    while (*src){
+        if (*src == '/'){
+            *dst++ = '-';
+        } else {
+            *dst++ = *src;
+        }
+        dst++;
+    }
+    *dst = 0;
+    // use logger: format HCI_DUMP_PACKETLOGGER, HCI_DUMP_BLUEZ or HCI_DUMP_STDOUT
+    printf("Log: %s", log_path);
+    hci_dump_open(log_path, HCI_DUMP_PACKETLOGGER);
     
     // init HCI
     const btstack_uart_block_t * uart_driver = btstack_uart_block_posix_instance();
