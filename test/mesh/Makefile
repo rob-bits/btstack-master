@@ -30,7 +30,11 @@ ifneq ($(OS),Windows_NT)
 EXAMPLES += ${EXAMPLES_CLI}
 endif
 
-EXAMPLES=le_counter
+
+mesh: ${CORE_OBJ} ${COMMON_OBJ} ${SM_OBJ} mesh.c 
+	${CC} $^ ${CFLAGS} ${LDFLAGS} -o $@
+
+EXAMPLES= mesh
 
 all: ${EXAMPLES}
 

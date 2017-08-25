@@ -95,6 +95,7 @@ class HCIController:
         self.adv_interval_min = 0
         self.adv_interval_max = 0
         self.adv_data = ''
+        self.scan_enabled = False
 
     def parse(self, data):
         self.parser.parse(data)
@@ -111,6 +112,9 @@ class HCIController:
     def set_adv_handler(self, adv_handler, adv_handler_context):
         self.adv_handler         = adv_handler
         self.adv_handler_context = adv_handler_context
+
+    def is_scanning(self):
+        return self.scan_enabled
 
     def emit_command_complete(self, opcode, result):
         # type, event, len, num commands, opcode, result
@@ -130,10 +134,15 @@ class HCIController:
         print('Node %s adv data %s' % (self.name, as_hex(self.adv_data)))
 
     def handle_set_adv_params(self, interval_min, interval_max, adv_type):
-        self.adv_interval_min = interval_min
-        self.adv_interval_max = interval_max
+        self.adv_interval_min = interval_min * 0.625
+        self.adv_interval_max = interval_max * 0.625
         self.adv_type         = adv_type
-        print('Node %s adv interval min/max %u/%u ms, type %s' % (self.name, self.adv_interval_min * 0.625, self.adv_interval_max * 0.625, adv_type_names[self.adv_type]))
+        print('Node %s adv interval min/max %u/%u ms, type %s' % (self.name, self.adv_interval_min, self.adv_interval_max, adv_type_names[self.adv_type]))
+
+    def handle_adv_timer(self, context):
+        if self.adv_enabled:
+            self.emit_adv_report(0, 0)
+            add_timer(self.adv_interval_min, self.handle_adv_timer, self)
 
     def packet_handler(self, packet_type, packet):
         opcode = little_endian_read_16(packet, 0)
@@ -177,6 +186,11 @@ class HCIController:
             # set scan parameters
             self.emit_command_complete(opcode, '\x00')
             return
+        if opcode == 0x200c:
+            # set scan enabled
+            self.scan_enabled = ord(packet[3])
+            self.emit_command_complete(opcode, '\x00')
+            return
         if opcode == 0x0c6d:
             # write le host supported
             self.emit_command_complete(opcode, '\x00')
@@ -208,8 +222,8 @@ class HCIController:
             # Set Adv Enable
             self.handle_set_adv_enable(ord(packet[3]))
             self.emit_command_complete(opcode, '\x00')
-            # test
-            self.emit_adv_report(0, 0)
+            # start timer
+            add_timer(1, self.handle_adv_timer, self)
             return
         print("Opcode 0x%0x not handled!" % opcode)
 
@@ -239,7 +253,7 @@ class Node:
         print('- tty %s' % self.slave_ttyname)
         print('- fd %u' % self.master)
         self.controller.set_fd(self.master)
-        subprocess.Popen(['./le_counter', '-u', self.slave_ttyname])
+        subprocess.Popen(['./mesh', '-u', self.slave_ttyname])
 
     def get_master(self):
         return self.master
@@ -252,6 +266,9 @@ class Node:
 
     def inject_packet(self, event):
         os.write(self.master, event)
+
+    def is_scanning(self):
+        return self.controller.is_scanning()
 
 def get_time_millis():
     return int(round(time.time() * 1000))
@@ -289,11 +306,13 @@ def run(nodes):
 
 def adv_handler(src_node, event):
     global nodes
-    print('adv from %s' % src_node.get_name())
+    # print('adv from %s' % src_node.get_name())
     for dst_node in nodes:
         if src_node == dst_node:
             continue
-        print('Adv %s -> %s' % (src_node.get_name(), dst_node.get_name()))
+        if not dst_node.is_scanning():
+            continue
+        print('Adv %s -> %s - %s' % (src_node.get_name(), dst_node.get_name(), as_hex(event[14:-1])))
         dst_node.inject_packet(event)
 
 # parse configuration file passed in via cmd line args
