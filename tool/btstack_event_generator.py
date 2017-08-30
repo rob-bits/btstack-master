@@ -20,6 +20,7 @@ meta_events = [
     'LE',
     'HID',
     'HIDS',
+    'MESH',
 ]
 
 supported_event_groups = meta_events + [
@@ -33,7 +34,6 @@ supported_event_groups = meta_events + [
     'GATT',
     'BNEP',
     'ATT',
-    'HID',
 ]
 
 program_info = '''

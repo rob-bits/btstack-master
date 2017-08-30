@@ -157,6 +157,14 @@ static inline uint8_t hci_event_hid_meta_get_subevent_code(const uint8_t * event
 static inline uint8_t hci_event_hids_meta_get_subevent_code(const uint8_t * event){
     return event[2];
 }
+/***
+ * @brief Get subevent code for mesh event
+ * @param event packet
+ * @return subevent_code
+ */
+static inline uint8_t hci_event_mesh_meta_get_subevent_code(const uint8_t * event){
+    return event[2];
+}
 /**
  * @brief Get field status from event HCI_EVENT_INQUIRY_COMPLETE
  * @param event packet
@@ -6070,6 +6078,7 @@ static inline uint16_t hids_subevent_input_report_enable_get_con_handle(const ui
 static inline uint8_t hids_subevent_input_report_enable_get_enable(const uint8_t * event){
     return event[5];
 }
+
 
 
 
