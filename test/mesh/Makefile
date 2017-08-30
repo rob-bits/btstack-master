@@ -10,6 +10,7 @@ CORE += \
 	main.c \
 	btstack_stdin_posix.c \
 	wav_util.c 					\
+	adv_bearer.c \
 
 # examples
 include ${BTSTACK_ROOT}/example/Makefile.inc
@@ -18,6 +19,7 @@ CFLAGS  += -g -Wall -Werror \
 	-I$(BTSTACK_ROOT)/platform/embedded \
 	-I$(BTSTACK_ROOT)/platform/posix \
 
+VPATH += ${BTSTACK_ROOT}/src/ble/mesh
 VPATH += ${BTSTACK_ROOT}/platform/posix
 VPATH += ${BTSTACK_ROOT}/platform/embedded
 

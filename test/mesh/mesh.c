@@ -41,12 +41,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "ble/mesh/adv_bearer.h"
 
 #include "btstack.h"
 
 static btstack_packet_callback_registration_t hci_event_callback_registration;
 
 static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
+
+static int counter = 'a';
 
 const uint8_t adv_data[] = {
     // Flags general discoverable, BR/EDR not supported
@@ -69,6 +72,8 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                     // setup scanning
                     gap_set_scan_parameters(0, 0x30, 0x30);
                     gap_start_scan();
+                    // request to send
+                    adv_bearer_request_can_send_now_for_mesh_message();
                     break;
 
                 default:
@@ -78,8 +83,42 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
     }
 }
 
+static uint8_t message[10];
+static void generate_message(void){
+    memset(message, counter, sizeof(message));
+    counter++;
+    if (counter >= 'z') {
+        counter = 'a';
+    }
+}
+
+static void mesh_message_handler (uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
+    if (packet_type != HCI_EVENT_PACKET) return;
+    switch(packet[0]){
+        case HCI_EVENT_MESH_META:
+            switch(packet[2]){
+                case MESH_SUBEVENT_CAN_SEND_NOW:
+                    generate_message();
+                    adv_bearer_send_mesh_message(&message[0], sizeof(message));
+                    adv_bearer_request_can_send_now_for_mesh_message();
+                    break;
+                default:
+                    break;
+            }
+            break;
+        case GAP_EVENT_ADVERTISING_REPORT:
+            printf("received mesh message\n");
+            break;
+        default:
+            break;
+    }
+}
+
 static void stdin_process(char cmd){
     switch (cmd){
+        case '1':
+            adv_bearer_request_can_send_now_for_mesh_message();
+            break;
         default:
             printf("Command: '%c'\n", cmd);
             break;
@@ -103,9 +142,12 @@ int btstack_main(void)
     gap_advertisements_set_data(adv_data_len, (uint8_t*) adv_data);
     gap_advertisements_enable(1);
 
-
     // console
     btstack_stdin_setup(stdin_process);
+
+    // mesh
+    adv_bearer_init();
+    adv_bearer_register_for_mesh_message(&mesh_message_handler);    
 
     // turn on!
 	hci_power_control(HCI_POWER_ON);
