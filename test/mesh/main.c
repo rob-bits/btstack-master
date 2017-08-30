@@ -132,46 +132,84 @@ static void local_version_information_handler(uint8_t * packet){
     printf("- Manufacturer 0x%04x\n", manufacturer);
 }
 
+#define USB_MAX_PATH_LEN 7
 int main(int argc, const char * argv[]){
 
 	/// GET STARTED with BTstack ///
 	btstack_memory_init();
     btstack_run_loop_init(btstack_run_loop_posix_get_instance());
-	    
-    // pick serial port
-    config.device_name = "/dev/ttys001";
 
-    // accept path from command line
-    if (argc >= 3 && strcmp(argv[1], "-u") == 0){
+    char log_path[100];
+    strcpy(log_path, "/tmp/hci_dump");
+
+    // check for -d pty path
+    if (argc >= 3 && strcmp(argv[1], "-d") == 0){
         config.device_name = argv[2];
         argc -= 2;
         memmove(&argv[0], &argv[2], argc * sizeof(char *));
-    }
-    printf("H4 device: %s\n", config.device_name);
 
-    // base logger output file on device_name
-    char log_path[100];
-    strcpy(log_path, "/tmp/hci_dump");
-    const char * src = config.device_name;
-    char *       dst = &log_path[strlen(log_path)]; 
-    while (*src){
-        if (*src == '/'){
-            *dst++ = '_';
-        } else {
-            *dst++ = *src;
+        printf("Specified PTY: %s\n", config.device_name);
+
+        // base logger output file on device_name
+        const char * src = config.device_name;
+        char *       dst = &log_path[strlen(log_path)]; 
+        while (*src){
+            if (*src == '/'){
+                *dst++ = '_';
+            } else {
+                *dst++ = *src;
+            }
+            src++;
         }
-        src++;
+        *dst = 0;
     }
-    *dst = 0;
-    strcat(log_path, ".pklg");
+
+    // check for -u usb path
+    uint8_t usb_path[USB_MAX_PATH_LEN];
+    int usb_path_len = 0;
+    if (argc >= 3 && strcmp(argv[1], "-u") == 0){
+        // parse command line options for "-u 11:22:33"
+        const char * port_str = argv[2];
+        printf("Specified USB Path: ");
+        while (1){
+            char * delimiter;
+            int port = strtol(port_str, &delimiter, 16);
+            usb_path[usb_path_len] = port;
+            usb_path_len++;
+            printf("%02x ", port);
+            if (!delimiter) break;
+            if (*delimiter != ':' && *delimiter != '-') break;
+            port_str = delimiter+1;
+        }
+        printf("\n");
+        argc -= 2;
+        memmove(&argv[0], &argv[2], argc * sizeof(char *));
+
+        // base logger output file on usb path
+        if (usb_path_len){
+            strcat(log_path, "_");
+            strcat(log_path, argv[2]);
+        }
+    }
 
     // use logger: format HCI_DUMP_PACKETLOGGER, HCI_DUMP_BLUEZ or HCI_DUMP_STDOUT
-    printf("Log: %s\n", log_path);
+    strcat(log_path, ".pklg");
+    printf("Packet Log: %s\n", log_path);
     hci_dump_open(log_path, HCI_DUMP_PACKETLOGGER);
-    
+
     // init HCI
-    const btstack_uart_block_t * uart_driver = btstack_uart_block_posix_instance();
-	const hci_transport_t * transport = hci_transport_h4_instance(uart_driver);
+    const hci_transport_t * transport;
+    if (config.device_name){
+        // PTY
+        const btstack_uart_block_t * uart_driver = btstack_uart_block_posix_instance();
+        transport = hci_transport_h4_instance(uart_driver);
+    } else {
+        // libusb
+        if (usb_path_len){
+            hci_transport_usb_set_path(usb_path_len, usb_path);
+        }
+        transport = hci_transport_usb_instance();
+    }
 	hci_init(transport, (void*) &config);
     
     // inform about BTstack state

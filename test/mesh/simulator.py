@@ -255,7 +255,7 @@ class Node:
         print('- tty %s' % self.slave_ttyname)
         print('- fd %u' % self.master)
         self.controller.set_fd(self.master)
-        subprocess.Popen(['./mesh', '-u', self.slave_ttyname])
+        subprocess.Popen(['./mesh', '-d', self.slave_ttyname])
 
     def get_master(self):
         return self.master
