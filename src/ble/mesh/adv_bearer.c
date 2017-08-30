@@ -110,7 +110,8 @@ static void adv_bearer_packet_handler (uint8_t packet_type, uint16_t channel, ui
                     if (gap_event_advertising_report_get_advertising_event_type(packet) != 0x03) break;
                     data = gap_event_advertising_report_get_data(packet);
                     data_len = gap_event_advertising_report_get_data_length(packet);
-                    switch(*data){
+                    // log_info_hexdump(data, data_len);
+                    switch(data[1]){
                         case BLUETOOTH_DATA_TYPE_MESH_MESSAGE:
                             type_id = MESH_MESSAGE_ID;
                             break;

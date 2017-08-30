@@ -58,9 +58,11 @@ static const uint8_t * beacon_device_uuid;
 static       uint16_t  beacon_oob_information;
 static       uint32_t  beacon_uri_hash;
 static btstack_timer_source_t beacon_timer;
+static btstack_packet_handler_t unprovisioned_device_beacon_handler;
 
 static void beacon_packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
 
+    const uint8_t * data;
     uint8_t beacon[23];
 
     if (packet_type != HCI_EVENT_PACKET) return;
@@ -79,7 +81,20 @@ static void beacon_packet_handler (uint8_t packet_type, uint16_t channel, uint8_
             }
             break;
         case GAP_EVENT_ADVERTISING_REPORT:
-            printf("received beacon message\n");
+            // check type
+            data = gap_event_advertising_report_get_data(packet);
+            log_info("beacon type %u", data[2]);
+            switch (data[2]){
+                case BEACON_TYPE_UNPROVISIONED_DEVICE:
+                    if (unprovisioned_device_beacon_handler){
+                        (*unprovisioned_device_beacon_handler)(packet_type, channel, packet, size);
+                    }
+                    break;
+                case BEACON_TYPE_SECURE_NETWORK:
+                    break;
+                default:
+                    break;
+            }
             break;
         default:
             break;
@@ -103,3 +118,8 @@ void beacon_init(const uint8_t * device_uuid, uint16_t oob_information){
     adv_bearer_register_for_mesh_beacon(&beacon_packet_handler);
     beacon_timer_handler(&beacon_timer);
 }
+
+void beacon_register_for_unprovisioned_device_beacons(btstack_packet_handler_t packet_handler){
+    unprovisioned_device_beacon_handler = packet_handler;
+}
+

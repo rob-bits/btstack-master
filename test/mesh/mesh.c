@@ -124,6 +124,28 @@ static void mesh_message_handler (uint8_t packet_type, uint16_t channel, uint8_t
     }
 }
 
+static void mesh_beacon_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
+    if (packet_type != HCI_EVENT_PACKET) return;
+    switch(packet[0]){
+        case GAP_EVENT_ADVERTISING_REPORT:
+            printf("received unprovisioned device beacon\n");
+            break;
+        default:
+            break;
+    }
+}
+
+static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
+    if (packet_type != HCI_EVENT_PACKET) return;
+    switch(packet[0]){
+        case GAP_EVENT_ADVERTISING_REPORT:
+            printf("received pb_adv pdu\n");
+            break;
+        default:
+            break;
+    }
+}
+
 static void stdin_process(char cmd){
     switch (cmd){
         case '1':
@@ -160,8 +182,12 @@ int btstack_main(void)
 
     // mesh
     adv_bearer_init();
-    adv_bearer_register_for_mesh_message(&mesh_message_handler);    
+    adv_bearer_register_for_mesh_message(&mesh_message_handler);
+
     beacon_init(device_uuid, 0);
+    beacon_register_for_unprovisioned_device_beacons(&mesh_beacon_handler);
+    
+    adv_bearer_register_for_pb_adv(&pb_adv_handler);
 
     // turn on!
 	hci_power_control(HCI_POWER_ON);

@@ -52,6 +52,11 @@ extern "C" {
  */
 void beacon_init(const uint8_t * device_uuid, uint16_t oob_information);
 
+/**
+ * Register Beacon handler for unprovisioned device beacons
+ */
+void beacon_register_for_unprovisioned_device_beacons(btstack_packet_handler_t packet_handler);
+
 #if defined __cplusplus
 }
 #endif
