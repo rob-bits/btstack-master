@@ -3,6 +3,7 @@ BTSTACK_ROOT = ../..
 
 CORE += \
 	adv_bearer.c \
+	beacon.c \
 	btstack_link_key_db_fs.c \
 	btstack_run_loop_posix.c \
 	btstack_stdin_posix.c \

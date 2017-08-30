@@ -42,6 +42,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "ble/mesh/adv_bearer.h"
+#include "ble/mesh/beacon.h"
 
 #include "btstack.h"
 
@@ -63,17 +64,26 @@ const uint8_t adv_data_len = sizeof(adv_data);
 static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     UNUSED(channel);
     UNUSED(size);
+    bd_addr_t addr;
+    int i;
 
     switch (packet_type) {
         case HCI_EVENT_PACKET:
             switch (hci_event_packet_get_type(packet)) {
                 case BTSTACK_EVENT_STATE:
                     if (btstack_event_state_get_state(packet) != HCI_STATE_WORKING) break;
+                    // dump bd_addr in pts format
+                    gap_local_bd_addr(addr);
+                    printf("Local addr: %s - ", bd_addr_to_str(addr));
+                    for (i=0;i<6;i++) {
+                        printf("%02x", addr[i]);
+                    }
+                    printf("\n");
                     // setup scanning
                     gap_set_scan_parameters(0, 0x30, 0x30);
                     gap_start_scan();
                     // request to send
-                    adv_bearer_request_can_send_now_for_mesh_message();
+                    // adv_bearer_request_can_send_now_for_mesh_message();
                     break;
 
                 default:
@@ -125,6 +135,9 @@ static void stdin_process(char cmd){
     }
 }
 
+const static uint8_t device_uuid[] = { 0x00, 0x1B, 0xDC, 0x08, 0x10, 0x21, 0x0B, 0x0E, 0x0A, 0x0C, 0x00, 0x0B, 0x0E, 0x0A, 0x0C, 0x00 };
+
+
 int btstack_main(void);
 int btstack_main(void)
 {
@@ -148,6 +161,7 @@ int btstack_main(void)
     // mesh
     adv_bearer_init();
     adv_bearer_register_for_mesh_message(&mesh_message_handler);    
+    beacon_init(device_uuid, 0);
 
     // turn on!
 	hci_power_control(HCI_POWER_ON);
