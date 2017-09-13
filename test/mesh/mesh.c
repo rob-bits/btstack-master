@@ -124,11 +124,18 @@ static void mesh_message_handler (uint8_t packet_type, uint16_t channel, uint8_t
     }
 }
 
-static void mesh_beacon_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
+static void mesh_unprovisioned_beacon_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     if (packet_type != HCI_EVENT_PACKET) return;
+    uint8_t device_uuid[16];
+    uint16_t oob;
+    const uint8_t * data;
     switch(packet[0]){
         case GAP_EVENT_ADVERTISING_REPORT:
-            printf("received unprovisioned device beacon\n");
+            data = gap_event_advertising_report_get_data(packet);
+            memcpy(device_uuid, &packet[3], 16);
+            oob = big_endian_read_16(data, 19);
+            printf("received unprovisioned device beacon, oob data %x, device uuid: ", oob);
+            printf_hexdump(device_uuid, 16);
             break;
         default:
             break;
@@ -137,9 +144,19 @@ static void mesh_beacon_handler(uint8_t packet_type, uint16_t channel, uint8_t *
 
 static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     if (packet_type != HCI_EVENT_PACKET) return;
+    const uint8_t * data;
+    uint32_t link_id;
+    uint8_t  transaction_nr;
+    uint8_t  generic_provisioning_control;
     switch(packet[0]){
         case GAP_EVENT_ADVERTISING_REPORT:
-            printf("received pb_adv pdu\n");
+            data = gap_event_advertising_report_get_data(packet);
+            // PDB ADV PDU
+            link_id = big_endian_read_32(data, 2);
+            transaction_nr = data[6];
+            // generic provision PDU
+            generic_provisioning_control = data[7];
+            printf("Received pb_adv pdu: link id %08x, transaction %u: control %x \n", link_id, transaction_nr, generic_provisioning_control);
             break;
         default:
             break;
@@ -185,7 +202,7 @@ int btstack_main(void)
     adv_bearer_register_for_mesh_message(&mesh_message_handler);
 
     beacon_init(device_uuid, 0);
-    beacon_register_for_unprovisioned_device_beacons(&mesh_beacon_handler);
+    beacon_register_for_unprovisioned_device_beacons(&mesh_unprovisioned_beacon_handler);
     
     adv_bearer_register_for_pb_adv(&pb_adv_handler);
 
