@@ -82,7 +82,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                     }
                     printf("\n");
                     // setup scanning
-                    gap_set_scan_parameters(0, 0x30, 0x30);
+                    gap_set_scan_parameters(0, 0x300, 0x300);
                     gap_start_scan();
                     // request to send
                     // adv_bearer_request_can_send_now_for_mesh_message();
@@ -157,13 +157,14 @@ static uint8_t  pbv_adv_transaction_nr;
 
 static void provisioning_handle_bearer_control(uint32_t link_id, uint8_t transaction_nr, const uint8_t * pdu, uint16_t size){
     uint8_t bearer_opcode = pdu[0] >> 2;
+    uint8_t reason;
     switch (bearer_opcode){
         case 0: // Link Open - Open a session on a bearer with a device
             // link active?
             if (link_state != LINK_STATE_W4_OPEN) break;
             // does it match our device_uuid?
             if (memcmp(&pdu[1], device_uuid, 16) != 0) break;
-            printf("Received Link Open with our device UUID\n");
+            printf("Link Open\n");
             link_state = LINK_STATE_W2_SEND_ACK;
             pbv_adv_link_id = link_id;
             pbv_adv_transaction_nr = transaction_nr; 
@@ -174,10 +175,16 @@ static void provisioning_handle_bearer_control(uint32_t link_id, uint8_t transac
         case 2: // Link Close - Close a session on a bearer
             // does it match link id
             if (link_id != pbv_adv_link_id) break;
-            printf("Received Link Close\n");
+            reason = pdu[1];
             link_state = LINK_STATE_W4_OPEN;
+            if (reason > 0x02){
+                printf("Link Close with reason %x\n", reason);
+            } else {
+                printf("Link Close with unrecognized reason %x\n", reason);
+            }
             break;
         default:
+            printf("BearerOpcode %x reserved for future use\n", bearer_opcode);
             break;
     }
 
@@ -200,13 +207,13 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
             transaction_nr = data[6];
             // generic provision PDU
             generic_provisioning_control = data[7];
-            printf("Received pb_adv pdu: link id %08x, transaction %u: control %x \n", link_id, transaction_nr, generic_provisioning_control);
             uint8_t generic_provisioning_control_format = generic_provisioning_control & 3;
             switch (generic_provisioning_control_format){
                 case 3: // Provisioning Bearer Control
                     provisioning_handle_bearer_control(link_id, transaction_nr, &data[7], size-7);
                     break;
                 default: 
+                    printf("Received pb_adv pdu: link id %08x, transaction %u: control %x \n", link_id, transaction_nr, generic_provisioning_control);
                     break;
             }
             break;
