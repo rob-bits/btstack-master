@@ -60,6 +60,8 @@ const uint8_t adv_data[] = {
 };
 const uint8_t adv_data_len = sizeof(adv_data);
 
+const static uint8_t device_uuid[] = { 0x00, 0x1B, 0xDC, 0x08, 0x10, 0x21, 0x0B, 0x0E, 0x0A, 0x0C, 0x00, 0x0B, 0x0E, 0x0A, 0x0C, 0x00 };
+
 /* LISTING_START(packetHandler): Packet Handler */
 static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     UNUSED(channel);
@@ -142,6 +144,48 @@ static void mesh_unprovisioned_beacon_handler(uint8_t packet_type, uint16_t chan
     }
 }
 
+// Provisioning Bearer Conrol
+
+typedef enum {
+    LINK_STATE_W4_OPEN,
+    LINK_STATE_W2_SEND_ACK,
+    LINK_STATE_OPEN,
+} link_state_t;
+static link_state_t link_state;
+static uint32_t pbv_adv_link_id;
+static uint8_t  pbv_adv_transaction_nr;
+
+static void provisioning_handle_bearer_control(uint32_t link_id, uint8_t transaction_nr, const uint8_t * pdu, uint16_t size){
+    uint8_t bearer_opcode = pdu[0] >> 2;
+    switch (bearer_opcode){
+        case 0: // Link Open - Open a session on a bearer with a device
+            // link active?
+            if (link_state != LINK_STATE_W4_OPEN) break;
+            // does it match our device_uuid?
+            if (memcmp(&pdu[1], device_uuid, 16) != 0) break;
+            printf("Received Link Open with our device UUID\n");
+            link_state = LINK_STATE_W2_SEND_ACK;
+            pbv_adv_link_id = link_id;
+            pbv_adv_transaction_nr = transaction_nr; 
+            adv_bearer_request_can_send_now_for_pb_adv();
+            break;
+        case 1: // Link Ack  - Acknowledge a session on a bearer
+            break;
+        case 2: // Link Close - Close a session on a bearer
+            // does it match link id
+            if (link_id != pbv_adv_link_id) break;
+            printf("Received Link Close\n");
+            link_state = LINK_STATE_W4_OPEN;
+            break;
+        default:
+            break;
+    }
+
+}
+
+// static void provisioning_run(void){
+// }
+
 static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     if (packet_type != HCI_EVENT_PACKET) return;
     const uint8_t * data;
@@ -157,7 +201,32 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
             // generic provision PDU
             generic_provisioning_control = data[7];
             printf("Received pb_adv pdu: link id %08x, transaction %u: control %x \n", link_id, transaction_nr, generic_provisioning_control);
+            uint8_t generic_provisioning_control_format = generic_provisioning_control & 3;
+            switch (generic_provisioning_control_format){
+                case 3: // Provisioning Bearer Control
+                    provisioning_handle_bearer_control(link_id, transaction_nr, &data[7], size-7);
+                    break;
+                default: 
+                    break;
+            }
             break;
+        case HCI_EVENT_MESH_META:
+            switch(packet[2]){
+                case MESH_SUBEVENT_CAN_SEND_NOW:
+                    if (link_state == LINK_STATE_W2_SEND_ACK){
+                        link_state = LINK_STATE_OPEN;
+                        // build packet
+                        uint8_t buffer[6];
+                        big_endian_store_32(buffer, 0, pbv_adv_link_id);
+                        buffer[4] = pbv_adv_transaction_nr;
+                        buffer[5] = (1 << 2) | 3; // Link Ack | Provisioning Bearer Control
+                        adv_bearer_send_pb_adv(buffer, sizeof(buffer));
+                        printf("Sending Link Ack\n");
+                    }
+                    break;
+                default:
+                    break;
+            }
         default:
             break;
     }
@@ -173,9 +242,6 @@ static void stdin_process(char cmd){
             break;
     }
 }
-
-const static uint8_t device_uuid[] = { 0x00, 0x1B, 0xDC, 0x08, 0x10, 0x21, 0x0B, 0x0E, 0x0A, 0x0C, 0x00, 0x0B, 0x0E, 0x0A, 0x0C, 0x00 };
-
 
 int btstack_main(void);
 int btstack_main(void)
