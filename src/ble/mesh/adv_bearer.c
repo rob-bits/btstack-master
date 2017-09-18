@@ -149,10 +149,10 @@ static void adv_bearer_timer(btstack_timer_source_t * ts){
 
     // done?
     int i;
-    int done = 0;
+    int done = 1;
     for (i=0;i<NUM_TYPES;i++){
         if (request_can_send_now[i]){
-            done = 1;
+            done = 0;
             break;
         }
     }
@@ -161,7 +161,7 @@ static void adv_bearer_timer(btstack_timer_source_t * ts){
 }
 
 static void adv_bearer_start_advertising(const uint8_t * data, uint16_t data_len, uint8_t type){
-    log_info("start message type %u", type);
+    log_info("start adv with type %02x", type);
     // prepare message
     adv_buffer[0] = data_len+1;
     adv_buffer[1] = type;
@@ -181,7 +181,7 @@ static void adv_bearer_start_advertising(const uint8_t * data, uint16_t data_len
 }
 
 static void adv_bearer_request(message_type_id_t type_id){
-    log_info("request to send type %u", (int) type_id);
+    log_info("request to send message type %u", (int) type_id);
     request_can_send_now[type_id] = 1;
     adv_bearer_emit_can_send_now();
 }
@@ -195,7 +195,7 @@ void adv_bearer_init(void){
     bd_addr_t null_addr;
     memset(null_addr, 0, 6);
     gap_advertisements_set_params(0xa0, 0xa0, 3, 0, null_addr, 0x07, 0);
-    adv_interval_ms = 100;
+    adv_interval_ms = 300;
 
     // prepare timer
     adv_timer.process = &adv_bearer_timer;
