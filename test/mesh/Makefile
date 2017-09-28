@@ -11,6 +11,8 @@ CORE += \
 	hci_transport_h2_libusb.c \
 	hci_transport_h4.c \
 	le_device_db_fs.c \
+	l2cap.c \
+	rfcomm.c \
 	main.c \
 
 # examples
@@ -21,6 +23,7 @@ CFLAGS  += -g -Wall -Werror \
 	-I$(BTSTACK_ROOT)/platform/posix \
 
 VPATH += ${BTSTACK_ROOT}/src/ble/mesh
+VPATH += ${BTSTACK_ROOT}/src/classic
 VPATH += ${BTSTACK_ROOT}/platform/posix
 VPATH += ${BTSTACK_ROOT}/platform/embedded
 VPATH += ${BTSTACK_ROOT}/platform/libusb
