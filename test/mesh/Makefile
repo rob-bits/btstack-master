@@ -32,7 +32,10 @@ LDFLAGS += $(shell pkg-config libusb-1.0 --libs)
 mesh: ${CORE_OBJ} ${COMMON_OBJ} ${SM_OBJ} mesh.c 
 	${CC} $^ ${CFLAGS} ${LDFLAGS} -o $@
 
-EXAMPLES= mesh
+sniffer: ${CORE_OBJ} ${COMMON_OBJ} ${SM_OBJ} sniffer.c 
+	${CC} $^ ${CFLAGS} ${LDFLAGS} -o $@
+
+EXAMPLES= mesh sniffer
 
 all: ${EXAMPLES}
 
