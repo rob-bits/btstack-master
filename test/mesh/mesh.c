@@ -95,8 +95,6 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                     // setup scanning
                     gap_set_scan_parameters(0, 0x300, 0x300);
                     gap_start_scan();
-                    // request to send
-                    // adv_bearer_request_can_send_now_for_mesh_message();
                     break;
 
                 default:
@@ -166,6 +164,7 @@ static link_state_t link_state;
 
 static uint32_t pbv_adv_link_id;
 static uint8_t  pbv_adv_transaction_nr;
+static uint8_t  pbv_adv_send_ack;
 
 static uint8_t  prov_msg_seg_total; // total segments
 static uint8_t  prov_msg_seg_next;  // next expected segment 
@@ -221,14 +220,13 @@ static void provisioning_handle_bearer_control(uint32_t link_id, uint8_t transac
 }
 
 static void provisioning_send_ack(void){
-
+    pbv_adv_send_ack = 1;
+    adv_bearer_request_can_send_now_for_pb_adv();
 }
 
 static void provisioning_handle_pdu(void){
 
     // TODO: check FCS
-    
-    provisioning_send_ack();
 
     // TODO: check message
     uint8_t type = prov_msg_buffer[0];
@@ -236,6 +234,9 @@ static void provisioning_handle_pdu(void){
     printf_hexdump(prov_msg_buffer, prov_msg_len);
 
     // TODO: check msg len
+
+    // ACK message
+    provisioning_send_ack();
 
     // TODO: dispatch
 
@@ -349,6 +350,16 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                         adv_bearer_send_pb_adv(buffer, sizeof(buffer));
                         log_info("link ack %08x", pbv_adv_link_id);
                         printf("Sending Link Ack\n");
+                    }
+                    if (pbv_adv_send_ack){
+                        pbv_adv_send_ack = 0;
+                        uint8_t buffer[6];
+                        big_endian_store_32(buffer, 0, pbv_adv_link_id);
+                        buffer[4] = pbv_adv_transaction_nr;
+                        buffer[5] = 1; // Transaction Ack ;
+                        adv_bearer_send_pb_adv(buffer, sizeof(buffer));
+                        log_info("transaction ack %08x", pbv_adv_link_id);
+                        printf("Sending Transaction Ack\n");
                     }
                     break;
                 default:
