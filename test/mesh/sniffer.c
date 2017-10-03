@@ -61,7 +61,7 @@ static btstack_packet_callback_registration_t hci_event_callback_registration;
 
 static const char * nodes_string[NUM_NODES] = {
     "5C:F3:70:60:7B:87",
-    "001BDC0732EF",
+    "00:1B:DC:07:32:EF",
 };
 static bd_addr_t nodes_addr[NUM_NODES];
 
