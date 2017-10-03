@@ -163,25 +163,28 @@ typedef enum {
 } link_state_t;
 static link_state_t link_state;
 
-static uint32_t pbv_adv_link_id;
-static uint8_t  pbv_adv_transaction_nr_incoming;
-static uint8_t  pbv_adv_transaction_nr_outgoing;
-static uint8_t  pbv_adv_send_ack;
-static uint8_t  pbv_adv_send_msg;
+static uint8_t  pb_adv_msg_in_buffer[100];   // TODO: how large are prov messages?
 
-static uint8_t  prov_msg_seg_total; // total segments
-static uint8_t  prov_msg_seg_next;  // next expected segment 
-static uint16_t prov_msg_len;   // 
-static uint16_t prov_msg_pos;
-static uint8_t  prov_msg_fcs;
-static uint8_t  prov_msg_buffer[100];   // TODO: how large are prov messages?
-static uint16_t prov_msg_out_len;
-static uint16_t prov_msg_out_pos;
-static uint8_t  prov_msg_out_seg;
+static uint32_t pb_adv_link_id;
+static uint8_t  pb_adv_transaction_nr_incoming;
+static uint8_t  pb_adv_transaction_nr_outgoing;
+static uint8_t  pb_adv_send_ack;
+static uint8_t  pb_adv_send_msg;
 
-static void (*pbv_adv_packet_handler)(void);
+static uint8_t  pb_adv_msg_in_seg_total; // total segments
+static uint8_t  pb_adv_msg_in_seg_next;  // next expected segment 
+static uint16_t pb_adv_msg_in_len;   // 
+static uint16_t pb_adv_msg_in_pos;
+static uint8_t  pb_adv_msg_in_fcs;
 
-static void pbv_adv_register_handler(void (*packet_handler)(void)){
+static uint16_t        pb_adv_msg_out_len;
+static uint16_t        pb_adv_msg_out_pos;
+static uint8_t         pb_adv_msg_out_seg;
+static const uint8_t * pb_adv_msg_out_buffer;
+
+static btstack_packet_handler_t pbv_adv_packet_handler;
+
+static void pbv_adv_register_handler(btstack_packet_handler_t packet_handler){
     pbv_adv_packet_handler = packet_handler;
 }
 
@@ -194,17 +197,17 @@ static void pbv_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_
             if (memcmp(&pdu[1], device_uuid, 16) != 0) break;
             switch(link_state){
                 case LINK_STATE_W4_OPEN:
-                    pbv_adv_link_id = link_id;
-                    pbv_adv_transaction_nr_incoming = 0xff;  // first transaction nr will be 0x00 
-                    log_info("link open %08x", pbv_adv_link_id);
-                    printf("Link Open - id %08x. we're the unprovisioned device\n", pbv_adv_link_id);
+                    pb_adv_link_id = link_id;
+                    pb_adv_transaction_nr_incoming = 0xff;  // first transaction nr will be 0x00 
+                    log_info("link open %08x", pb_adv_link_id);
+                    printf("Link Open - id %08x. we're the unprovisioned device\n", pb_adv_link_id);
                     link_state = LINK_STATE_W2_SEND_ACK;
                     adv_bearer_request_can_send_now_for_pb_adv();
                     break;
                 case LINK_STATE_W2_SEND_ACK:
                     break;
                 case LINK_STATE_OPEN:
-                    if (pbv_adv_link_id != link_id) break;
+                    if (pb_adv_link_id != link_id) break;
                     printf("Link Open - resend ACK\n");
                     link_state = LINK_STATE_W2_SEND_ACK;
                     adv_bearer_request_can_send_now_for_pb_adv();
@@ -215,7 +218,7 @@ static void pbv_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_
             break;
         case MESH_PROV_LINK_CLOSE: // Close a session on a bearer
             // does it match link id
-            if (link_id != pbv_adv_link_id) break;
+            if (link_id != pb_adv_link_id) break;
             reason = pdu[1];
             link_state = LINK_STATE_W4_OPEN;
             if (reason > 0x02){
@@ -231,103 +234,105 @@ static void pbv_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_
 
 }
 
-static void pb_adv_send_pdu(void){
-    pbv_adv_send_msg = 1;
-    prov_msg_out_pos = 0;
+static void pb_adv_send_pdu(const uint8_t * pdu, uint16_t size){
+    pb_adv_msg_out_buffer = pdu;
+    pb_adv_msg_out_len    = size;
+    pb_adv_msg_out_pos = 0;
+    pb_adv_send_msg = 1;
     adv_bearer_request_can_send_now_for_pb_adv();
 }
 
 static void pbv_adv_pdu_complete(void){
     // Verify FCS
-    uint8_t pdu_crc = btstack_crc8_calc(prov_msg_buffer, prov_msg_len);
-    if (pdu_crc != prov_msg_fcs){
-        printf("Incoming PDU: fcs %02x, calculated %02x -> drop packet\n", prov_msg_fcs, btstack_crc8_calc(prov_msg_buffer, prov_msg_len));
+    uint8_t pdu_crc = btstack_crc8_calc((uint8_t*)pb_adv_msg_in_buffer, pb_adv_msg_in_len);
+    if (pdu_crc != pb_adv_msg_in_fcs){
+        printf("Incoming PDU: fcs %02x, calculated %02x -> drop packet\n", pb_adv_msg_in_fcs, btstack_crc8_calc(pb_adv_msg_in_buffer, pb_adv_msg_in_len));
         return;
     }
 
     // Ack Transaction
-    pbv_adv_send_ack = 1;
+    pb_adv_send_ack = 1;
     adv_bearer_request_can_send_now_for_pb_adv();
 
     // Forward to Provisioning
-    pbv_adv_packet_handler();
+    pbv_adv_packet_handler(PROVISIONING_DATA_PACKET, 0, pb_adv_msg_in_buffer, pb_adv_msg_in_len);
 }
 
 static void pbv_adv_handle_transaction_start(uint8_t transaction_nr, const uint8_t * pdu, uint16_t size){
 
     // check if previous transation incomplete
-    if (prov_msg_len){
-        printf("previous transaction %x not completed, msg pos %u, len %u\n", pbv_adv_transaction_nr_incoming, prov_msg_pos, prov_msg_len);
+    if (pb_adv_msg_in_len){
+        printf("previous transaction %x not completed, msg pos %u, len %u\n", pb_adv_transaction_nr_incoming, pb_adv_msg_in_pos, pb_adv_msg_in_len);
         return;
     }
-    if (transaction_nr == pbv_adv_transaction_nr_incoming){
+    if (transaction_nr == pb_adv_transaction_nr_incoming){
         printf("packet from previous transaction %x\n", transaction_nr);
         return;
     }
-    pbv_adv_transaction_nr_incoming = transaction_nr;
+    pb_adv_transaction_nr_incoming = transaction_nr;
 
     // setup buffer
-    prov_msg_len       = big_endian_read_16(pdu, 1);
-    prov_msg_seg_total = pdu[0] >> 2;
-    prov_msg_fcs       = pdu[3];
+    pb_adv_msg_in_len       = big_endian_read_16(pdu, 1);
+    pb_adv_msg_in_seg_total = pdu[0] >> 2;
+    pb_adv_msg_in_fcs       = pdu[3];
 
     uint16_t payload_len = size - 4;
-    memcpy(prov_msg_buffer, &pdu[4], payload_len);
-    prov_msg_pos = payload_len;
+    memcpy(pb_adv_msg_in_buffer, &pdu[4], payload_len);
+    pb_adv_msg_in_pos = payload_len;
 
     // complete?
-    if (prov_msg_seg_total == 0){
-        if (prov_msg_pos == prov_msg_len){
+    if (pb_adv_msg_in_seg_total == 0){
+        if (pb_adv_msg_in_pos == pb_adv_msg_in_len){
             pbv_adv_pdu_complete();
         } else {
             // invalid msg len
-            printf("invalid msg len %u, expected %u\n", prov_msg_pos, prov_msg_len);
+            printf("invalid msg len %u, expected %u\n", pb_adv_msg_in_pos, pb_adv_msg_in_len);
         }
-        prov_msg_len = 0;
-        prov_msg_seg_next  = 0;
+        pb_adv_msg_in_len = 0;
+        pb_adv_msg_in_seg_next  = 0;
     } else {
-        prov_msg_seg_next  = 1;
+        pb_adv_msg_in_seg_next  = 1;
     }
 }
 
 static void pb_adv_handle_transaction_cont(uint8_t transaction_nr, const uint8_t * pdu, uint16_t size){
     // check segment index
     uint8_t seg = pdu[0] >> 2;
-    if (seg != prov_msg_seg_next) {
-        printf("wrong segment %u, expected %u\n", seg, prov_msg_seg_next);
+    if (seg != pb_adv_msg_in_seg_next) {
+        printf("wrong segment %u, expected %u\n", seg, pb_adv_msg_in_seg_next);
         return;
     }
     // check transaction nr
-    if (transaction_nr != pbv_adv_transaction_nr_incoming){
-        printf("transaction nr %x but expected %x\n", transaction_nr, pbv_adv_transaction_nr_incoming);
+    if (transaction_nr != pb_adv_transaction_nr_incoming){
+        printf("transaction nr %x but expected %x\n", transaction_nr, pb_adv_transaction_nr_incoming);
         return;
     }
-    uint16_t remaining_space = sizeof(prov_msg_buffer) - prov_msg_pos;
+    uint16_t remaining_space = sizeof(pb_adv_msg_in_buffer) - pb_adv_msg_in_pos;
     uint16_t fragment_size   = size - 1;
     if (fragment_size > remaining_space) return;
-    memcpy(&prov_msg_buffer[prov_msg_pos], &pdu[1], fragment_size);
-    prov_msg_pos += fragment_size;
+    memcpy(&pb_adv_msg_in_buffer[pb_adv_msg_in_pos], &pdu[1], fragment_size);
+    pb_adv_msg_in_pos += fragment_size;
 
      // last segment
-     if (prov_msg_seg_total == seg){
-        if (prov_msg_pos == prov_msg_len){
+     if (pb_adv_msg_in_seg_total == seg){
+        if (pb_adv_msg_in_pos == pb_adv_msg_in_len){
             pbv_adv_pdu_complete();
         } else {
             // invalid msg len
-            printf("invalid msg len %u, expected %u\n", prov_msg_pos, prov_msg_len);
+            printf("invalid msg len %u, expected %u\n", pb_adv_msg_in_pos, pb_adv_msg_in_len);
         }
-        prov_msg_len = 0;
-        prov_msg_seg_next = 0;
+        pb_adv_msg_in_len = 0;
+        pb_adv_msg_in_seg_next = 0;
      } else {
-        prov_msg_seg_next++;
+        pb_adv_msg_in_seg_next++;
      }
 }
 
 static void pbv_adv_handle_transaction_ack(uint8_t transaction_nr, const uint8_t * pdu, uint16_t size){
-    if (transaction_nr == pbv_adv_transaction_nr_outgoing){
-        pbv_adv_transaction_nr_outgoing++;
-        if (pbv_adv_transaction_nr_outgoing == 0x00){
-            pbv_adv_transaction_nr_outgoing = 0x80;
+    if (transaction_nr == pb_adv_transaction_nr_outgoing){
+        pb_adv_transaction_nr_outgoing++;
+        if (pb_adv_transaction_nr_outgoing == 0x00){
+            pb_adv_transaction_nr_outgoing = 0x80;
         }
         printf("Transaction ACK %x received\n", transaction_nr);
     } else {
@@ -357,7 +362,7 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
             mesh_gpcf_format_t generic_provisioning_control_format = (mesh_gpcf_format_t) generic_provisioning_control & 3;
             if (generic_provisioning_control_format != MESH_GPCF_PROV_BEARER_CONTROL){
                 // verify link id and link state
-                if (link_id    != pbv_adv_link_id) break;
+                if (link_id    != pb_adv_link_id) break;
                 if (link_state != LINK_STATE_OPEN) break;
             }
             printf("\npbv_adv: trans %x - ", transaction_nr);
@@ -383,72 +388,72 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 case MESH_SUBEVENT_CAN_SEND_NOW:
                     if (link_state == LINK_STATE_W2_SEND_ACK){
                         link_state = LINK_STATE_OPEN;
-                        pbv_adv_transaction_nr_outgoing = 0x80;
+                        pb_adv_transaction_nr_outgoing = 0x80;
                         // build packet
                         uint8_t buffer[6];
-                        big_endian_store_32(buffer, 0, pbv_adv_link_id);
+                        big_endian_store_32(buffer, 0, pb_adv_link_id);
                         buffer[4] = 0;
                         buffer[5] = (1 << 2) | 3; // Link Ack | Provisioning Bearer Control
                         adv_bearer_send_pb_adv(buffer, sizeof(buffer));
-                        log_info("link ack %08x", pbv_adv_link_id);
+                        log_info("link ack %08x", pb_adv_link_id);
                         printf("Sending Link Ack\n");
                         break;
                     }
-                    if (pbv_adv_send_ack){
-                        pbv_adv_send_ack = 0;
+                    if (pb_adv_send_ack){
+                        pb_adv_send_ack = 0;
                         uint8_t buffer[6];
-                        big_endian_store_32(buffer, 0, pbv_adv_link_id);
-                        buffer[4] = pbv_adv_transaction_nr_incoming;
+                        big_endian_store_32(buffer, 0, pb_adv_link_id);
+                        buffer[4] = pb_adv_transaction_nr_incoming;
                         buffer[5] = MESH_GPCF_TRANSACTION_ACK;
                         adv_bearer_send_pb_adv(buffer, sizeof(buffer));
-                        log_info("transaction ack %08x", pbv_adv_link_id);
-                        printf("Sending Transaction Ack (%x)\n", pbv_adv_transaction_nr_incoming);
+                        log_info("transaction ack %08x", pb_adv_link_id);
+                        printf("Sending Transaction Ack (%x)\n", pb_adv_transaction_nr_incoming);
 
-                        if (prov_msg_out_len){
+                        if (pb_adv_msg_out_len){
                             adv_bearer_request_can_send_now_for_pb_adv();
                         }
                         break;
                     }
-                    if (pbv_adv_send_msg){
+                    if (pb_adv_send_msg){
                         uint8_t buffer[29]; // ADV MTU
-                        big_endian_store_32(buffer, 0, pbv_adv_link_id);
-                        buffer[4] = pbv_adv_transaction_nr_outgoing;
+                        big_endian_store_32(buffer, 0, pb_adv_link_id);
+                        buffer[4] = pb_adv_transaction_nr_outgoing;
                         uint16_t bytes_left;
                         uint16_t pos;
-                        if (prov_msg_out_pos == 0){
+                        if (pb_adv_msg_out_pos == 0){
                             // Transaction start
-                            int seg_n = prov_msg_out_len / 24;
-                            prov_msg_out_seg = 0;
+                            int seg_n = pb_adv_msg_out_len / 24;
+                            pb_adv_msg_out_seg = 0;
                             buffer[5] = seg_n << 2 | MESH_GPCF_TRANSACTION_START;
-                            big_endian_store_16(buffer, 6, prov_msg_out_len);
-                            buffer[8] = btstack_crc8_calc(prov_msg_buffer, prov_msg_out_len);
+                            big_endian_store_16(buffer, 6, pb_adv_msg_out_len);
+                            buffer[8] = btstack_crc8_calc((uint8_t*)pb_adv_msg_out_buffer, pb_adv_msg_out_len);
                             pos = 9;
                             bytes_left = 24 - 4;
-                            printf("Sending Provisioning Start (trans %x): ", pbv_adv_transaction_nr_outgoing);
+                            printf("Sending Provisioning Start (trans %x): ", pb_adv_transaction_nr_outgoing);
                         } else {
                             // Transaction continue
-                            buffer[5] = prov_msg_out_seg << 2 | MESH_GPCF_TRANSACTION_CONT;
+                            buffer[5] = pb_adv_msg_out_seg << 2 | MESH_GPCF_TRANSACTION_CONT;
                             pos = 6;
                             bytes_left = 24 - 1;
-                            printf("Sending Provisioning Cont  (trans %x): ", pbv_adv_transaction_nr_outgoing);
+                            printf("Sending Provisioning Cont  (trans %x): ", pb_adv_transaction_nr_outgoing);
                         }
-                        prov_msg_out_seg++;
-                        uint16_t bytes_to_copy = btstack_min(bytes_left, prov_msg_out_len - prov_msg_out_pos);
-                        memcpy(&buffer[pos], &prov_msg_buffer[prov_msg_out_pos], bytes_to_copy);
+                        pb_adv_msg_out_seg++;
+                        uint16_t bytes_to_copy = btstack_min(bytes_left, pb_adv_msg_out_len - pb_adv_msg_out_pos);
+                        memcpy(&buffer[pos], &pb_adv_msg_out_buffer[pb_adv_msg_out_pos], bytes_to_copy);
                         pos += bytes_to_copy;
-                        prov_msg_out_pos += bytes_to_copy;
-                        printf("bytes %u, pos %u, len %u: ", bytes_to_copy, prov_msg_out_pos, prov_msg_out_len);
+                        pb_adv_msg_out_pos += bytes_to_copy;
+                        printf("bytes %u, pos %u, len %u: ", bytes_to_copy, pb_adv_msg_out_pos, pb_adv_msg_out_len);
                         printf_hexdump(buffer, pos);
 
-                        if (prov_msg_out_pos == prov_msg_out_len){
+                        if (pb_adv_msg_out_pos == pb_adv_msg_out_len){
                             // done
-                            pbv_adv_send_msg = 0;
-                            prov_msg_out_len = 0;
+                            pb_adv_send_msg = 0;
+                            pb_adv_msg_out_len = 0;
                         }
                         adv_bearer_send_pb_adv(buffer, pos);
                         log_info("Prov msg");
 
-                        if (prov_msg_out_len){
+                        if (pb_adv_msg_out_len){
                             adv_bearer_request_can_send_now_for_pb_adv();
                         }
                         break;
@@ -495,74 +500,79 @@ typedef enum {
 static prov_state_t prov_state;
 #endif
 
+static uint8_t  prov_buffer_out[100];   // TODO: how large are prov messages?
 
+static void provisioning_handle_invite(uint8_t *packet, uint16_t size){
 
-static void provisioning_handle_invite(void){
+    UNUSED(size);
+    UNUSED(packet);
+
     // handle invite message
     // TODO: store Attention Timer State
 
     // setup response 
-    prov_msg_out_len = 12;
-
-    prov_msg_buffer[0] = MESH_PROV_CAPABILITIES;
+    prov_buffer_out[0] = MESH_PROV_CAPABILITIES;
 
     // TOOD: get actual number
     /* Number of Elements supported */
-    prov_msg_buffer[1] = 1;
+    prov_buffer_out[1] = 1;
 
     /* Supported algorithms - FIPS P-256 Eliptic Curve */
-    big_endian_store_16(prov_msg_buffer, 2, 1);
+    big_endian_store_16(prov_buffer_out, 2, 1);
 
     /* Public Key Type - Public Key OOB information available */
-    prov_msg_buffer[4] = 0;
+    prov_buffer_out[4] = 0;
 
     /* Static OOB Type - Static OOB information available */
-    prov_msg_buffer[5] = 1; 
+    prov_buffer_out[5] = 1; 
 
     /* Output OOB Size - max of 8 */
-    prov_msg_buffer[6] = 8; 
+    prov_buffer_out[6] = 8; 
 
     /* Output OOB Action */
-    big_endian_store_16(prov_msg_buffer, 7, MESH_OUTPUT_OOB_NUMBER | MESH_OUTPUT_OOB_STRING);
+    big_endian_store_16(prov_buffer_out, 7, MESH_OUTPUT_OOB_NUMBER | MESH_OUTPUT_OOB_STRING);
 
     /* Input OOB Size - max of 8*/
-    prov_msg_buffer[9] = 8; 
+    prov_buffer_out[9] = 8; 
 
     /* Input OOB Action */
-    big_endian_store_16(prov_msg_buffer, 10, MESH_INPUT_OOB_STRING | MESH_OUTPUT_OOB_NUMBER);
+    big_endian_store_16(prov_buffer_out, 10, MESH_INPUT_OOB_STRING | MESH_OUTPUT_OOB_NUMBER);
 
     // send
-    pb_adv_send_pdu();
+    pb_adv_send_pdu(prov_buffer_out, 12);
 }
 
-static void provisioning_handle_public_key(void){
+static void provisioning_handle_public_key(uint8_t *packet, uint16_t size){
+
+    UNUSED(size);
+    UNUSED(packet);
 
     // setup response 
-    prov_msg_out_len = 65;
-
     // TODO: use real public key
-    memset(prov_msg_buffer, 0, 65);
-    prov_msg_buffer[0] = MESH_PROV_PUB_KEY;
+    memset(prov_buffer_out, 0, 65);
+    prov_buffer_out[0] = MESH_PROV_PUB_KEY;
 
     // send
-    pb_adv_send_pdu();
+    pb_adv_send_pdu(prov_buffer_out, 65);
 }
 
-static void provisioning_handle_pdu(void){
+static void provisioning_handle_pdu(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
 
-    uint8_t type = prov_msg_buffer[0];
+    if (size < 1) return;
+
+    uint8_t type = packet[0];
     printf("Prov MSG Type %x\n", type);
-    printf_hexdump(prov_msg_buffer, prov_msg_len);
+    printf_hexdump(packet, size);
 
     // dispatch msg
     switch (type){
         case MESH_PROV_INVITE:
             printf("MESH_PROV_INVITE\n");
-            provisioning_handle_invite();
+            provisioning_handle_invite(packet, size);
             break;
         case MESH_PROV_PUB_KEY:
             printf("MESH_PROV_PUB_KEY\n");
-            provisioning_handle_public_key();
+            provisioning_handle_public_key(packet, size);
             break;            
         default:
             printf("TODO: handle provisioning msg type %x\n", type);
