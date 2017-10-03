@@ -206,6 +206,8 @@ static uint16_t prov_msg_pos;
 static uint8_t  prov_msg_fcs;
 static uint8_t  prov_msg_buffer[100];   // TODO: how large are prov messages?
 static uint16_t prov_msg_out_len;
+static uint16_t prov_msg_out_pos;
+static uint8_t  prov_msg_out_seg;
 
 static void provisioning_handle_bearer_control(uint32_t link_id, uint8_t transaction_nr, const uint8_t * pdu, uint16_t size){
     uint8_t bearer_opcode = pdu[0] >> 2;
@@ -241,9 +243,9 @@ static void provisioning_handle_bearer_control(uint32_t link_id, uint8_t transac
             reason = pdu[1];
             link_state = LINK_STATE_W4_OPEN;
             if (reason > 0x02){
-                printf("Link Close with reason %x\n", reason);
-            } else {
                 printf("Link Close with unrecognized reason %x\n", reason);
+            } else {
+                printf("Link Close with reason %x\n", reason);
             }
             break;
         default:
@@ -260,6 +262,7 @@ static void provisioning_send_ack(void){
 
 static void provisioning_send_msg(void){
     pbv_adv_send_msg = 1;
+    prov_msg_out_pos = 0;
     adv_bearer_request_can_send_now_for_pb_adv();
 }
 
@@ -301,6 +304,19 @@ static void provisioning_handle_invite(void){
     provisioning_send_msg();
 }
 
+static void provisioning_handle_public_key(void){
+
+    // setup response 
+    prov_msg_out_len = 65;
+
+    // TODO: use real public key
+    memset(prov_msg_buffer, 0, 65);
+    prov_msg_buffer[0] = MESH_PROV_PUB_KEY;
+
+    // send
+    provisioning_send_msg();
+}
+
 static void provisioning_handle_pdu(void){
 
     // ACK message
@@ -323,6 +339,10 @@ static void provisioning_handle_pdu(void){
             printf("MESH_PROV_INVITE\n");
             provisioning_handle_invite();
             break;
+        case MESH_PROV_PUB_KEY:
+            printf("MESH_PROV_PUB_KEY\n");
+            provisioning_handle_public_key();
+            break;            
         default:
             printf("TODO: handle provisioning msg type %x\n", type);
             break;
@@ -486,20 +506,47 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                         break;
                     }
                     if (pbv_adv_send_msg){
-                        pbv_adv_send_msg = 0;
                         uint8_t buffer[29]; // ADV MTU
                         big_endian_store_32(buffer, 0, pbv_adv_link_id);
                         buffer[4] = pbv_adv_transaction_nr_outgoing;
-                        // TODO: support fragmentation
-                        buffer[5] = 0; // SegN = 0 | Transaction Start;
-                        big_endian_store_16(buffer, 6, prov_msg_out_len);
-                        buffer[8] = crc8_calc(prov_msg_buffer, prov_msg_out_len);
-                        memcpy(&buffer[9], prov_msg_buffer, prov_msg_out_len);
-                        adv_bearer_send_pb_adv(buffer, 9 + prov_msg_out_len);
+                        uint16_t bytes_left;
+                        uint16_t pos;
+                        if (prov_msg_out_pos == 0){
+                            // Transaction start
+                            int seg_n = prov_msg_out_len / 24;
+                            prov_msg_out_seg = 0;
+                            buffer[5] = seg_n << 2 | MESH_GPCF_TRANSACTION_START;
+                            big_endian_store_16(buffer, 6, prov_msg_out_len);
+                            buffer[8] = crc8_calc(prov_msg_buffer, prov_msg_out_len);
+                            pos = 9;
+                            bytes_left = 24 - 4;
+                            printf("Sending Provisioning Start (trans %x): ", pbv_adv_transaction_nr_outgoing);
+                        } else {
+                            // Transaction continue
+                            buffer[5] = prov_msg_out_seg << 2 | MESH_GPCF_TRANSACTION_CONT;
+                            pos = 6;
+                            bytes_left = 24 - 1;
+                            printf("Sending Provisioning Cont  (trans %x): ", pbv_adv_transaction_nr_outgoing);
+                        }
+                        prov_msg_out_seg++;
+                        uint16_t bytes_to_copy = btstack_min(bytes_left, prov_msg_out_len - prov_msg_out_pos);
+                        memcpy(&buffer[pos], &prov_msg_buffer[prov_msg_out_pos], bytes_to_copy);
+                        pos += bytes_to_copy;
+                        prov_msg_out_pos += bytes_to_copy;
+                        printf("bytes %u, pos %u, len %u: ", bytes_to_copy, prov_msg_out_pos, prov_msg_out_len);
+                        printf_hexdump(buffer, pos);
+
+                        if (prov_msg_out_pos == prov_msg_out_len){
+                            // done
+                            pbv_adv_send_msg = 0;
+                            prov_msg_out_len = 0;
+                        }
+                        adv_bearer_send_pb_adv(buffer, pos);
                         log_info("Prov msg");
-                        printf("Sending Provisioning Msg (trans %x): ", pbv_adv_transaction_nr_outgoing);
-                        printf_hexdump(prov_msg_buffer, prov_msg_out_len);
-                        prov_msg_out_len = 0;
+
+                        if (prov_msg_out_len){
+                            adv_bearer_request_can_send_now_for_pb_adv();
+                        }
                         break;
                     }
                     break;
