@@ -238,15 +238,22 @@ static void pb_adv_handle_transaction_cont(uint8_t transaction_nr, const uint8_t
         pb_adv_msg_in_seg_next++;
      }
 }
+static void pb_adv_outgoing_transation_complete(uint8_t status){
+    // stop sending
+    pb_adv_send_msg = 0;
+    // emit done
+    pb_adv_emit_pdu_sent(status);
+    // increment outgoing transaction nr
+    pb_adv_transaction_nr_outgoing++;
+    if (pb_adv_transaction_nr_outgoing == 0x00){
+        pb_adv_transaction_nr_outgoing = 0x80;
+    }
+}
 
 static void pb_adv_handle_transaction_ack(uint8_t transaction_nr, const uint8_t * pdu, uint16_t size){
     if (transaction_nr == pb_adv_transaction_nr_outgoing){
-        pb_adv_transaction_nr_outgoing++;
-        if (pb_adv_transaction_nr_outgoing == 0x00){
-            pb_adv_transaction_nr_outgoing = 0x80;
-        }
         printf("Transaction ACK %x received\n", transaction_nr);
-        pb_adv_emit_pdu_sent(ERROR_CODE_SUCCESS);
+        pb_adv_outgoing_transation_complete(ERROR_CODE_SUCCESS);
     } else {
         printf("Unexpected Transaction ACK for %x\n", transaction_nr);
     }
@@ -270,7 +277,6 @@ static void pb_adv_run(void){
     pb_adv_random_delay_active = 1;
     uint16_t random_delay_ms = 20 + (pb_adv_random() & 0x1f);
     log_info("random delay %u ms", random_delay_ms);
-    printf("random delay %u ms\n", random_delay_ms);
     btstack_run_loop_set_timer_handler(&pb_adv_random_delay_timer, &pbv_adv_timer_handler);
     btstack_run_loop_set_timer(&pb_adv_random_delay_timer, random_delay_ms);
     btstack_run_loop_add_timer(&pb_adv_random_delay_timer);
@@ -345,11 +351,6 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                         break;
                     }
                     if (pb_adv_send_msg){
-                        if (pb_adv_msg_out_pos == pb_adv_msg_out_len){
-                            pb_adv_send_msg = 0;
-                            printf("should not get here..\n");
-                            break;
-                        }
                         uint8_t buffer[29]; // ADV MTU
                         big_endian_store_32(buffer, 0, pb_adv_link_id);
                         buffer[4] = pb_adv_transaction_nr_outgoing;
@@ -382,9 +383,8 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 
                         if (pb_adv_msg_out_pos == pb_adv_msg_out_len){
                             // done
-                            printf("Sending Done  (trans %x)\n", pb_adv_transaction_nr_outgoing);
-                            pb_adv_send_msg = 0;
-                            pb_adv_msg_out_len = 0;
+                            printf("Sending Done, repeat (trans %x)\n", pb_adv_transaction_nr_outgoing);
+                            pb_adv_msg_out_pos = 0;
                         }
                         adv_bearer_send_pb_adv(buffer, pos);
                         pb_adv_run();
