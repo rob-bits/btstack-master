@@ -47,6 +47,8 @@
 #include "btstack_debug.h"
 #include "btstack_event.h"
 
+static void pb_adv_run(void);
+
 /* taps: 32 31 29 1; characteristic polynomial: x^32 + x^31 + x^29 + x + 1 */
 #define LFSR(a) ((a >> 1) ^ (uint32_t)((0 - (a & 1u)) & 0xd0000001u))
 
@@ -93,6 +95,9 @@ static const uint8_t * pb_adv_msg_out_buffer;
 
 static uint32_t pb_adv_lfsr;
 
+static uint8_t                pb_adv_random_delay_active;
+static btstack_timer_source_t pb_adv_random_delay_timer;
+
 static btstack_packet_handler_t pb_adv_packet_handler;
 
 // poor man's random number generator
@@ -112,7 +117,7 @@ static void pb_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_n
                 case LINK_STATE_W4_OPEN:
                     pb_adv_link_id = link_id;
                     pb_adv_transaction_nr_incoming = 0xff;  // first transaction nr will be 0x00 
-                    log_info("link open %08x", pb_adv_link_id);
+                    log_info("link open, id %08x", pb_adv_link_id);
                     printf("Link Open - id %08x. we're the unprovisioned device\n", pb_adv_link_id);
                     link_state = LINK_STATE_W2_SEND_ACK;
                     adv_bearer_request_can_send_now_for_pb_adv();
@@ -121,7 +126,7 @@ static void pb_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_n
                     break;
                 case LINK_STATE_OPEN:
                     if (pb_adv_link_id != link_id) break;
-                    printf("Link Open - resend ACK\n");
+                    log_info("link open, resend ACK");
                     link_state = LINK_STATE_W2_SEND_ACK;
                     adv_bearer_request_can_send_now_for_pb_adv();
                     break;
@@ -134,14 +139,10 @@ static void pb_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_n
             if (link_id != pb_adv_link_id) break;
             reason = pdu[1];
             link_state = LINK_STATE_W4_OPEN;
-            if (reason > 0x02){
-                printf("Link Close with unrecognized reason %x\n", reason);
-            } else {
-                printf("Link Close with reason %x\n", reason);
-            }
+            log_info("link close, reason %x", reason);
             break;
         default:
-            printf("BearerOpcode %x reserved for future use\n", bearer_opcode);
+            log_info("BearerOpcode %x reserved for future use\n", bearer_opcode);
             break;
     }
 
@@ -157,7 +158,7 @@ static void pb_adv_pdu_complete(void){
 
     // Ack Transaction
     pb_adv_send_ack = 1;
-    adv_bearer_request_can_send_now_for_pb_adv();
+    pb_adv_run();
 
     // Forward to Provisioning
     pb_adv_packet_handler(PROVISIONING_DATA_PACKET, 0, pb_adv_msg_in_buffer, pb_adv_msg_in_len);
@@ -245,8 +246,29 @@ static void pb_adv_handle_transaction_ack(uint8_t transaction_nr, const uint8_t 
     }
 }
 
-// static void provisioning_run(void){
-// }
+static int pbv_adv_packet_to_send(void){
+    return pb_adv_send_ack || pb_adv_send_msg;
+}
+
+static void pbv_adv_timer_handler(btstack_timer_source_t * ts){
+    pb_adv_random_delay_active = 0;
+    if (!pbv_adv_packet_to_send()) return;
+    adv_bearer_request_can_send_now_for_pb_adv();  
+}
+
+static void pb_adv_run(void){
+    if (!pbv_adv_packet_to_send()) return;
+    if (pb_adv_random_delay_active) return;
+
+    // spec recommends 20-50 ms, we use 20-51 ms
+    pb_adv_random_delay_active = 1;
+    uint16_t random_delay_ms = 20 + (pb_adv_random() & 0x1f);
+    log_info("random delay %u ms", random_delay_ms);
+    printf("random delay %u ms\n", random_delay_ms);
+    btstack_run_loop_set_timer_handler(&pb_adv_random_delay_timer, &pbv_adv_timer_handler);
+    btstack_run_loop_set_timer(&pb_adv_random_delay_timer, random_delay_ms);
+    btstack_run_loop_add_timer(&pb_adv_random_delay_timer);
+}
 
 static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     if (packet_type != HCI_EVENT_PACKET) return;
@@ -313,13 +335,15 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                         adv_bearer_send_pb_adv(buffer, sizeof(buffer));
                         log_info("transaction ack %08x", pb_adv_link_id);
                         printf("Sending Transaction Ack (%x)\n", pb_adv_transaction_nr_incoming);
-
-                        if (pb_adv_msg_out_len){
-                            adv_bearer_request_can_send_now_for_pb_adv();
-                        }
+                        pb_adv_run();
                         break;
                     }
                     if (pb_adv_send_msg){
+                        if (pb_adv_msg_out_pos == pb_adv_msg_out_len){
+                            pb_adv_send_msg = 0;
+                            printf("should not get here..\n");
+                            break;
+                        }
                         uint8_t buffer[29]; // ADV MTU
                         big_endian_store_32(buffer, 0, pb_adv_link_id);
                         buffer[4] = pb_adv_transaction_nr_outgoing;
@@ -334,33 +358,30 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                             buffer[8] = btstack_crc8_calc((uint8_t*)pb_adv_msg_out_buffer, pb_adv_msg_out_len);
                             pos = 9;
                             bytes_left = 24 - 4;
-                            printf("Sending Provisioning Start (trans %x): ", pb_adv_transaction_nr_outgoing);
+                            printf("Sending Start (trans %x): ", pb_adv_transaction_nr_outgoing);
                         } else {
                             // Transaction continue
                             buffer[5] = pb_adv_msg_out_seg << 2 | MESH_GPCF_TRANSACTION_CONT;
                             pos = 6;
                             bytes_left = 24 - 1;
-                            printf("Sending Provisioning Cont  (trans %x): ", pb_adv_transaction_nr_outgoing);
+                            printf("Sending Cont  (trans %x): ", pb_adv_transaction_nr_outgoing);
                         }
                         pb_adv_msg_out_seg++;
                         uint16_t bytes_to_copy = btstack_min(bytes_left, pb_adv_msg_out_len - pb_adv_msg_out_pos);
                         memcpy(&buffer[pos], &pb_adv_msg_out_buffer[pb_adv_msg_out_pos], bytes_to_copy);
                         pos += bytes_to_copy;
-                        pb_adv_msg_out_pos += bytes_to_copy;
                         printf("bytes %u, pos %u, len %u: ", bytes_to_copy, pb_adv_msg_out_pos, pb_adv_msg_out_len);
                         printf_hexdump(buffer, pos);
+                        pb_adv_msg_out_pos += bytes_to_copy;
 
                         if (pb_adv_msg_out_pos == pb_adv_msg_out_len){
                             // done
+                            printf("Sending Done  (trans %x)\n", pb_adv_transaction_nr_outgoing);
                             pb_adv_send_msg = 0;
                             pb_adv_msg_out_len = 0;
                         }
                         adv_bearer_send_pb_adv(buffer, pos);
-                        log_info("Prov msg");
-
-                        if (pb_adv_msg_out_len){
-                            adv_bearer_request_can_send_now_for_pb_adv();
-                        }
+                        pb_adv_run();
                         break;
                     }
                     break;
@@ -383,11 +404,10 @@ void pb_adv_register_packet_handler(btstack_packet_handler_t packet_handler){
     pb_adv_packet_handler = packet_handler;
 }
 
-
 void pb_adv_send_pdu(const uint8_t * pdu, uint16_t size){
     pb_adv_msg_out_buffer = pdu;
     pb_adv_msg_out_len    = size;
     pb_adv_msg_out_pos = 0;
     pb_adv_send_msg = 1;
-    adv_bearer_request_can_send_now_for_pb_adv();
+    pb_adv_run();
 }
