@@ -47,6 +47,9 @@
 #include "btstack_debug.h"
 #include "btstack_event.h"
 
+/* taps: 32 31 29 1; characteristic polynomial: x^32 + x^31 + x^29 + x + 1 */
+#define LFSR(a) ((a >> 1) ^ (uint32_t)((0 - (a & 1u)) & 0xd0000001u))
+
 // PB-ADV - Provisioning Bearer using Advertisement Bearer
 
 #define MESH_PROV_LINK_OPEN              0x00
@@ -88,7 +91,15 @@ static uint16_t        pb_adv_msg_out_pos;
 static uint8_t         pb_adv_msg_out_seg;
 static const uint8_t * pb_adv_msg_out_buffer;
 
+static uint32_t pb_adv_lfsr;
+
 static btstack_packet_handler_t pb_adv_packet_handler;
+
+// poor man's random number generator
+static uint32_t pb_adv_random(void){
+    pb_adv_lfsr = LFSR(pb_adv_lfsr);
+    return pb_adv_lfsr;
+}
 
 static void pb_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_nr, const uint8_t * pdu, uint16_t size){
     uint8_t bearer_opcode = pdu[0] >> 2;
@@ -364,6 +375,8 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 void pb_adv_init(uint8_t * device_uuid){
     pb_adv_device_uuid = device_uuid;
     adv_bearer_register_for_pb_adv(&pb_adv_handler);
+    pb_adv_lfsr = little_endian_read_32(device_uuid, 0);
+    pb_adv_random();
 }
 
 void pb_adv_register_packet_handler(btstack_packet_handler_t packet_handler){
