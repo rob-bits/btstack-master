@@ -12,7 +12,7 @@ CORE += \
 	hci_transport_h4.c \
 	le_device_db_fs.c \
 	l2cap.c \
-	rfcomm.c \
+	pb_adv.c \
 	main.c \
 
 # examples
