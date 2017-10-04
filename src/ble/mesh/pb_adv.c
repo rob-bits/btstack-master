@@ -54,9 +54,11 @@ static void pb_adv_run(void);
 
 // PB-ADV - Provisioning Bearer using Advertisement Bearer
 
-#define MESH_PROV_LINK_OPEN              0x00
-#define MESH_PROV_LINK_ACK               0x01
-#define MESH_PROV_LINK_CLOSE             0x02
+#define MESH_GENERIC_PROVISIONING_LINK_OPEN              0x00
+#define MESH_GENERIC_PROVISIONING_LINK_ACK               0x01
+#define MESH_GENERIC_PROVISIONING_LINK_CLOSE             0x02
+
+#define MESH_GENERIC_PROVISIONING_TRANSACTION_TIMEOUT_MS 30000
 
 typedef enum mesh_gpcf_format {
     MESH_GPCF_TRANSACTION_START = 0,
@@ -91,6 +93,7 @@ static uint8_t  pb_adv_msg_in_fcs;
 static uint16_t        pb_adv_msg_out_len;
 static uint16_t        pb_adv_msg_out_pos;
 static uint8_t         pb_adv_msg_out_seg;
+static uint32_t        pb_adv_msg_out_start;
 static const uint8_t * pb_adv_msg_out_buffer;
 
 static uint32_t pb_adv_lfsr;
@@ -115,7 +118,7 @@ static void pb_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_n
     uint8_t bearer_opcode = pdu[0] >> 2;
     uint8_t reason;
     switch (bearer_opcode){
-        case MESH_PROV_LINK_OPEN: // Open a session on a bearer with a device
+        case MESH_GENERIC_PROVISIONING_LINK_OPEN: // Open a session on a bearer with a device
             // does it match our device_uuid?
             if (memcmp(&pdu[1], pb_adv_device_uuid, 16) != 0) break;
             switch(link_state){
@@ -137,9 +140,9 @@ static void pb_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_n
                     break;
             }
             break;
-        case MESH_PROV_LINK_ACK:   // Acknowledge a session on a bearer
+        case MESH_GENERIC_PROVISIONING_LINK_ACK:   // Acknowledge a session on a bearer
             break;
-        case MESH_PROV_LINK_CLOSE: // Close a session on a bearer
+        case MESH_GENERIC_PROVISIONING_LINK_CLOSE: // Close a session on a bearer
             // does it match link id
             if (link_id != pb_adv_link_id) break;
             reason = pdu[1];
@@ -351,6 +354,16 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                         break;
                     }
                     if (pb_adv_send_msg){
+
+                        // check timeout for outgoing message
+                        // since uint32_t is used and time now must be greater than pb_adv_msg_out_start,
+                        // this claculation is correct even when the run loop time overruns
+                        uint32_t transaction_time_ms = btstack_run_loop_get_time_ms() - pb_adv_msg_out_start;
+                        if (transaction_time_ms >= MESH_GENERIC_PROVISIONING_TRANSACTION_TIMEOUT_MS){
+                            pb_adv_outgoing_transation_complete(ERROR_CODE_CONNECTION_TIMEOUT);
+                            return;
+                        }
+
                         uint8_t buffer[29]; // ADV MTU
                         big_endian_store_32(buffer, 0, pb_adv_link_id);
                         buffer[4] = pb_adv_transaction_nr_outgoing;
@@ -414,6 +427,7 @@ void pb_adv_send_pdu(const uint8_t * pdu, uint16_t size){
     pb_adv_msg_out_buffer = pdu;
     pb_adv_msg_out_len    = size;
     pb_adv_msg_out_pos = 0;
+    pb_adv_msg_out_start = btstack_run_loop_get_time_ms();
     pb_adv_send_msg = 1;
     pb_adv_run();
 }
