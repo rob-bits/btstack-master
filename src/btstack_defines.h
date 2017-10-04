@@ -1944,4 +1944,11 @@ typedef uint8_t sm_key_t[16];
  */
 #define MESH_SUBEVENT_CAN_SEND_NOW                                          0x01
 
+/**
+ * @format 11
+ * @param subevent_code
+ * @param status
+ */
+#define MESH_PB_ADV_PDU_SENT                                                0x02 
+
 #endif

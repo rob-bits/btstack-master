@@ -106,6 +106,11 @@ static uint32_t pb_adv_random(void){
     return pb_adv_lfsr;
 }
 
+static void pb_adv_emit_pdu_sent(uint8_t status){
+    uint8_t event[] = { HCI_EVENT_MESH_META, 2, MESH_PB_ADV_PDU_SENT, status};
+    pb_adv_packet_handler(HCI_EVENT_PACKET, 0, event, sizeof(event));
+}
+
 static void pb_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_nr, const uint8_t * pdu, uint16_t size){
     uint8_t bearer_opcode = pdu[0] >> 2;
     uint8_t reason;
@@ -241,6 +246,7 @@ static void pb_adv_handle_transaction_ack(uint8_t transaction_nr, const uint8_t 
             pb_adv_transaction_nr_outgoing = 0x80;
         }
         printf("Transaction ACK %x received\n", transaction_nr);
+        pb_adv_emit_pdu_sent(ERROR_CODE_SUCCESS);
     } else {
         printf("Unexpected Transaction ACK for %x\n", transaction_nr);
     }

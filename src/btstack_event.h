@@ -3062,6 +3062,16 @@ static inline uint8_t gap_event_inquiry_complete_get_status(const uint8_t * even
 }
 
 /**
+ * @brief Get field status from event MESH_PB_ADV_PDU_SENT_EVENT
+ * @param event packet
+ * @return status
+ * @note: btstack_type 1
+ */
+static inline uint8_t mesh_pb_adv_pdu_sent_event_get_status(const uint8_t * event){
+    return event[3];
+}
+
+/**
  * @brief Get field status from event HCI_SUBEVENT_LE_CONNECTION_COMPLETE
  * @param event packet
  * @return status
