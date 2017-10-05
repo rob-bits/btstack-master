@@ -236,22 +236,33 @@ static void provisioning_handle_pdu(uint8_t packet_type, uint16_t channel, uint8
 
     if (size < 1) return;
 
-    uint8_t type = packet[0];
-    printf("Prov MSG Type %x\n", type);
-    printf_hexdump(packet, size);
-
-    // dispatch msg
-    switch (type){
-        case MESH_PROV_INVITE:
-            printf("MESH_PROV_INVITE\n");
-            provisioning_handle_invite(packet, size);
+    switch (packet_type){
+        case HCI_EVENT_PACKET:
             break;
-        case MESH_PROV_PUB_KEY:
-            printf("MESH_PROV_PUB_KEY\n");
-            provisioning_handle_public_key(packet, size);
-            break;            
+        case PROVISIONING_DATA_PACKET:
+            // dispatch msg
+            switch (packet[0]){
+                case MESH_PROV_INVITE:
+                    printf("MESH_PROV_INVITE\n");
+                    printf_hexdump(packet, size);
+                    provisioning_handle_invite(packet, size);
+                    break;
+                case MESH_PROV_START:
+                    printf("MESH_PROV_START\n");
+                    printf_hexdump(packet, size);
+                    break;
+                case MESH_PROV_PUB_KEY:
+                    printf("MESH_PROV_PUB_KEY\n");
+                    printf_hexdump(packet, size);
+                    provisioning_handle_public_key(packet, size);
+                    break;            
+                default:
+                    printf("TODO: handle provisioning msg type %x\n", packet[0]);
+                    printf_hexdump(packet, size);
+                    break;
+            }            
+            break;
         default:
-            printf("TODO: handle provisioning msg type %x\n", type);
             break;
     }
 }

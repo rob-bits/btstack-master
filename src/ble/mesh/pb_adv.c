@@ -89,6 +89,8 @@ static uint8_t  pb_adv_msg_in_seg_next;  // next expected segment
 static uint16_t pb_adv_msg_in_len;   // 
 static uint16_t pb_adv_msg_in_pos;
 static uint8_t  pb_adv_msg_in_fcs;
+static uint8_t  pb_adv_msg_in_complete; // current transaction complete (and ok)
+static uint8_t  pb_adv_msg_out_completed_transaction_nr;
 
 static uint16_t        pb_adv_msg_out_len;
 static uint16_t        pb_adv_msg_out_pos;
@@ -165,6 +167,7 @@ static void pb_adv_pdu_complete(void){
     }
 
     // Ack Transaction
+    pb_adv_msg_in_complete = 1;
     pb_adv_send_ack = 1;
     pb_adv_run();
 
@@ -174,18 +177,16 @@ static void pb_adv_pdu_complete(void){
 
 static void pb_adv_handle_transaction_start(uint8_t transaction_nr, const uint8_t * pdu, uint16_t size){
 
-    // check if previous transation incomplete
-    if (pb_adv_msg_in_len){
-        printf("previous transaction %x not completed, msg pos %u, len %u\n", pb_adv_transaction_nr_incoming, pb_adv_msg_in_pos, pb_adv_msg_in_len);
+    // resend ack if packet from completed transaction received
+    if (transaction_nr == pb_adv_transaction_nr_incoming && pb_adv_msg_in_complete){
+        printf("packet from previous transaction %x, resending ack\n", transaction_nr);
+        pb_adv_send_ack = 1;
         return;
     }
-    if (transaction_nr == pb_adv_transaction_nr_incoming){
-        printf("packet from previous transaction %x\n", transaction_nr);
-        return;
-    }
-    pb_adv_transaction_nr_incoming = transaction_nr;
 
-    // setup buffer
+    // new transaction started
+    pb_adv_transaction_nr_incoming = transaction_nr;
+    pb_adv_msg_in_complete = 0;
     pb_adv_msg_in_len       = big_endian_read_16(pdu, 1);
     pb_adv_msg_in_seg_total = pdu[0] >> 2;
     pb_adv_msg_in_fcs       = pdu[3];
@@ -213,7 +214,7 @@ static void pb_adv_handle_transaction_cont(uint8_t transaction_nr, const uint8_t
     // check segment index
     uint8_t seg = pdu[0] >> 2;
     if (seg != pb_adv_msg_in_seg_next) {
-        printf("wrong segment %u, expected %u\n", seg, pb_adv_msg_in_seg_next);
+        // printf("wrong segment %u, expected %u\n", seg, pb_adv_msg_in_seg_next);
         return;
     }
     // check transaction nr
@@ -241,11 +242,14 @@ static void pb_adv_handle_transaction_cont(uint8_t transaction_nr, const uint8_t
         pb_adv_msg_in_seg_next++;
      }
 }
+
 static void pb_adv_outgoing_transation_complete(uint8_t status){
     // stop sending
     pb_adv_send_msg = 0;
     // emit done
     pb_adv_emit_pdu_sent(status);
+    // keep track of ack'ed transactions
+    pb_adv_msg_out_completed_transaction_nr = pb_adv_transaction_nr_outgoing;
     // increment outgoing transaction nr
     pb_adv_transaction_nr_outgoing++;
     if (pb_adv_transaction_nr_outgoing == 0x00){
@@ -257,8 +261,10 @@ static void pb_adv_handle_transaction_ack(uint8_t transaction_nr, const uint8_t 
     if (transaction_nr == pb_adv_transaction_nr_outgoing){
         printf("Transaction ACK %x received\n", transaction_nr);
         pb_adv_outgoing_transation_complete(ERROR_CODE_SUCCESS);
+    } else if (transaction_nr == pb_adv_msg_out_completed_transaction_nr){
+        // Transaction ack received again
     } else {
-        printf("Unexpected Transaction ACK for %x\n", transaction_nr);
+        printf("Unexpected Transaction ACK %x recevied, current %x\n", transaction_nr, pb_adv_transaction_nr_outgoing);
     }
 }
 
@@ -307,8 +313,8 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 if (link_id    != pb_adv_link_id) break;
                 if (link_state != LINK_STATE_OPEN) break;
             }
-            printf("\npbv_adv: trans %x - ", transaction_nr);
-            printf_hexdump(&data[7], length-6);
+            // log_info("trans %x - ", transaction_nr);
+            // log_info_hexdump(&data[7], length-6);
 
             switch (generic_provisioning_control_format){
                 case MESH_GPCF_TRANSACTION_START:
@@ -390,7 +396,7 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                         uint16_t bytes_to_copy = btstack_min(bytes_left, pb_adv_msg_out_len - pb_adv_msg_out_pos);
                         memcpy(&buffer[pos], &pb_adv_msg_out_buffer[pb_adv_msg_out_pos], bytes_to_copy);
                         pos += bytes_to_copy;
-                        printf("bytes %u, pos %u, len %u: ", bytes_to_copy, pb_adv_msg_out_pos, pb_adv_msg_out_len);
+                        printf("bytes %02u, pos %02u, len %02u: ", bytes_to_copy, pb_adv_msg_out_pos, pb_adv_msg_out_len);
                         printf_hexdump(buffer, pos);
                         pb_adv_msg_out_pos += bytes_to_copy;
 
