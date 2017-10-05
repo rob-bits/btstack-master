@@ -63,6 +63,30 @@ const uint8_t adv_data_len = sizeof(adv_data);
 
 const static uint8_t device_uuid[] = { 0x00, 0x1B, 0xDC, 0x08, 0x10, 0x21, 0x0B, 0x0E, 0x0A, 0x0C, 0x00, 0x0B, 0x0E, 0x0A, 0x0C, 0x00 };
 
+// micro-ecc
+
+static uint8_t ec_d[32];
+static uint8_t ec_q[64];
+
+static void parse_hex(uint8_t * buffer, const char * hex_string){
+    while (*hex_string){
+        int high_nibble = nibble_for_char(*hex_string++);
+        int low_nibble  = nibble_for_char(*hex_string++);
+        *buffer++       = (high_nibble << 4) | low_nibble;
+    }
+}
+
+static void use_fixed_ec_keypair(void){
+    const char * ec_d_string =  "3f49f6d4a3c55f3874c9b3e3d2103f504aff607beb40b7995899b8a6cd3c1abd";
+    const char * ec_qx_string = "20b003d2f297be2c5e2c83a7e9f9a5b9eff49111acf4fddbcc0301480e359de6";
+    const char * ec_qy_string = "dc809c49652aeb6d63329abf5a52155c766345c28fed3024741c8ed01589d28b";
+    parse_hex(ec_d, ec_d_string);
+    parse_hex(&ec_q[0],  ec_qx_string);
+    parse_hex(&ec_q[32], ec_qy_string);
+}
+
+//
+
 /* LISTING_START(packetHandler): Packet Handler */
 static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     UNUSED(channel);
@@ -224,12 +248,37 @@ static void provisioning_handle_public_key(uint8_t *packet, uint16_t size){
     UNUSED(packet);
 
     // setup response 
-    // TODO: use real public key
-    memset(prov_buffer_out, 0, 65);
     prov_buffer_out[0] = MESH_PROV_PUB_KEY;
+    memcpy(&prov_buffer_out[1], ec_q, 64);
 
     // send
     pb_adv_send_pdu(prov_buffer_out, 65);
+}
+
+static void provisioning_handle_confirmation(uint8_t *packet, uint16_t size){
+
+    UNUSED(size);
+    UNUSED(packet);
+
+    // setup response 
+    prov_buffer_out[0] = MESH_PROV_CONFIRM;
+    memset(&prov_buffer_out[1], 0, 16);
+
+    // send
+    pb_adv_send_pdu(prov_buffer_out, 17);
+}
+
+static void provisioning_handle_random(uint8_t *packet, uint16_t size){
+
+    UNUSED(size);
+    UNUSED(packet);
+
+    // setup response 
+    prov_buffer_out[0] = MESH_PROV_RANDOM;
+    memset(&prov_buffer_out[1], 0, 16);
+
+    // send
+    pb_adv_send_pdu(prov_buffer_out, 17);
 }
 
 static void provisioning_handle_pdu(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
@@ -255,7 +304,17 @@ static void provisioning_handle_pdu(uint8_t packet_type, uint16_t channel, uint8
                     printf("MESH_PROV_PUB_KEY\n");
                     printf_hexdump(packet, size);
                     provisioning_handle_public_key(packet, size);
-                    break;            
+                    break;
+                case MESH_PROV_CONFIRM:
+                    printf("MESH_PROV_CONFIRM\n");
+                    printf_hexdump(packet, size);
+                    provisioning_handle_confirmation(packet, size);
+                    break;
+                case MESH_PROV_RANDOM:
+                    printf("MESH_PROV_RANDOM\n");
+                    printf_hexdump(packet, size);
+                    provisioning_handle_random(packet, size);
+                    break;
                 default:
                     printf("TODO: handle provisioning msg type %x\n", packet[0]);
                     printf_hexdump(packet, size);
@@ -301,6 +360,8 @@ int btstack_main(void)
     beacon_register_for_unprovisioned_device_beacons(&mesh_unprovisioned_beacon_handler);
     
     provisioning_init();
+
+    use_fixed_ec_keypair();
 
     // turn on!
 	hci_power_control(HCI_POWER_ON);

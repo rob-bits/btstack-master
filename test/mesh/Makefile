@@ -13,6 +13,7 @@ CORE += \
 	le_device_db_fs.c \
 	l2cap.c \
 	pb_adv.c \
+	uECC.c \
 	main.c \
 
 # examples

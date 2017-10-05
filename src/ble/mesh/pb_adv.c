@@ -128,7 +128,7 @@ static void pb_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_n
                     pb_adv_link_id = link_id;
                     pb_adv_transaction_nr_incoming = 0xff;  // first transaction nr will be 0x00 
                     log_info("link open, id %08x", pb_adv_link_id);
-                    printf("Link Open - id %08x. we're the unprovisioned device\n", pb_adv_link_id);
+                    printf("PB-ADV: Link Open %08x\n", pb_adv_link_id);
                     link_state = LINK_STATE_W2_SEND_ACK;
                     adv_bearer_request_can_send_now_for_pb_adv();
                     break;
@@ -166,6 +166,8 @@ static void pb_adv_pdu_complete(void){
         return;
     }
 
+    printf("PDU received trans %02x\n", pb_adv_transaction_nr_incoming);
+
     // Ack Transaction
     pb_adv_msg_in_complete = 1;
     pb_adv_send_ack = 1;
@@ -183,6 +185,8 @@ static void pb_adv_handle_transaction_start(uint8_t transaction_nr, const uint8_
         pb_adv_send_ack = 1;
         return;
     }
+
+    printf("New transaction %02x started\n", transaction_nr);
 
     // new transaction started
     pb_adv_transaction_nr_incoming = transaction_nr;
@@ -344,7 +348,7 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                         buffer[5] = (1 << 2) | 3; // Link Ack | Provisioning Bearer Control
                         adv_bearer_send_pb_adv(buffer, sizeof(buffer));
                         log_info("link ack %08x", pb_adv_link_id);
-                        printf("Sending Link Ack\n");
+                        printf("PB-ADV: Sending Link Open Ack\n");
                         break;
                     }
                     if (pb_adv_send_ack){
@@ -355,7 +359,7 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                         buffer[5] = MESH_GPCF_TRANSACTION_ACK;
                         adv_bearer_send_pb_adv(buffer, sizeof(buffer));
                         log_info("transaction ack %08x", pb_adv_link_id);
-                        printf("Sending Transaction Ack (%x)\n", pb_adv_transaction_nr_incoming);
+                        printf("PBV-ADV: Sending Transaction Ack (%x)\n", pb_adv_transaction_nr_incoming);
                         pb_adv_run();
                         break;
                     }
