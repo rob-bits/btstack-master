@@ -60,6 +60,11 @@ static void pb_adv_run(void);
 
 #define MESH_GENERIC_PROVISIONING_TRANSACTION_TIMEOUT_MS 30000
 
+#define MESH_PB_ADV_MAX_PDU_SIZE  100
+#define MESH_PB_ADV_MAX_SEGMENTS    8
+#define MESH_PB_ADV_START_PAYLOAD  20
+#define MESH_PB_ADV_CONT_PAYLOAD   23
+
 typedef enum mesh_gpcf_format {
     MESH_GPCF_TRANSACTION_START = 0,
     MESH_GPCF_TRANSACTION_ACK,
@@ -76,32 +81,34 @@ static link_state_t link_state;
 
 static const uint8_t * pb_adv_device_uuid;
 
-static uint8_t  pb_adv_msg_in_buffer[100];   // TODO: how large are prov messages?
+static uint8_t  pb_adv_msg_in_buffer[MESH_PB_ADV_MAX_PDU_SIZE];   // TODO: how large are prov messages?
 
+// link state
 static uint32_t pb_adv_link_id;
-static uint8_t  pb_adv_transaction_nr_incoming;
-static uint8_t  pb_adv_transaction_nr_outgoing;
-static uint8_t  pb_adv_send_ack;
-static uint8_t  pb_adv_send_msg;
 
-static uint8_t  pb_adv_msg_in_seg_total; // total segments
-static uint8_t  pb_adv_msg_in_seg_next;  // next expected segment 
+// random delay for outgoing packets
+static uint32_t pb_adv_lfsr;
+static uint8_t                pb_adv_random_delay_active;
+static btstack_timer_source_t pb_adv_random_delay_timer;
+
+// incoming message
+static uint8_t  pb_adv_msg_in_transaction_nr_prev;
 static uint16_t pb_adv_msg_in_len;   // 
-static uint16_t pb_adv_msg_in_pos;
 static uint8_t  pb_adv_msg_in_fcs;
-static uint8_t  pb_adv_msg_in_complete; // current transaction complete (and ok)
-static uint8_t  pb_adv_msg_out_completed_transaction_nr;
+static uint8_t  pb_adv_msg_in_last_segment; 
+static uint8_t  pb_adv_msg_in_segments_missing; // bitfield for segmentes 1-n
+static uint8_t  pb_adv_msg_in_transaction_nr;
+static uint8_t  pb_adv_msg_in_send_ack;
 
+// oputgoing message
+static uint8_t         pb_adv_msg_out_active;
+static uint8_t         pb_adv_msg_out_transaction_nr;
+static uint8_t         pb_adv_msg_out_completed_transaction_nr;
 static uint16_t        pb_adv_msg_out_len;
 static uint16_t        pb_adv_msg_out_pos;
 static uint8_t         pb_adv_msg_out_seg;
 static uint32_t        pb_adv_msg_out_start;
 static const uint8_t * pb_adv_msg_out_buffer;
-
-static uint32_t pb_adv_lfsr;
-
-static uint8_t                pb_adv_random_delay_active;
-static btstack_timer_source_t pb_adv_random_delay_timer;
 
 static btstack_packet_handler_t pb_adv_packet_handler;
 
@@ -126,7 +133,8 @@ static void pb_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_n
             switch(link_state){
                 case LINK_STATE_W4_OPEN:
                     pb_adv_link_id = link_id;
-                    pb_adv_transaction_nr_incoming = 0xff;  // first transaction nr will be 0x00 
+                    pb_adv_msg_in_transaction_nr = 0xff;  // first transaction nr will be 0x00 
+                    pb_adv_msg_in_transaction_nr_prev = 0xff;
                     log_info("link open, id %08x", pb_adv_link_id);
                     printf("PB-ADV: Link Open %08x\n", pb_adv_link_id);
                     link_state = LINK_STATE_W2_SEND_ACK;
@@ -159,6 +167,8 @@ static void pb_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_n
 }
 
 static void pb_adv_pdu_complete(void){
+
+
     // Verify FCS
     uint8_t pdu_crc = btstack_crc8_calc((uint8_t*)pb_adv_msg_in_buffer, pb_adv_msg_in_len);
     if (pdu_crc != pb_adv_msg_in_fcs){
@@ -166,11 +176,14 @@ static void pb_adv_pdu_complete(void){
         return;
     }
 
-    printf("PDU received trans %02x\n", pb_adv_transaction_nr_incoming);
+    printf("PB-ADV: %02x complete\n", pb_adv_msg_in_transaction_nr);
+
+    // transaction complete
+    pb_adv_msg_in_transaction_nr_prev = pb_adv_msg_in_transaction_nr;
+    pb_adv_msg_in_transaction_nr = 0xff;    // invalid
 
     // Ack Transaction
-    pb_adv_msg_in_complete = 1;
-    pb_adv_send_ack = 1;
+    pb_adv_msg_in_send_ack = 1;
     pb_adv_run();
 
     // Forward to Provisioning
@@ -179,118 +192,143 @@ static void pb_adv_pdu_complete(void){
 
 static void pb_adv_handle_transaction_start(uint8_t transaction_nr, const uint8_t * pdu, uint16_t size){
 
-    // resend ack if packet from completed transaction received
-    if (transaction_nr == pb_adv_transaction_nr_incoming && pb_adv_msg_in_complete){
-        printf("packet from previous transaction %x, resending ack\n", transaction_nr);
-        pb_adv_send_ack = 1;
+    // resend ack if packet from previous transaction received
+    if (transaction_nr != 0xff && transaction_nr == pb_adv_msg_in_transaction_nr_prev){
+        printf("PB_ADV: %02x transaction complete, resending resending ack \n", transaction_nr);
+        pb_adv_msg_in_send_ack = 1;
         return;
     }
 
-    printf("New transaction %02x started\n", transaction_nr);
+    // new transaction?
+    if (transaction_nr != pb_adv_msg_in_transaction_nr){
 
-    // new transaction started
-    pb_adv_transaction_nr_incoming = transaction_nr;
-    pb_adv_msg_in_complete = 0;
-    pb_adv_msg_in_len       = big_endian_read_16(pdu, 1);
-    pb_adv_msg_in_seg_total = pdu[0] >> 2;
-    pb_adv_msg_in_fcs       = pdu[3];
-
-    uint16_t payload_len = size - 4;
-    memcpy(pb_adv_msg_in_buffer, &pdu[4], payload_len);
-    pb_adv_msg_in_pos = payload_len;
-
-    // complete?
-    if (pb_adv_msg_in_seg_total == 0){
-        if (pb_adv_msg_in_pos == pb_adv_msg_in_len){
-            pb_adv_pdu_complete();
-        } else {
-            // invalid msg len
-            printf("invalid msg len %u, expected %u\n", pb_adv_msg_in_pos, pb_adv_msg_in_len);
+        // check len
+        uint16_t msg_len = big_endian_read_16(pdu, 1);
+        if (msg_len > MESH_PB_ADV_MAX_PDU_SIZE){
+            // abort transaction
+            return;
         }
-        pb_adv_msg_in_len = 0;
-        pb_adv_msg_in_seg_next  = 0;
-    } else {
-        pb_adv_msg_in_seg_next  = 1;
+
+        // check num segments
+        uint8_t last_segment = pdu[0] >> 2;
+        if (last_segment >= MESH_PB_ADV_MAX_SEGMENTS){
+            // abort transaction
+            return;
+        }
+
+        printf("PB-ADV: %02x started\n", transaction_nr);
+
+        pb_adv_msg_in_transaction_nr = transaction_nr;
+        pb_adv_msg_in_len            = msg_len;
+        pb_adv_msg_in_fcs            = pdu[3];
+        pb_adv_msg_in_last_segment   = last_segment;
+
+        // set bits for  segments 1..n (segment 0 already received in this message)
+        pb_adv_msg_in_segments_missing = (1 << last_segment) - 1;
+
+        // store payload
+        uint16_t payload_len = size - 4;
+        memcpy(pb_adv_msg_in_buffer, &pdu[4], payload_len);
+
+        // complete?
+        if (pb_adv_msg_in_segments_missing == 0){
+            pb_adv_pdu_complete();
+        }
     }
 }
 
 static void pb_adv_handle_transaction_cont(uint8_t transaction_nr, const uint8_t * pdu, uint16_t size){
-    // check segment index
-    uint8_t seg = pdu[0] >> 2;
-    if (seg != pb_adv_msg_in_seg_next) {
-        // printf("wrong segment %u, expected %u\n", seg, pb_adv_msg_in_seg_next);
-        return;
-    }
+
     // check transaction nr
-    if (transaction_nr != pb_adv_transaction_nr_incoming){
-        printf("transaction nr %x but expected %x\n", transaction_nr, pb_adv_transaction_nr_incoming);
+    if (transaction_nr != 0xff && transaction_nr == pb_adv_msg_in_transaction_nr_prev){
+        printf("PB_ADV: %02x transaction complete, resending resending ack\n", transaction_nr);
+        pb_adv_msg_in_send_ack = 1;
         return;
     }
-    uint16_t remaining_space = sizeof(pb_adv_msg_in_buffer) - pb_adv_msg_in_pos;
-    uint16_t fragment_size   = size - 1;
-    if (fragment_size > remaining_space) return;
-    memcpy(&pb_adv_msg_in_buffer[pb_adv_msg_in_pos], &pdu[1], fragment_size);
-    pb_adv_msg_in_pos += fragment_size;
+
+    if (transaction_nr != pb_adv_msg_in_transaction_nr){
+        printf("PB-ADV: %02x received msg for transaction nr %x\n", pb_adv_msg_in_transaction_nr, transaction_nr);
+        return;
+    }
+
+    // validate seg nr
+    uint8_t seg = pdu[0] >> 2;
+    if (seg >= MESH_PB_ADV_MAX_SEGMENTS || seg == 0){
+        return;
+    }
+
+    // check if segment already received
+    uint8_t seg_mask = 1 << (seg-1);
+    if ((pb_adv_msg_in_segments_missing & seg_mask) == 0){
+        printf("PB-ADV: %02x, segment %u already received\n", transaction_nr, seg);
+        return;
+    }
+    printf("PB-ADV: %02x, segment %u stored\n", transaction_nr, seg);
+
+    // calculate offset and fragment size
+    uint16_t msg_pos = MESH_PB_ADV_START_PAYLOAD + (seg-1) * MESH_PB_ADV_CONT_PAYLOAD;
+    uint16_t fragment_size = size - 1;
+
+    // check size if last segment
+    if (seg == pb_adv_msg_in_last_segment && (msg_pos + fragment_size) != pb_adv_msg_in_len){
+        // last segment has invalid size
+        return;
+    }
+
+    // store segment and mark as received
+    memcpy(&pb_adv_msg_in_buffer[msg_pos], &pdu[1], fragment_size);
+    pb_adv_msg_in_segments_missing &= ~seg_mask;
 
      // last segment
-     if (pb_adv_msg_in_seg_total == seg){
-        if (pb_adv_msg_in_pos == pb_adv_msg_in_len){
-            pb_adv_pdu_complete();
-        } else {
-            // invalid msg len
-            printf("invalid msg len %u, expected %u\n", pb_adv_msg_in_pos, pb_adv_msg_in_len);
-        }
-        pb_adv_msg_in_len = 0;
-        pb_adv_msg_in_seg_next = 0;
-     } else {
-        pb_adv_msg_in_seg_next++;
-     }
+     if (pb_adv_msg_in_segments_missing == 0){
+        pb_adv_pdu_complete();
+    }
 }
 
 static void pb_adv_outgoing_transation_complete(uint8_t status){
     // stop sending
-    pb_adv_send_msg = 0;
+    pb_adv_msg_out_active = 0;
     // emit done
     pb_adv_emit_pdu_sent(status);
     // keep track of ack'ed transactions
-    pb_adv_msg_out_completed_transaction_nr = pb_adv_transaction_nr_outgoing;
+    pb_adv_msg_out_completed_transaction_nr = pb_adv_msg_out_transaction_nr;
     // increment outgoing transaction nr
-    pb_adv_transaction_nr_outgoing++;
-    if (pb_adv_transaction_nr_outgoing == 0x00){
-        pb_adv_transaction_nr_outgoing = 0x80;
+    pb_adv_msg_out_transaction_nr++;
+    if (pb_adv_msg_out_transaction_nr == 0x00){
+        pb_adv_msg_out_transaction_nr = 0x80;
     }
 }
 
 static void pb_adv_handle_transaction_ack(uint8_t transaction_nr, const uint8_t * pdu, uint16_t size){
-    if (transaction_nr == pb_adv_transaction_nr_outgoing){
-        printf("Transaction ACK %x received\n", transaction_nr);
+    if (transaction_nr == pb_adv_msg_out_transaction_nr){
+        printf("PB-ADV: %02x ACK received\n", transaction_nr);
         pb_adv_outgoing_transation_complete(ERROR_CODE_SUCCESS);
     } else if (transaction_nr == pb_adv_msg_out_completed_transaction_nr){
         // Transaction ack received again
     } else {
-        printf("Unexpected Transaction ACK %x recevied, current %x\n", transaction_nr, pb_adv_transaction_nr_outgoing);
+        printf("PB-ADV: %02x unexpected Transaction ACK %x recevied\n", pb_adv_msg_out_transaction_nr, transaction_nr);
     }
 }
 
-static int pbv_adv_packet_to_send(void){
-    return pb_adv_send_ack || pb_adv_send_msg;
+static int pb_adv_packet_to_send(void){
+    return pb_adv_msg_in_send_ack || pb_adv_msg_out_active;
 }
 
-static void pbv_adv_timer_handler(btstack_timer_source_t * ts){
+static void pb_adv_timer_handler(btstack_timer_source_t * ts){
     pb_adv_random_delay_active = 0;
-    if (!pbv_adv_packet_to_send()) return;
+    if (!pb_adv_packet_to_send()) return;
     adv_bearer_request_can_send_now_for_pb_adv();  
 }
 
 static void pb_adv_run(void){
-    if (!pbv_adv_packet_to_send()) return;
+    if (!pb_adv_packet_to_send()) return;
     if (pb_adv_random_delay_active) return;
 
     // spec recommends 20-50 ms, we use 20-51 ms
     pb_adv_random_delay_active = 1;
     uint16_t random_delay_ms = 20 + (pb_adv_random() & 0x1f);
     log_info("random delay %u ms", random_delay_ms);
-    btstack_run_loop_set_timer_handler(&pb_adv_random_delay_timer, &pbv_adv_timer_handler);
+    btstack_run_loop_set_timer_handler(&pb_adv_random_delay_timer, &pb_adv_timer_handler);
     btstack_run_loop_set_timer(&pb_adv_random_delay_timer, random_delay_ms);
     btstack_run_loop_add_timer(&pb_adv_random_delay_timer);
 }
@@ -340,7 +378,7 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 case MESH_SUBEVENT_CAN_SEND_NOW:
                     if (link_state == LINK_STATE_W2_SEND_ACK){
                         link_state = LINK_STATE_OPEN;
-                        pb_adv_transaction_nr_outgoing = 0x80;
+                        pb_adv_msg_out_transaction_nr = 0x80;
                         // build packet
                         uint8_t buffer[6];
                         big_endian_store_32(buffer, 0, pb_adv_link_id);
@@ -351,19 +389,19 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                         printf("PB-ADV: Sending Link Open Ack\n");
                         break;
                     }
-                    if (pb_adv_send_ack){
-                        pb_adv_send_ack = 0;
+                    if (pb_adv_msg_in_send_ack){
+                        pb_adv_msg_in_send_ack = 0;
                         uint8_t buffer[6];
                         big_endian_store_32(buffer, 0, pb_adv_link_id);
-                        buffer[4] = pb_adv_transaction_nr_incoming;
+                        buffer[4] = pb_adv_msg_in_transaction_nr_prev;
                         buffer[5] = MESH_GPCF_TRANSACTION_ACK;
                         adv_bearer_send_pb_adv(buffer, sizeof(buffer));
                         log_info("transaction ack %08x", pb_adv_link_id);
-                        printf("PBV-ADV: Sending Transaction Ack (%x)\n", pb_adv_transaction_nr_incoming);
+                        printf("PB-ADV: %02x sending ACK\n", pb_adv_msg_in_transaction_nr_prev);
                         pb_adv_run();
                         break;
                     }
-                    if (pb_adv_send_msg){
+                    if (pb_adv_msg_out_active){
 
                         // check timeout for outgoing message
                         // since uint32_t is used and time now must be greater than pb_adv_msg_out_start,
@@ -376,7 +414,7 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 
                         uint8_t buffer[29]; // ADV MTU
                         big_endian_store_32(buffer, 0, pb_adv_link_id);
-                        buffer[4] = pb_adv_transaction_nr_outgoing;
+                        buffer[4] = pb_adv_msg_out_transaction_nr;
                         uint16_t bytes_left;
                         uint16_t pos;
                         if (pb_adv_msg_out_pos == 0){
@@ -388,13 +426,13 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                             buffer[8] = btstack_crc8_calc((uint8_t*)pb_adv_msg_out_buffer, pb_adv_msg_out_len);
                             pos = 9;
                             bytes_left = 24 - 4;
-                            printf("Sending Start (trans %x): ", pb_adv_transaction_nr_outgoing);
+                            printf("PB-ADV: %02x Sending Start: ", pb_adv_msg_out_transaction_nr);
                         } else {
                             // Transaction continue
                             buffer[5] = pb_adv_msg_out_seg << 2 | MESH_GPCF_TRANSACTION_CONT;
                             pos = 6;
                             bytes_left = 24 - 1;
-                            printf("Sending Cont  (trans %x): ", pb_adv_transaction_nr_outgoing);
+                            printf("PB-ADV: %02x Sending Cont:  ", pb_adv_msg_out_transaction_nr);
                         }
                         pb_adv_msg_out_seg++;
                         uint16_t bytes_to_copy = btstack_min(bytes_left, pb_adv_msg_out_len - pb_adv_msg_out_pos);
@@ -406,7 +444,6 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 
                         if (pb_adv_msg_out_pos == pb_adv_msg_out_len){
                             // done
-                            printf("Sending Done, repeat (trans %x)\n", pb_adv_transaction_nr_outgoing);
                             pb_adv_msg_out_pos = 0;
                         }
                         adv_bearer_send_pb_adv(buffer, pos);
@@ -438,6 +475,6 @@ void pb_adv_send_pdu(const uint8_t * pdu, uint16_t size){
     pb_adv_msg_out_len    = size;
     pb_adv_msg_out_pos = 0;
     pb_adv_msg_out_start = btstack_run_loop_get_time_ms();
-    pb_adv_send_msg = 1;
+    pb_adv_msg_out_active = 1;
     pb_adv_run();
 }
