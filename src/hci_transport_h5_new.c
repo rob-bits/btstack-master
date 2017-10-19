@@ -182,14 +182,11 @@ static uint16_t btstack_reverse_bits_16(uint16_t value){
     return reverse;
 }
 
-static uint16_t crc16_calc_for_slip_frame(const uint8_t * header, const uint8_t * payload, uint16_t len){
+static uint16_t crc16_calc_for_slip_frame(const uint8_t * data, uint16_t len){
     int i;
     uint16_t crc = 0xffff;
-    for (i=0 ; i < 4 ; i++){
-        crc = crc16_ccitt_update(crc, header[i]);
-    }
     for (i=0 ; i < len ; i++){
-        crc = crc16_ccitt_update(crc, payload[i]);
+        crc = crc16_ccitt_update(crc, data[i]);
     }
     return btstack_reverse_bits_16(crc);
 }
@@ -214,32 +211,6 @@ static void hci_transport_inactivity_timer_set(void){
     btstack_run_loop_add_timer(&inactivity_timer);
 }
 
-static void hci_transport_h5_send_frame(uint8_t * frame, uint16_t frame_size){
-    slip_write_active = 1;
-    btstack_uart->send_frame(frame, frame_size);
-}
-
-// format: HEADER PACKET [DIC]
-// @param uint8_t header[4]
-static void hci_transport_slip_send_frame(const uint8_t * header, uint8_t * packet, uint16_t packet_size, uint16_t data_integrity_check){
-    
-    // Store header before packet, assuming HCI_OUTGOING_PRE_BUFFER_SIZE > 4
-    uint8_t * buffer = packet - 4;
-    memcpy(buffer, header, 4);
-    uint16_t buffer_size = packet_size + 4;
-
-    // Store DIC after packet, assuming 2 bytes in buffer
-    int slip_outgoing_dic_present = header[0] & 0x40;
-    if (slip_outgoing_dic_present){
-        big_endian_store_16(buffer, buffer_size, data_integrity_check);
-        buffer_size += 2;
-    }
-
-    hci_transport_h5_send_frame(buffer, buffer_size);
-}
-
-// SLIP Incoming
-
 static void hci_transport_slip_init(void){
     btstack_uart->receive_frame(&hci_packet_with_pre_buffer[HCI_INCOMING_PRE_BUFFER_SIZE], 6 + HCI_PACKET_BUFFER_SIZE);
 }
@@ -260,14 +231,39 @@ static void hci_transport_link_calc_header(uint8_t * header,
     header[3] = 0xff - (header[0] + header[1] + header[2]);
 }
 
+static void hci_transport_h5_send_frame(uint8_t * frame, uint16_t frame_size){
+    slip_write_active = 1;
+    btstack_uart->send_frame(frame, frame_size);
+}
+
+static void hci_transport_slip_send_frame_with_dic(uint8_t * frame, uint16_t frame_size){
+    // Store DIC after packet, assuming 2 bytes in buffer
+    int slip_outgoing_dic_present = frame[0] & 0x40;
+    if (slip_outgoing_dic_present){
+        uint16_t data_integrity_check = crc16_calc_for_slip_frame(frame, frame_size);
+        big_endian_store_16(frame, frame_size, data_integrity_check);
+        frame_size += 2;
+    }
+    hci_transport_h5_send_frame(frame, frame_size);
+}
+
+// format: HEADER PACKET [DIC]
+// @param uint8_t header[4]
+static void hci_transport_slip_send_frame(const uint8_t * header, uint8_t * packet, uint16_t packet_size){
+
+    // Store header before packet, assuming HCI_OUTGOING_PRE_BUFFER_SIZE > 4
+    uint8_t * buffer = packet - 4;
+    memcpy(buffer, header, 4);
+    uint16_t buffer_size = packet_size + 4;
+
+    hci_transport_slip_send_frame_with_dic(buffer, buffer_size);
+}
+
+
 static void hci_transport_link_send_control(const uint8_t * message, int message_len){
 
     uint8_t header[4];
     hci_transport_link_calc_header(header, 0, 0, link_peer_supports_data_integrity_check, 0, LINK_CONTROL_PACKET_TYPE, message_len);
-    uint16_t data_integrity_check = 0;    
-    if (link_peer_supports_data_integrity_check){
-        data_integrity_check = crc16_calc_for_slip_frame(header, message, message_len);
-    }
 
     // provide HCI_OUTGOING_PRE_BUFFER_SIZE before message and two additional bytes
     uint8_t packet[4 + LINK_CONTROL_MAX_LEN + 2];
@@ -275,7 +271,29 @@ static void hci_transport_link_send_control(const uint8_t * message, int message
 
     log_debug("hci_transport_link_send_control: size %u, append dic %u", message_len, link_peer_supports_data_integrity_check);
     log_debug_hexdump(message, message_len);
-    hci_transport_slip_send_frame(header, &packet[4], message_len, data_integrity_check);
+    hci_transport_slip_send_frame(header, &packet[4], message_len);
+}
+
+static void hci_transport_link_send_queued_packet(void){
+
+    uint8_t header[4];
+    hci_transport_link_calc_header(header, link_seq_nr, link_ack_nr, link_peer_supports_data_integrity_check, 1, hci_packet_type, hci_packet_size);
+
+    log_debug("hci_transport_link_send_queued_packet: seq %u, ack %u, size %u. Append dic %u", link_seq_nr, link_ack_nr, hci_packet_size, link_peer_supports_data_integrity_check);
+    log_debug_hexdump(hci_packet, hci_packet_size);
+
+    hci_transport_slip_send_frame(header, hci_packet, hci_packet_size);
+
+    // reset inactvitiy timer
+    hci_transport_inactivity_timer_set();
+}
+
+static void hci_transport_link_send_ack_packet(void){
+    // Pure ACK package is without DIC as there is no payload either
+    log_debug("send ack %u", link_ack_nr);
+    uint8_t header[4];
+    hci_transport_link_calc_header(header, 0, link_ack_nr, 0, 0, LINK_ACKNOWLEDGEMENT_TYPE, 0);
+    hci_transport_h5_send_frame(header, sizeof(header));
 }
 
 static void hci_transport_link_send_sync(void){
@@ -316,32 +334,6 @@ static void hci_transport_link_send_wakeup(void){
 static void hci_transport_link_send_sleep(void){
     log_debug("link send sleep");
     hci_transport_link_send_control(link_control_sleep, sizeof(link_control_sleep));
-}
-
-static void hci_transport_link_send_queued_packet(void){
-
-    uint8_t header[4];
-    hci_transport_link_calc_header(header, link_seq_nr, link_ack_nr, link_peer_supports_data_integrity_check, 1, hci_packet_type, hci_packet_size);
-
-    uint16_t data_integrity_check = 0;
-    if (link_peer_supports_data_integrity_check){
-        data_integrity_check = crc16_calc_for_slip_frame(header, hci_packet, hci_packet_size);
-    }
-    log_debug("hci_transport_link_send_queued_packet: seq %u, ack %u, size %u. Append dic %u, dic = 0x%04x", link_seq_nr, link_ack_nr, hci_packet_size, link_peer_supports_data_integrity_check, data_integrity_check);
-    log_debug_hexdump(hci_packet, hci_packet_size);
-
-    hci_transport_slip_send_frame(header, hci_packet, hci_packet_size, data_integrity_check);
-
-    // reset inactvitiy timer
-    hci_transport_inactivity_timer_set();
-}
-
-static void hci_transport_link_send_ack_packet(void){
-    // Pure ACK package is without DIC as there is no payload either
-    log_debug("send ack %u", link_ack_nr);
-    uint8_t header[4];
-    hci_transport_link_calc_header(header, 0, link_ack_nr, 0, 0, LINK_ACKNOWLEDGEMENT_TYPE, 0);
-    hci_transport_h5_send_frame(header, sizeof(header));
 }
 
 static void hci_transport_link_run(void){
@@ -531,7 +523,7 @@ static void hci_transport_h5_process_frame(uint16_t frame_size){
     // validate data integrity check
     if (data_integrity_check_present){
         uint16_t dic_packet = big_endian_read_16(slip_payload, received_payload_len);
-        uint16_t dic_calculate = crc16_calc_for_slip_frame(slip_header, slip_payload, received_payload_len);
+        uint16_t dic_calculate = crc16_calc_for_slip_frame(slip_header, 4 + received_payload_len);
         if (dic_packet != dic_calculate){
             log_info("expected dic value 0x%04x but got 0x%04x", dic_calculate, dic_packet);
             return;
