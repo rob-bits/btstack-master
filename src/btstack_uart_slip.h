@@ -98,7 +98,7 @@ typedef struct {
     /**
      * send block
      */
-    void (*send_block)(const uint8_t *buffer, uint16_t length);
+    void (*send_frame)(const uint8_t *buffer, uint16_t length);
 
     // support for sleep modes in TI's H4 eHCILL and H5
 

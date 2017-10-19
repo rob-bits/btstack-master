@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 BlueKitchen GmbH
+ * Copyright (C) 2017 BlueKitchen GmbH
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -59,6 +59,11 @@
 #include <IOKit/serial/ioss.h>
 #endif
 
+#include "btstack_slip.h"
+
+// max size of outgoing SLIP chunks 
+#define SLIP_TX_CHUNK_LEN   128
+
 #define SLIP_RECEIVE_BUFFER_SIZE 128
 
 // uart config
@@ -66,6 +71,9 @@ static const btstack_uart_config_t * uart_config;
 
 // data source for integration with BTstack Runloop
 static btstack_data_source_t transport_data_source;
+
+// encoded SLIP chunk
+static uint8_t   btstack_uart_slip_outgoing_buffer[SLIP_TX_CHUNK_LEN+1];
 
 // block write
 static int             write_bytes_len;
@@ -77,9 +85,10 @@ static uint16_t  btstack_uart_slip_receive_pos;
 static uint16_t  btstack_uart_slip_receive_len;
 
 // callbacks
-static void (*block_sent)(void);
+static void (*frame_sent)(void);
 static void (*frame_received)(uint16_t frame_size);
 
+static void btstack_uart_slip_posix_block_sent(void);
 
 static int btstack_uart_slip_posix_init(const btstack_uart_config_t * config){
     uart_config = config;
@@ -114,10 +123,8 @@ static void btstack_uart_slip_posix_process_write(btstack_data_source_t *ds) {
 
     btstack_run_loop_disable_data_source_callbacks(ds, DATA_SOURCE_CALLBACK_WRITE);
 
-    // notify done
-    if (block_sent){
-        block_sent();
-    }
+    // done with TX chunk
+    btstack_uart_slip_posix_block_sent();
 }
 
 // @returns 1 if frame was received
@@ -168,6 +175,72 @@ static void hci_transport_h5_process(btstack_data_source_t *ds, btstack_data_sou
         default:
             break;
     }
+}
+
+// -----------------------------
+// SLIP Outgoing
+
+// Fill chunk and write
+static void btstack_uart_slip_posix_encode_chunk_and_send(int pos){
+    while (btstack_slip_encoder_has_data() & (pos < SLIP_TX_CHUNK_LEN)) {
+        btstack_uart_slip_outgoing_buffer[pos++] = btstack_slip_encoder_get_byte();
+    }
+
+    if (!btstack_slip_encoder_has_data()){
+        // Start of Frame
+        btstack_uart_slip_outgoing_buffer[pos++] = BTSTACK_SLIP_SOF;
+    }
+    log_debug("slip: send %d bytes", pos);
+
+    // setup async write and start sending
+    write_bytes_data = btstack_uart_slip_outgoing_buffer;
+    write_bytes_len  = pos;
+    btstack_run_loop_enable_data_source_callbacks(&transport_data_source, DATA_SOURCE_CALLBACK_WRITE);
+}
+
+static void btstack_uart_slip_posix_block_sent(void){
+    // check if more data to send
+    if (btstack_slip_encoder_has_data()){
+        btstack_uart_slip_posix_encode_chunk_and_send(0);
+        return;
+    }
+
+    // notify done
+    if (frame_sent){
+        frame_sent();
+    }
+}
+
+static void btstack_uart_slip_posix_send_frame(const uint8_t * frame, uint16_t frame_size){
+    // Start of Frame
+    int pos = 0;
+    btstack_uart_slip_outgoing_buffer[pos++] = BTSTACK_SLIP_SOF;
+
+    // Prepare encoding of Header + Packet (+ DIC)
+    btstack_slip_encoder_start(frame, frame_size);
+
+    // Fill rest of chunk from packet and send
+    btstack_uart_slip_posix_encode_chunk_and_send(pos);
+}
+
+// END OF SLIP ENCODING
+
+static void btstack_uart_slip_posix_receive_frame(uint8_t *buffer, uint16_t len){
+
+    log_debug("receive block, size %u", len);
+
+    // setup SLIP decoder
+    btstack_slip_decoder_init(buffer, len);
+
+    // process bytes received in earlier read. might deliver packet, which in turn will call us again. 
+    // just make sure to exit right away
+    if (btstack_uart_slip_receive_len){
+        int frame_found = btstack_uart_slip_posix_process_buffer();
+        if (frame_found) return;
+    }
+
+    // no frame delivered, enable posix read
+    btstack_run_loop_enable_data_source_callbacks(&transport_data_source, DATA_SOURCE_CALLBACK_READ);
 }
 
 static int btstack_uart_slip_posix_set_baudrate(uint32_t baudrate){
@@ -357,35 +430,7 @@ static void btstack_uart_slip_posix_set_frame_received( void (*block_handler)(ui
 }
 
 static void btstack_uart_slip_posix_set_block_sent( void (*block_handler)(void)){
-    block_sent = block_handler;
-}
-
-static void btstack_uart_slip_posix_send_block(const uint8_t *data, uint16_t size){
-    // setup async write
-    write_bytes_data = data;
-    write_bytes_len  = size;
-
-    // go
-    // btstack_uart_slip_posix_process_write(&transport_data_source);
-    btstack_run_loop_enable_data_source_callbacks(&transport_data_source, DATA_SOURCE_CALLBACK_WRITE);
-}
-
-static void btstack_uart_slip_posix_receive_block(uint8_t *buffer, uint16_t len){
-
-    log_debug("receive block, size %u", len);
-
-    // setup SLIP decoder
-    btstack_slip_decoder_init(buffer, len);
-
-    // process bytes received in earlier read. might deliver packet, which in turn will call us again. 
-    // just make sure to exit right away
-    if (btstack_uart_slip_receive_len){
-        int frame_found = btstack_uart_slip_posix_process_buffer();
-        if (frame_found) return;
-    }
-
-    // no frame delivered, enable posix read
-    btstack_run_loop_enable_data_source_callbacks(&transport_data_source, DATA_SOURCE_CALLBACK_READ);
+    frame_sent = block_handler;
 }
 
 static const btstack_uart_slip_t btstack_uart_slip_posix = {
@@ -397,8 +442,8 @@ static const btstack_uart_slip_t btstack_uart_slip_posix = {
     /* int  (*set_baudrate)(uint32_t baudrate); */                        &btstack_uart_slip_posix_set_baudrate,
     /* int  (*set_parity)(int parity); */                                 &btstack_uart_slip_posix_set_parity,
     /* int  (*set_flowcontrol)(int flowcontrol); */                       &btstack_uart_slip_posix_set_flowcontrol,
-    /* void (*receive_block)(uint8_t *buffer, uint16_t len); */           &btstack_uart_slip_posix_receive_block,
-    /* void (*send_block)(const uint8_t *buffer, uint16_t length); */     &btstack_uart_slip_posix_send_block,    
+    /* void (*receive_block)(uint8_t *buffer, uint16_t len); */           &btstack_uart_slip_posix_receive_frame,
+    /* void (*send_block)(const uint8_t *buffer, uint16_t length); */     &btstack_uart_slip_posix_send_frame,    
     /* int (*get_supported_sleep_modes); */                               NULL,
     /* void (*set_sleep)(btstack_uart_sleep_mode_t sleep_mode); */        NULL,
     /* void (*set_wakeup_handler)(void (*handler)(void)); */              NULL,

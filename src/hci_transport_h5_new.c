@@ -47,11 +47,10 @@
 
 #include <inttypes.h>
 
-#include "hci.h"
-#include "btstack_slip.h"
 #include "btstack_debug.h"
-#include "hci_transport.h"
 #include "btstack_uart_slip.h"
+#include "hci.h"
+#include "hci_transport.h"
 
 // assert pre-buffer for packet type is available
 #if !defined(HCI_OUTGOING_PRE_BUFFER_SIZE) || (HCI_OUTGOING_PRE_BUFFER_SIZE < 4)
@@ -215,58 +214,6 @@ static void hci_transport_inactivity_timer_set(void){
     btstack_run_loop_add_timer(&inactivity_timer);
 }
 
-// -----------------------------
-// SLIP Outgoing
-
-// max size of write requests
-#define LINK_SLIP_TX_CHUNK_LEN 64
-
-// encoded SLIP chunks
-static uint8_t   slip_outgoing_buffer[LINK_SLIP_TX_CHUNK_LEN+1];
-
-// Fill chunk and write
-static void hci_transport_slip_encode_chunk_and_send(int pos){
-    while (btstack_slip_encoder_has_data() & (pos < LINK_SLIP_TX_CHUNK_LEN)) {
-        slip_outgoing_buffer[pos++] = btstack_slip_encoder_get_byte();
-    }
-
-    if (!btstack_slip_encoder_has_data()){
-        // Start of Frame
-        slip_outgoing_buffer[pos++] = BTSTACK_SLIP_SOF;
-    }
-    log_debug("slip: send %d bytes", pos);
-    btstack_uart->send_block(slip_outgoing_buffer, pos);
-}
-
-static inline void hci_transport_slip_send_next_chunk(void){
-    hci_transport_slip_encode_chunk_and_send(0);
-}
-
-static void btstack_uart_slip_posix_send_frame(const uint8_t * frame, uint16_t frame_size){
-    // Start of Frame
-    int pos = 0;
-    slip_outgoing_buffer[pos++] = BTSTACK_SLIP_SOF;
-
-    // Prepare encoding of Header + Packet (+ DIC)
-    btstack_slip_encoder_start(frame, frame_size);
-
-    // Fill rest of chunk from packet and send
-    hci_transport_slip_encode_chunk_and_send(pos);
-}
-
-static void btstack_uart_slip_posix_block_sent(void){
-    // check if more data to send
-    if (btstack_slip_encoder_has_data()){
-        hci_transport_slip_send_next_chunk();
-        return;
-    }
-
-    // "callback" to H5 / client
-    hci_transport_h5_frame_sent();
-}
-
-// END OF SLIP ENCODING
-
 // format: 0xc0 HEADER PACKET [DIC] 0xc0
 // @param uint8_t header[4]
 static void hci_transport_slip_send_frame(const uint8_t * header, uint8_t * packet, uint16_t packet_size, uint16_t data_integrity_check){
@@ -285,7 +232,7 @@ static void hci_transport_slip_send_frame(const uint8_t * header, uint8_t * pack
     memcpy(buffer, header, 4);
     uint16_t buffer_size = packet_size + 4;
 
-    btstack_uart_slip_posix_send_frame(buffer, buffer_size);
+    btstack_uart->send_frame(buffer, buffer_size);
 }
 
 // SLIP Incoming
@@ -794,7 +741,7 @@ static void hci_transport_h5_init(const void * transport_config){
     // setup UART driver
     btstack_uart->init(&uart_config);
     btstack_uart->set_frame_received(&hci_transport_h5_frame_received);
-    btstack_uart->set_block_sent(&btstack_uart_slip_posix_block_sent);
+    btstack_uart->set_block_sent(&hci_transport_h5_frame_sent);
 }
 
 static int hci_transport_h5_open(void){
