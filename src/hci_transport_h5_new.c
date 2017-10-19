@@ -214,25 +214,28 @@ static void hci_transport_inactivity_timer_set(void){
     btstack_run_loop_add_timer(&inactivity_timer);
 }
 
-// format: 0xc0 HEADER PACKET [DIC] 0xc0
+static void hci_transport_h5_send_frame(uint8_t * frame, uint16_t frame_size){
+    slip_write_active = 1;
+    btstack_uart->send_frame(frame, frame_size);
+}
+
+// format: HEADER PACKET [DIC]
 // @param uint8_t header[4]
 static void hci_transport_slip_send_frame(const uint8_t * header, uint8_t * packet, uint16_t packet_size, uint16_t data_integrity_check){
     
-    slip_write_active = 1;
-
-    // Store DIC after packet, assuming 2 bytes in buffer
-    int slip_outgoing_dic_present = header[0] & 0x40;
-    if (slip_outgoing_dic_present){
-        big_endian_store_16(packet, packet_size, data_integrity_check);
-        packet_size += 2;
-    }
-
     // Store header before packet, assuming HCI_OUTGOING_PRE_BUFFER_SIZE > 4
     uint8_t * buffer = packet - 4;
     memcpy(buffer, header, 4);
     uint16_t buffer_size = packet_size + 4;
 
-    btstack_uart->send_frame(buffer, buffer_size);
+    // Store DIC after packet, assuming 2 bytes in buffer
+    int slip_outgoing_dic_present = header[0] & 0x40;
+    if (slip_outgoing_dic_present){
+        big_endian_store_16(buffer, buffer_size, data_integrity_check);
+        buffer_size += 2;
+    }
+
+    hci_transport_h5_send_frame(buffer, buffer_size);
 }
 
 // SLIP Incoming
