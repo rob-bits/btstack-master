@@ -96,9 +96,6 @@ typedef enum {
 #define LINK_ACKNOWLEDGEMENT_TYPE 0x00
 #define LINK_CONTROL_PACKET_TYPE 0x0f
 
-// max size of write requests
-#define LINK_SLIP_TX_CHUNK_LEN 64
-
 // ---
 static const uint8_t link_control_sync[] =   { 0x01, 0x7e};
 static const uint8_t link_control_sync_response[] = { 0x02, 0x7d};
@@ -118,7 +115,6 @@ static const uint8_t link_control_sleep[] =  { 0x07, 0x78};
 static uint8_t   hci_packet_with_pre_buffer[HCI_INCOMING_PRE_BUFFER_SIZE + 6 + HCI_PACKET_BUFFER_SIZE];
 
 // outgoing slip encoded buffer. +4 to assert that DIC fits in buffer. +1 to assert that last SOF fits in buffer.
-static uint8_t   slip_outgoing_buffer[LINK_SLIP_TX_CHUNK_LEN+4+1];
 static int       slip_write_active;
 
 // H5 Link State
@@ -151,12 +147,13 @@ static btstack_uart_sleep_mode_t btstack_uart_sleep_mode;
 static int hci_transport_bcsp_mode;
 
 // Prototypes
-static void hci_transport_h5_process_frame(uint16_t frame_size);
 static int  hci_transport_link_have_outgoing_packet(void);
+static void hci_transport_h5_frame_sent(void);
+static void hci_transport_h5_process_frame(uint16_t frame_size);
+static void hci_transport_link_run(void);
 static void hci_transport_link_send_queued_packet(void);
 static void hci_transport_link_set_timer(uint16_t timeout_ms);
 static void hci_transport_link_timeout_handler(btstack_timer_source_t * timer);
-static void hci_transport_link_run(void);
 static void hci_transport_slip_init(void);
 
 // -----------------------------
@@ -221,6 +218,12 @@ static void hci_transport_inactivity_timer_set(void){
 // -----------------------------
 // SLIP Outgoing
 
+// max size of write requests
+#define LINK_SLIP_TX_CHUNK_LEN 64
+
+// encoded SLIP chunks
+static uint8_t   slip_outgoing_buffer[LINK_SLIP_TX_CHUNK_LEN+1];
+
 // Fill chunk and write
 static void hci_transport_slip_encode_chunk_and_send(int pos){
     while (btstack_slip_encoder_has_data() & (pos < LINK_SLIP_TX_CHUNK_LEN)) {
@@ -231,7 +234,6 @@ static void hci_transport_slip_encode_chunk_and_send(int pos){
         // Start of Frame
         slip_outgoing_buffer[pos++] = BTSTACK_SLIP_SOF;
     }
-    slip_write_active = 1;
     log_debug("slip: send %d bytes", pos);
     btstack_uart->send_block(slip_outgoing_buffer, pos);
 }
@@ -252,10 +254,25 @@ static void btstack_uart_slip_posix_send_frame(const uint8_t * frame, uint16_t f
     hci_transport_slip_encode_chunk_and_send(pos);
 }
 
+static void btstack_uart_slip_posix_block_sent(void){
+    // check if more data to send
+    if (btstack_slip_encoder_has_data()){
+        hci_transport_slip_send_next_chunk();
+        return;
+    }
+
+    // "callback" to H5 / client
+    hci_transport_h5_frame_sent();
+}
+
+// END OF SLIP ENCODING
+
 // format: 0xc0 HEADER PACKET [DIC] 0xc0
 // @param uint8_t header[4]
 static void hci_transport_slip_send_frame(const uint8_t * header, uint8_t * packet, uint16_t packet_size, uint16_t data_integrity_check){
     
+    slip_write_active = 1;
+
     // Store DIC after packet, assuming 2 bytes in buffer
     int slip_outgoing_dic_present = header[0] & 0x40;
     if (slip_outgoing_dic_present){
@@ -737,13 +754,7 @@ static void hci_transport_h5_frame_received(uint16_t frame_size){
     hci_transport_slip_init();
 }
 
-static void hci_transport_h5_block_sent(void){
-
-    // check if more data to send
-    if (btstack_slip_encoder_has_data()){
-        hci_transport_slip_send_next_chunk();
-        return;
-    }
+static void hci_transport_h5_frame_sent(void){
 
     // done
     slip_write_active = 0;
@@ -783,7 +794,7 @@ static void hci_transport_h5_init(const void * transport_config){
     // setup UART driver
     btstack_uart->init(&uart_config);
     btstack_uart->set_frame_received(&hci_transport_h5_frame_received);
-    btstack_uart->set_block_sent(&hci_transport_h5_block_sent);
+    btstack_uart->set_block_sent(&btstack_uart_slip_posix_block_sent);
 }
 
 static int hci_transport_h5_open(void){
