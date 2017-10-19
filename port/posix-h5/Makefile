@@ -12,7 +12,7 @@ CORE += \
 	btstack_run_loop_posix.c \
 	btstack_uart_slip_posix.c \
 	btstack_slip.c \
-	hci_transport_h5_new.c \
+	hci_transport_h5.c \
 	le_device_db_fs.c \
 	main.c \
 	wav_util.c 					\
