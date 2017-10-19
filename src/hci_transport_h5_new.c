@@ -231,11 +231,6 @@ static void hci_transport_link_calc_header(uint8_t * header,
     header[3] = 0xff - (header[0] + header[1] + header[2]);
 }
 
-static void hci_transport_h5_send_frame(uint8_t * frame, uint16_t frame_size){
-    slip_write_active = 1;
-    btstack_uart->send_frame(frame, frame_size);
-}
-
 static void hci_transport_slip_send_frame_with_dic(uint8_t * frame, uint16_t frame_size){
     // Store DIC after packet, assuming 2 bytes in buffer
     int slip_outgoing_dic_present = frame[0] & 0x40;
@@ -244,48 +239,42 @@ static void hci_transport_slip_send_frame_with_dic(uint8_t * frame, uint16_t fra
         big_endian_store_16(frame, frame_size, data_integrity_check);
         frame_size += 2;
     }
-    hci_transport_h5_send_frame(frame, frame_size);
-}
 
-// format: HEADER PACKET [DIC]
-// @param uint8_t header[4]
-static void hci_transport_slip_send_frame(const uint8_t * header, uint8_t * packet, uint16_t packet_size){
-
-    // Store header before packet, assuming HCI_OUTGOING_PRE_BUFFER_SIZE > 4
-    uint8_t * buffer = packet - 4;
-    memcpy(buffer, header, 4);
-    uint16_t buffer_size = packet_size + 4;
-
-    hci_transport_slip_send_frame_with_dic(buffer, buffer_size);
-}
-
-
-static void hci_transport_link_send_control(const uint8_t * message, int message_len){
-
-    uint8_t header[4];
-    hci_transport_link_calc_header(header, 0, 0, link_peer_supports_data_integrity_check, 0, LINK_CONTROL_PACKET_TYPE, message_len);
-
-    // provide HCI_OUTGOING_PRE_BUFFER_SIZE before message and two additional bytes
-    uint8_t packet[4 + LINK_CONTROL_MAX_LEN + 2];
-    memcpy(&packet[4], message, message_len);
-
-    log_debug("hci_transport_link_send_control: size %u, append dic %u", message_len, link_peer_supports_data_integrity_check);
-    log_debug_hexdump(message, message_len);
-    hci_transport_slip_send_frame(header, &packet[4], message_len);
+    // set slip send active and go
+    slip_write_active = 1;
+    btstack_uart->send_frame(frame, frame_size);
 }
 
 static void hci_transport_link_send_queued_packet(void){
+    uint8_t * buffer =      hci_packet      - 4;
+    uint16_t  buffer_size = hci_packet_size + 4;
 
-    uint8_t header[4];
-    hci_transport_link_calc_header(header, link_seq_nr, link_ack_nr, link_peer_supports_data_integrity_check, 1, hci_packet_type, hci_packet_size);
+    // setup header
+    hci_transport_link_calc_header(buffer, link_seq_nr, link_ack_nr, link_peer_supports_data_integrity_check, 1, hci_packet_type, hci_packet_size);
 
-    log_debug("hci_transport_link_send_queued_packet: seq %u, ack %u, size %u. Append dic %u", link_seq_nr, link_ack_nr, hci_packet_size, link_peer_supports_data_integrity_check);
+    // send frame with dic
+    log_debug("send queued packet: seq %u, ack %u, size %u, append dic %u", link_seq_nr, link_ack_nr, hci_packet_size, link_peer_supports_data_integrity_check);
     log_debug_hexdump(hci_packet, hci_packet_size);
-
-    hci_transport_slip_send_frame(header, hci_packet, hci_packet_size);
+    hci_transport_slip_send_frame_with_dic(buffer, buffer_size);
 
     // reset inactvitiy timer
     hci_transport_inactivity_timer_set();
+}
+
+static void hci_transport_link_send_control(const uint8_t * message, int message_len){
+    uint8_t  buffer[4 + LINK_CONTROL_MAX_LEN + 2];
+    uint16_t buffer_size = 4 + message_len;
+
+    // setup header
+    hci_transport_link_calc_header(buffer, 0, 0, link_peer_supports_data_integrity_check, 0, LINK_CONTROL_PACKET_TYPE, message_len);
+
+    // setup payload
+    memcpy(&buffer[4], message, message_len);
+
+    // send frame with dic
+    log_debug("send control: size %u, append dic %u", message_len, link_peer_supports_data_integrity_check);
+    log_debug_hexdump(message, message_len);
+    hci_transport_slip_send_frame_with_dic(buffer, buffer_size);
 }
 
 static void hci_transport_link_send_ack_packet(void){
@@ -293,7 +282,7 @@ static void hci_transport_link_send_ack_packet(void){
     log_debug("send ack %u", link_ack_nr);
     uint8_t header[4];
     hci_transport_link_calc_header(header, 0, link_ack_nr, 0, 0, LINK_ACKNOWLEDGEMENT_TYPE, 0);
-    hci_transport_h5_send_frame(header, sizeof(header));
+    hci_transport_slip_send_frame_with_dic(header, sizeof(header));
 }
 
 static void hci_transport_link_send_sync(void){
