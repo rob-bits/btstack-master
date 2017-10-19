@@ -36,14 +36,14 @@
  */
 
 /*
- *  btstack_uart_block.h
+ *  btstack_uart_slip.h
  *
  *  Common code to access serial port via asynchronous block read/write commands
  *
  */
 
-#ifndef __BTSTACK_UART_BLOCK_H
-#define __BTSTACK_UART_BLOCK_H
+#ifndef __BTSTACK_UART_SLIP_H
+#define __BTSTACK_UART_SLIP_H
 
 #include <stdint.h>
 #include "btstack_uart.h"
@@ -66,9 +66,9 @@ typedef struct {
     int (*close)(void);
 
     /**
-     * set callback for block received. NULL disables callback
+     * set callback for SLIP frame received. NULL disables callback
      */
-    void (*set_block_received)(void (*block_handler)(void));
+    void (*set_frame_received)(void (*frame_handler)(uint16_t frame_size));
 
     /**
      * set callback for sent. NULL disables callback
@@ -93,7 +93,7 @@ typedef struct {
     /**
      * receive block
      */
-    void (*receive_block)(uint8_t *buffer, uint16_t len);
+    void (*receive_frame)(uint8_t *buffer, uint16_t len);
 
     /**
      * send block
@@ -123,12 +123,12 @@ typedef struct {
      */
     void (*set_wakeup_handler)(void (*wakeup_handler)(void));
 
-} btstack_uart_block_t;
+} btstack_uart_slip_t;
 
 // common implementations
-const btstack_uart_block_t * btstack_uart_block_posix_instance(void);
-const btstack_uart_block_t * btstack_uart_block_windows_instance(void);
-const btstack_uart_block_t * btstack_uart_block_embedded_instance(void);
-const btstack_uart_block_t * btstack_uart_block_freertos_instance(void);
+const btstack_uart_slip_t * btstack_uart_slip_posix_instance(void);
+const btstack_uart_slip_t * btstack_uart_slip_windows_instance(void);
+const btstack_uart_slip_t * btstack_uart_slip_embedded_instance(void);
+const btstack_uart_slip_t * btstack_uart_slip_freertos_single_threaded_instance(void);
 
 #endif
