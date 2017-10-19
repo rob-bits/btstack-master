@@ -341,8 +341,7 @@ static void hci_transport_link_send_ack_packet(void){
     log_debug("send ack %u", link_ack_nr);
     uint8_t header[4];
     hci_transport_link_calc_header(header, 0, link_ack_nr, 0, 0, LINK_ACKNOWLEDGEMENT_TYPE, 0);
-    uint8_t packet[4+2];
-    hci_transport_slip_send_frame(header, &packet[4], 0, 0);
+    hci_transport_h5_send_frame(header, sizeof(header));
 }
 
 static void hci_transport_link_run(void){
