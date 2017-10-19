@@ -53,6 +53,11 @@
 #include "hci_transport.h"
 #include "btstack_uart_slip.h"
 
+// assert pre-buffer for packet type is available
+#if !defined(HCI_OUTGOING_PRE_BUFFER_SIZE) || (HCI_OUTGOING_PRE_BUFFER_SIZE < 4)
+#error HCI_OUTGOING_PRE_BUFFER_SIZE not defined or smaller than 4. Please update hci.h
+#endif
+
 typedef enum {
     LINK_UNINITIALIZED,
     LINK_INITIALIZED,
@@ -114,8 +119,6 @@ static uint8_t   hci_packet_with_pre_buffer[HCI_INCOMING_PRE_BUFFER_SIZE + 6 + H
 
 // outgoing slip encoded buffer. +4 to assert that DIC fits in buffer. +1 to assert that last SOF fits in buffer.
 static uint8_t   slip_outgoing_buffer[LINK_SLIP_TX_CHUNK_LEN+4+1];
-static uint16_t  slip_outgoing_dic;
-static uint16_t  slip_outgoing_dic_present;
 static int       slip_write_active;
 
 // H5 Link State
@@ -225,16 +228,6 @@ static void hci_transport_slip_encode_chunk_and_send(int pos){
     }
 
     if (!btstack_slip_encoder_has_data()){
-        // Payload encoded, append DIC if present.
-        // note: slip_outgoing_buffer is guaranteed to be big enough to add DIC + SOF after LINK_SLIP_TX_CHUNK_LEN
-        if (slip_outgoing_dic_present){
-            uint8_t dic_buffer[2];
-            big_endian_store_16(dic_buffer, 0, slip_outgoing_dic);
-            btstack_slip_encoder_start(dic_buffer, 2);
-            while (btstack_slip_encoder_has_data()){
-                slip_outgoing_buffer[pos++] = btstack_slip_encoder_get_byte();
-            } 
-        }
         // Start of Frame
         slip_outgoing_buffer[pos++] = BTSTACK_SLIP_SOF;
     }
@@ -247,30 +240,35 @@ static inline void hci_transport_slip_send_next_chunk(void){
     hci_transport_slip_encode_chunk_and_send(0);
 }
 
-// format: 0xc0 HEADER PACKET [DIC] 0xc0
-// @param uint8_t header[4]
-static void hci_transport_slip_send_frame(const uint8_t * header, const uint8_t * packet, uint16_t packet_size, uint16_t data_integrity_check){
-    
-    int pos = 0;
-    
-    // store data integrity check info
-    slip_outgoing_dic         = data_integrity_check;
-    slip_outgoing_dic_present = header[0] & 0x40;
-
+static void btstack_uart_slip_posix_send_frame(const uint8_t * frame, uint16_t frame_size){
     // Start of Frame
+    int pos = 0;
     slip_outgoing_buffer[pos++] = BTSTACK_SLIP_SOF;
 
-    // Header
-    btstack_slip_encoder_start(header, 4);
-    while (btstack_slip_encoder_has_data()){
-        slip_outgoing_buffer[pos++] = btstack_slip_encoder_get_byte();
-    }
-
-    // Packet
-    btstack_slip_encoder_start(packet, packet_size);
+    // Prepare encoding of Header + Packet (+ DIC)
+    btstack_slip_encoder_start(frame, frame_size);
 
     // Fill rest of chunk from packet and send
     hci_transport_slip_encode_chunk_and_send(pos);
+}
+
+// format: 0xc0 HEADER PACKET [DIC] 0xc0
+// @param uint8_t header[4]
+static void hci_transport_slip_send_frame(const uint8_t * header, uint8_t * packet, uint16_t packet_size, uint16_t data_integrity_check){
+    
+    // Store DIC after packet, assuming 2 bytes in buffer
+    int slip_outgoing_dic_present = header[0] & 0x40;
+    if (slip_outgoing_dic_present){
+        big_endian_store_16(packet, packet_size, data_integrity_check);
+        packet_size += 2;
+    }
+
+    // Store header before packet, assuming HCI_OUTGOING_PRE_BUFFER_SIZE > 4
+    uint8_t * buffer = packet - 4;
+    memcpy(buffer, header, 4);
+    uint16_t buffer_size = packet_size + 4;
+
+    btstack_uart_slip_posix_send_frame(buffer, buffer_size);
 }
 
 // SLIP Incoming
@@ -296,15 +294,21 @@ static void hci_transport_link_calc_header(uint8_t * header,
 }
 
 static void hci_transport_link_send_control(const uint8_t * message, int message_len){
+
     uint8_t header[4];
     hci_transport_link_calc_header(header, 0, 0, link_peer_supports_data_integrity_check, 0, LINK_CONTROL_PACKET_TYPE, message_len);
     uint16_t data_integrity_check = 0;    
     if (link_peer_supports_data_integrity_check){
         data_integrity_check = crc16_calc_for_slip_frame(header, message, message_len);
     }
+
+    // provide HCI_OUTGOING_PRE_BUFFER_SIZE before message and two additional bytes
+    uint8_t packet[4 + LINK_CONTROL_MAX_LEN + 2];
+    memcpy(&packet[4], message, message_len);
+
     log_debug("hci_transport_link_send_control: size %u, append dic %u", message_len, link_peer_supports_data_integrity_check);
     log_debug_hexdump(message, message_len);
-    hci_transport_slip_send_frame(header, message, message_len, data_integrity_check);
+    hci_transport_slip_send_frame(header, &packet[4], message_len, data_integrity_check);
 }
 
 static void hci_transport_link_send_sync(void){
@@ -370,7 +374,8 @@ static void hci_transport_link_send_ack_packet(void){
     log_debug("send ack %u", link_ack_nr);
     uint8_t header[4];
     hci_transport_link_calc_header(header, 0, link_ack_nr, 0, 0, LINK_ACKNOWLEDGEMENT_TYPE, 0);
-    hci_transport_slip_send_frame(header, NULL, 0, 0);
+    uint8_t packet[4+2];
+    hci_transport_slip_send_frame(header, &packet[4], 0, 0);
 }
 
 static void hci_transport_link_run(void){
