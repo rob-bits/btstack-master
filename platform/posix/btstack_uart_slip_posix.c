@@ -83,6 +83,8 @@ static const uint8_t * write_bytes_data;
 static uint8_t   btstack_uart_slip_receive_buffer[SLIP_RECEIVE_BUFFER_SIZE];
 static uint16_t  btstack_uart_slip_receive_pos;
 static uint16_t  btstack_uart_slip_receive_len;
+static uint8_t   btstack_uart_slip_receive_track_start;
+static uint32_t  btstack_uart_slip_receive_start_time;
 
 // callbacks
 static void (*frame_sent)(void);
@@ -136,6 +138,11 @@ static int btstack_uart_slip_posix_process_buffer(void){
     }
     if (frame_size) {
         btstack_uart_slip_receive_len = 0;
+        // only print if read was involved
+        if (btstack_uart_slip_receive_track_start == 0){
+            log_info("frame receive time %u ms", btstack_run_loop_get_time_ms() - btstack_uart_slip_receive_start_time);
+            btstack_uart_slip_receive_start_time = 0;
+        }
         (*frame_received)(frame_size);
         return 1;
     } else {
@@ -146,6 +153,11 @@ static int btstack_uart_slip_posix_process_buffer(void){
 static void btstack_uart_slip_posix_process_read(btstack_data_source_t *ds) {
 
     uint32_t start = btstack_run_loop_get_time_ms();
+
+    if (btstack_uart_slip_receive_track_start){
+        btstack_uart_slip_receive_track_start = 0;
+        btstack_uart_slip_receive_start_time = start;
+    }
     
     // read up to bytes_to_read data in
     ssize_t bytes_read = read(ds->fd, btstack_uart_slip_receive_buffer, SLIP_RECEIVE_BUFFER_SIZE);
@@ -228,6 +240,7 @@ static void btstack_uart_slip_posix_send_frame(const uint8_t * frame, uint16_t f
 static void btstack_uart_slip_posix_receive_frame(uint8_t *buffer, uint16_t len){
 
     log_debug("receive block, size %u", len);
+    btstack_uart_slip_receive_track_start = 1;
 
     // setup SLIP decoder
     btstack_slip_decoder_init(buffer, len);
