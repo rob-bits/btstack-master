@@ -842,7 +842,7 @@ static const hci_transport_t hci_transport_h5 = {
 };
 
 // configure and return h5 singleton
-const hci_transport_t * hci_transport_h5_new_instance(const btstack_uart_slip_t * uart_driver) {
+const hci_transport_t * hci_transport_h5_instance(const btstack_uart_slip_t * uart_driver) {
     btstack_uart = uart_driver;
     return &hci_transport_h5;
 }

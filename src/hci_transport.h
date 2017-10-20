@@ -47,8 +47,9 @@
 #define __HCI_TRANSPORT_H
 
 #include <stdint.h>
-#include "btstack_uart_block.h"
 #include "btstack_em9304_spi.h"
+#include "btstack_uart_block.h"
+#include "btstack_uart_slip.h"
 #include "btstack_run_loop.h"
 
 #if defined __cplusplus
@@ -142,7 +143,7 @@ const hci_transport_t * hci_transport_h4_instance(const btstack_uart_block_t * u
  * @brief Setup H5 instance with uart_driver
  * @param uart_driver to use 
  */
-const hci_transport_t * hci_transport_h5_instance(const btstack_uart_block_t * uart_driver);
+const hci_transport_t * hci_transport_h5_instance(const btstack_uart_slip_t * uart_driver);
 
 /*
  * @brief Setup H4 over SPI instance for EM9304 with em9304_spi_driver

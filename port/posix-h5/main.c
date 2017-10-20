@@ -176,8 +176,6 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
     }
 }
 
-hci_transport_t * hci_transport_h5_new_instance(const btstack_uart_slip_t * uart_driver);
-
 int main(int argc, const char * argv[]){
 
 	/// GET STARTED with BTstack ///
@@ -195,7 +193,7 @@ int main(int argc, const char * argv[]){
 
     // init HCI
     const btstack_uart_slip_t * uart_driver = btstack_uart_slip_posix_instance();
-    const hci_transport_t * transport = hci_transport_h5_new_instance(uart_driver);
+    const hci_transport_t * transport = hci_transport_h5_instance(uart_driver);
     const btstack_link_key_db_t * link_key_db = btstack_link_key_db_fs_instance();
 	hci_init(transport, (void*) &config);
     hci_set_link_key_db(link_key_db);
