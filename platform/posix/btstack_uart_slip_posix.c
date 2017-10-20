@@ -190,21 +190,16 @@ static void hci_transport_h5_process(btstack_data_source_t *ds, btstack_data_sou
 }
 
 // -----------------------------
-// SLIP Outgoing
+// SLIP ENCODING
 
-// Fill chunk and write
-static void btstack_uart_slip_posix_encode_chunk_and_send(int pos){
+static void btstack_uart_slip_posix_encode_chunk_and_send(void){
+    uint16_t pos = 0;
     while (btstack_slip_encoder_has_data() & (pos < SLIP_TX_CHUNK_LEN)) {
         btstack_uart_slip_outgoing_buffer[pos++] = btstack_slip_encoder_get_byte();
     }
 
-    if (!btstack_slip_encoder_has_data()){
-        // Start of Frame
-        btstack_uart_slip_outgoing_buffer[pos++] = BTSTACK_SLIP_SOF;
-    }
-    log_debug("slip: send %d bytes", pos);
-
     // setup async write and start sending
+    log_debug("slip: send %d bytes", pos);
     write_bytes_data = btstack_uart_slip_outgoing_buffer;
     write_bytes_len  = pos;
     btstack_run_loop_enable_data_source_callbacks(&transport_data_source, DATA_SOURCE_CALLBACK_WRITE);
@@ -213,7 +208,7 @@ static void btstack_uart_slip_posix_encode_chunk_and_send(int pos){
 static void btstack_uart_slip_posix_block_sent(void){
     // check if more data to send
     if (btstack_slip_encoder_has_data()){
-        btstack_uart_slip_posix_encode_chunk_and_send(0);
+        btstack_uart_slip_posix_encode_chunk_and_send();
         return;
     }
 
@@ -224,18 +219,15 @@ static void btstack_uart_slip_posix_block_sent(void){
 }
 
 static void btstack_uart_slip_posix_send_frame(const uint8_t * frame, uint16_t frame_size){
-    // Start of Frame
-    int pos = 0;
-    btstack_uart_slip_outgoing_buffer[pos++] = BTSTACK_SLIP_SOF;
-
     // Prepare encoding of Header + Packet (+ DIC)
     btstack_slip_encoder_start(frame, frame_size);
 
     // Fill rest of chunk from packet and send
-    btstack_uart_slip_posix_encode_chunk_and_send(pos);
+    btstack_uart_slip_posix_encode_chunk_and_send();
 }
 
-// END OF SLIP ENCODING
+// SLIP ENCODING
+// -----------------------------
 
 static void btstack_uart_slip_posix_receive_frame(uint8_t *buffer, uint16_t len){
 

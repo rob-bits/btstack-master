@@ -46,9 +46,11 @@
 #include "btstack_debug.h"
 
 typedef enum {
+    SLIP_ENCODER_IDLE = 0,
+    SLIP_ENCODER_SEND_SOF,
 	SLIP_ENCODER_DEFAULT,
 	SLIP_ENCODER_SEND_DC,
-	SLIP_ENCODER_SEND_DD
+	SLIP_ENCODER_SEND_DD,
 } btstack_slip_encoder_state_t;
 
 // h5 slip state machine
@@ -81,7 +83,7 @@ static uint16_t  decoder_pos;
  * @param len
  */
 void btstack_slip_encoder_start(const uint8_t * data, uint16_t len){
-	encoder_state = SLIP_ENCODER_DEFAULT;
+	encoder_state = SLIP_ENCODER_SEND_SOF;
 	encoder_data  = data;
 	encoder_len   = len;
 }
@@ -91,8 +93,7 @@ void btstack_slip_encoder_start(const uint8_t * data, uint16_t len){
  * @return True if data ready
  */
 int  btstack_slip_encoder_has_data(void){
-	if (encoder_state != SLIP_ENCODER_DEFAULT) return 1;
-	return encoder_len > 0;
+	return encoder_state != SLIP_ENCODER_IDLE;
 }
 
 /** 
@@ -102,7 +103,15 @@ int  btstack_slip_encoder_has_data(void){
 uint8_t btstack_slip_encoder_get_byte(void){
 	uint8_t next_byte;
 	switch (encoder_state){
+        case SLIP_ENCODER_SEND_SOF:
+            encoder_state = SLIP_ENCODER_DEFAULT;
+            return BTSTACK_SLIP_SOF;
 		case SLIP_ENCODER_DEFAULT:
+            if (encoder_len == 0){
+                // emit SOF as last byte
+                encoder_state = SLIP_ENCODER_IDLE;
+                return BTSTACK_SLIP_SOF;
+            }
 			next_byte = *encoder_data++;
 			encoder_len--;
 			switch (next_byte){
@@ -117,13 +126,13 @@ uint8_t btstack_slip_encoder_get_byte(void){
 			}
 			break;
 		case SLIP_ENCODER_SEND_DC:
-			encoder_state = SLIP_ENCODER_DEFAULT;
+            encoder_state = SLIP_ENCODER_DEFAULT;
 			return 0x0dc;
 		case SLIP_ENCODER_SEND_DD:
-			encoder_state = SLIP_ENCODER_DEFAULT;
+            encoder_state = SLIP_ENCODER_DEFAULT;
 			return 0x0dd;
         default:
-            log_error("btstack_slip_encoder_get_byte invalid state %x", encoder_state);
+            log_error("encoder invalid state %x", encoder_state);
             return 0x00;
 	}
 }
