@@ -134,6 +134,10 @@ static uint8_t   hci_packet_type;
 static uint16_t  hci_packet_size;
 static uint8_t * hci_packet;
 
+// restore 2 bytes temp overwritten by DIC
+static uint8_t * hci_packet_restore_dic_address;
+static uint16_t  hci_packet_restore_dic_data;
+
 // hci packet handler
 static  void (*packet_handler)(uint8_t packet_type, uint8_t *packet, uint16_t size);
 
@@ -231,10 +235,14 @@ static void hci_transport_link_calc_header(uint8_t * header,
     header[3] = 0xff - (header[0] + header[1] + header[2]);
 }
 
+// Store DIC after packet, assuming 2 bytes in buffer - keep track of overwritten bytes - relevant for fragmented packets
 static void hci_transport_slip_send_frame_with_dic(uint8_t * frame, uint16_t frame_size){
-    // Store DIC after packet, assuming 2 bytes in buffer
     int slip_outgoing_dic_present = frame[0] & 0x40;
     if (slip_outgoing_dic_present){
+        // preserved data at DIC location
+        hci_packet_restore_dic_address = &frame[frame_size];
+        hci_packet_restore_dic_data = little_endian_read_16(hci_packet_restore_dic_address, 0);
+        // calc and set DIC
         uint16_t data_integrity_check = crc16_calc_for_slip_frame(frame, frame_size);
         big_endian_store_16(frame, frame_size, data_integrity_check);
         frame_size += 2;
@@ -685,6 +693,12 @@ static void hci_transport_h5_frame_received(uint16_t frame_size){
 }
 
 static void hci_transport_h5_frame_sent(void){
+
+    // restore DIC and clear flag
+    if (hci_packet_restore_dic_address){
+        little_endian_store_16(hci_packet_restore_dic_address, 0, hci_packet_restore_dic_data);
+        hci_packet_restore_dic_address = NULL;
+    }
 
     // done
     slip_write_active = 0;
