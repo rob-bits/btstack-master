@@ -45,6 +45,8 @@
  *  Created by Matthias Ringw ald on 4/29/09.
  */
 
+// #define ENABLE_LOG_DEBUG
+
 #include <inttypes.h>
 
 #include "btstack_debug.h"
@@ -75,6 +77,7 @@ typedef enum {
     HCI_TRANSPORT_LINK_SEND_QUEUED_PACKET         = 1 <<  8,
     HCI_TRANSPORT_LINK_SEND_ACK_PACKET            = 1 <<  9,
     HCI_TRANSPORT_LINK_ENTER_SLEEP                = 1 << 10,
+    HCI_TRANSPORT_LINK_SET_BAUDRATE               = 1 << 11,
 
 } hci_transport_link_actions_t;
 
@@ -124,6 +127,7 @@ static uint8_t  link_ack_nr;
 static uint16_t link_resend_timeout_ms;
 static uint8_t  link_peer_asleep;
 static uint8_t  link_peer_supports_data_integrity_check;
+static uint32_t link_new_baudrate;
 
 // auto sleep-mode
 static btstack_timer_source_t inactivity_timer;
@@ -703,6 +707,13 @@ static void hci_transport_h5_frame_sent(void){
     // done
     slip_write_active = 0;
 
+    // baudrate change pending?
+    if (hci_transport_link_actions & HCI_TRANSPORT_LINK_SET_BAUDRATE){
+        hci_transport_link_actions &= ~HCI_TRANSPORT_LINK_SET_BAUDRATE;
+        btstack_uart->set_baudrate(link_new_baudrate);
+        hci_transport_link_update_resend_timeout(link_new_baudrate);
+    }
+
     // enter sleep mode after sending sleep message
     if (hci_transport_link_actions & HCI_TRANSPORT_LINK_ENTER_SLEEP){
         hci_transport_link_actions &= ~HCI_TRANSPORT_LINK_ENTER_SLEEP;
@@ -820,7 +831,16 @@ static int hci_transport_h5_send_packet(uint8_t packet_type, uint8_t *packet, in
 
 static int hci_transport_h5_set_baudrate(uint32_t baudrate){
 
-    log_info("set_baudrate %"PRIu32, baudrate);
+    log_info("set_baudrate %"PRIu32", h5 actions %x", baudrate, hci_transport_link_actions);
+    // Baudrate is changed after an HCI Baudrate Change Command, which usually causes an HCI Event Commmand Complete
+    // Before changing the baudrate, the HCI Command Complete needs to get acknowledged
+    if (hci_transport_link_actions & HCI_TRANSPORT_LINK_SEND_ACK_PACKET){
+        hci_transport_link_actions |= HCI_TRANSPORT_LINK_SET_BAUDRATE;
+        link_new_baudrate = baudrate;
+        hci_transport_link_run();
+        return 0;        
+    }
+
     int res = btstack_uart->set_baudrate(baudrate);
 
     if (res) return res;
