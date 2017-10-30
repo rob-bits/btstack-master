@@ -35,62 +35,27 @@
  *
  */
 
-#ifndef __BTSTACK_AUDIO_DMA_H
-#define __BTSTACK_AUDIO_DMA_H
-
-#include <stdint.h>
-
-#if defined __cplusplus
-extern "C" {
-#endif
+#include "btstack_audio.h"
 
 /*
- *  btstack_audio.h
+ *  btstack_audio.c
  *
- *  Abstraction layer for 16-bit audio playback and recording within BTstack
  */
 
-typedef struct {
-
-	/**
-	 * @brief Setup audio codec for specified samplerate and number of channels
-	 * @param Channels (1=mono, 2=stereo)
-	 * @param Sample rate
-	 * @return 1 on success
-	 */
-	int (*init)(uint8_t channels, uint32_t samplerate);
-	
-	/** 
-	 * @brief Set playback callback
-	 * @param callback
-	 */
-	void (*set_playback_callback)(void (*callback)(uint16_t * buffer, uint16_t num_samples));
-
-	/**
-	 * @brief Close audio codec
-	 */
-	void (*close)(void);
-
-} btstack_audio_t;
+static const btstack_audio_t * btstack_audio_instance;
 
 /**
  * @brief Get BTstack Audio Instance
  * @returns btstack_audio implementation
  */
-const btstack_audio_t * btstack_audio_get_instance(void);
+const btstack_audio_t * btstack_audio_get_instance(void){
+	return btstack_audio_instance;
+}
 
 /**
  * @brief Get BTstack Audio Instance
  * @param btstack_audio implementation
  */
-void btstack_audio_set_instance(const btstack_audio_t * audio_impl);
-
-// common implementations
-const btstack_audio_t * btstack_audio_portaudio_get_instance(void);
-
-
-#if defined __cplusplus
+void btstack_audio_set_instance(const btstack_audio_t * audio_impl){
+	btstack_audio_instance = audio_impl;
 }
-#endif
-
-#endif
