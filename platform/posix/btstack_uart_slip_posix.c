@@ -262,6 +262,13 @@ static int btstack_uart_slip_posix_set_baudrate(uint32_t baudrate){
 
     log_info("set baudrate %u", baudrate);
 
+    // first drain outgoing buffer
+    int res = tcdrain(fd);
+    log_info("drain res = %d", res);
+
+    // since this doesn't work in some cases, we'll just wait a bit for every case
+    usleep(10000);
+
 #ifdef __APPLE__
 
     // From https://developer.apple.com/library/content/samplecode/SerialPortSample/Listings/SerialPortSample_SerialPortSample_c.html
