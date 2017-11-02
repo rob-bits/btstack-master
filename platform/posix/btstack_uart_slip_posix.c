@@ -129,25 +129,33 @@ static void btstack_uart_slip_posix_process_write(btstack_data_source_t *ds) {
     btstack_uart_slip_posix_block_sent();
 }
 
-// @returns 1 if frame was received
-static int btstack_uart_slip_posix_process_buffer(void){
+// @returns frame size if complete frame decoded and delivered
+static uint16_t btstack_uart_slip_posix_process_buffer(void){
+    log_debug("process buffer: pos %u, len %u", btstack_uart_slip_receive_pos, btstack_uart_slip_receive_len);
+
     uint16_t frame_size = 0;
     while (btstack_uart_slip_receive_pos < btstack_uart_slip_receive_len && frame_size == 0){
         btstack_slip_decoder_process(btstack_uart_slip_receive_buffer[btstack_uart_slip_receive_pos++]);
         frame_size = btstack_slip_decoder_frame_size();
     }
-    if (frame_size) {
+
+    // reset buffer if fully processed
+    if (btstack_uart_slip_receive_pos == btstack_uart_slip_receive_len ){
         btstack_uart_slip_receive_len = 0;
+        btstack_uart_slip_receive_pos = 0;
+    }
+
+    // deliver frame if frame complete
+    if (frame_size) {
         // only print if read was involved
         if (btstack_uart_slip_receive_track_start == 0){
             log_info("frame receive time %u ms", btstack_run_loop_get_time_ms() - btstack_uart_slip_receive_start_time);
             btstack_uart_slip_receive_start_time = 0;
         }
         (*frame_received)(frame_size);
-        return 1;
-    } else {
-        return 0;
     }
+
+    return frame_size;
 }
 
 static void btstack_uart_slip_posix_process_read(btstack_data_source_t *ds) {
