@@ -32,6 +32,7 @@ $(NAME)_SOURCES += \
 	../../src/ble/le_device_db_memory.c   \
 	../../src/ble/gatt-service/battery_service_server.c   \
 	../../src/ble/sm.c          		  \
+	../../src/classic/bnep.c              \
 	../../src/classic/hfp.c 			  \
 	../../src/classic/hfp_ag.c 			  \
 	../../src/classic/hfp_hf.c 			  \
