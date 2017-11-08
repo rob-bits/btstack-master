@@ -52,6 +52,9 @@
 #include "btstack_network.h"
 #include "btstack_run_loop_wiced.h"
 
+// hack to set virtual hw address
+extern uint8_t wwd_ethernet_hw_address[6];
+
 static void (*btstack_network_send_packet_callback)(const uint8_t * packet, uint16_t size);
 
 static uint8_t platform_ethernet_initialized = WICED_FALSE;
@@ -98,7 +101,7 @@ platform_result_t platform_ethernet_set_loopback_mode     ( platform_ethernet_lo
 
 static wiced_result_t platform_ethernet_outgoing_notify(void * arg){
     UNUSED(arg);
-    log_info("platform_ethernet_outgoing_notify %p", platform_ethernet_next_bnep_packet);
+    log_debug("platform_ethernet_outgoing_notify %p", platform_ethernet_next_bnep_packet);
     if (platform_ethernet_next_bnep_packet){
         (*btstack_network_send_packet_callback)(platform_ethernet_next_bnep_packet->payload, platform_ethernet_next_bnep_packet->len);
     } else {
@@ -117,7 +120,7 @@ static void platform_ethernet_outgoing_process(void){
     } 
     wiced_rtos_unlock_mutex(&platform_ethernet_outgoing_queue_mutex);
 
-    log_info("platform_ethernet_outgoing_process next packet %p", platform_ethernet_next_bnep_packet);
+    log_debug("platform_ethernet_outgoing_process next packet %p", platform_ethernet_next_bnep_packet);
 
     // notify callback if we got a new packet
     if (notify_callback){
@@ -151,7 +154,7 @@ void btstack_network_packet_sent(void){
 // put in queue.
 // trigger send next if not already done so
 platform_result_t platform_ethernet_send_data             ( wiced_buffer_t buffer ){
-    log_info("platform_ethernet_send_data %p", buffer);
+    log_debug("platform_ethernet_send_data %p", buffer);
     wiced_rtos_lock_mutex(&platform_ethernet_outgoing_queue_mutex);
     btstack_linked_list_add_tail(&platform_ethernet_outgoing_queue, (btstack_linked_item_t*) buffer);
     wiced_rtos_unlock_mutex(&platform_ethernet_outgoing_queue_mutex);
@@ -161,8 +164,10 @@ platform_result_t platform_ethernet_send_data             ( wiced_buffer_t buffe
 
 platform_result_t platform_ethernet_init                  ( void ){
     log_info("platform_ethernet_init");
-    wiced_rtos_init_mutex(&platform_ethernet_outgoing_queue_mutex);
-    platform_ethernet_initialized = WICED_TRUE;
+    if (!platform_ethernet_initialized) {
+        wiced_rtos_init_mutex(&platform_ethernet_outgoing_queue_mutex);
+        platform_ethernet_initialized = WICED_TRUE;
+    }
     return PLATFORM_SUCCESS;
 }
 
@@ -190,7 +195,8 @@ static wiced_result_t btstack_wiced_network_up(void * arg){
 }
 
 int btstack_network_up(bd_addr_t network_address){
-    log_info("btstack_network_up start");
+    log_info("btstack_network_up start addr %s", bd_addr_to_str(network_address));
+    memcpy(wwd_ethernet_hw_address, network_address, 6);
     wiced_rtos_send_asynchronous_event(&platform_ethernet_worker_thread, &btstack_wiced_network_up, NULL);    
     return 0;
 }
