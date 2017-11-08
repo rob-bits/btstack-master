@@ -57,6 +57,8 @@
 #include "btstack_config.h"
 #include "btstack.h"
 
+static uint8_t invalid_addr[6] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+
 static int record_id = -1;
 static uint16_t bnep_l2cap_psm      = 0;
 static uint32_t bnep_remote_uuid    = 0;
@@ -297,6 +299,8 @@ static void handle_sdp_client_query_result(uint8_t packet_type, uint16_t channel
 // - start DHCP (blocking...)
 // - ping...
 #include "wiced.h"
+#include "btstack_link_key_db_wiced_dct.h"
+#include "le_device_db_wiced_dct.h"
 
 extern wiced_result_t wiced_ip_up( wiced_interface_t interface, wiced_network_config_t config, const wiced_ip_setting_t* ip_settings );
 
@@ -370,9 +374,14 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                 case BTSTACK_EVENT_STATE:
                     if (btstack_event_state_get_state(packet) == HCI_STATE_WORKING){
                         if (!pairing_mode){
-                            // reconnect                            
-                            printf("Start SDP BNEP query for remote PAN Network Access Point (NAP).\n");
-                            sdp_client_query_uuid16(&handle_sdp_client_query_result, remote_addr, BLUETOOTH_SERVICE_CLASS_NAP);
+                            if (memcmp(remote_addr, invalid_addr, 6) == 0){
+                                // reconnect                            
+                                printf("No Bluetooth address stored for reconnect.\n");
+                            } else {
+                                // reconnect                            
+                                printf("Start SDP BNEP query for remote PAN Network Access Point (NAP).\n");
+                                sdp_client_query_uuid16(&handle_sdp_client_query_result, remote_addr, BLUETOOTH_SERVICE_CLASS_NAP);
+                            }
                         }
                     }
                     break;
@@ -392,6 +401,13 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                     if (pairing_mode){
                         printf("Start SDP BNEP query for remote PAN Network Access Point (NAP).\n");
                         hci_event_user_confirmation_request_get_bd_addr(packet, remote_addr);
+#ifdef WICED_VERSION
+                        // stored address in DCT after Link Key DB + LE Device DB
+                        uint32_t offset = btstack_link_key_db_wiced_dct_get_storage_size() + le_device_db_wiced_dct_get_storage_size();
+                        wiced_dct_write((void*)remote_addr, DCT_APP_SECTION, offset, 6);
+                        printf("Stored remote address %s in DCT\n", bd_addr_to_str(remote_addr));
+#endif
+
                         sdp_client_query_uuid16(&handle_sdp_client_query_result, remote_addr, BLUETOOTH_SERVICE_CLASS_NAP);
                     }
                     break;
@@ -499,13 +515,27 @@ int btstack_main(int argc, const char * argv[]){
     (void)argc;
     (void)argv;
 
-    panu_setup();
+    memcpy(remote_addr, invalid_addr, 6);
 
 #ifdef WICED_VERSION
     // detect Button 1 hold on boot
     pairing_mode = wiced_gpio_input_get( WICED_BUTTON2 ) ? 0 : 1;  /* The button has inverse logic */
-    printf("Button 2 pressed: %u\n", pairing_mode);
+    printf("Button 2 pressed/Pairing Mode: %u\n", pairing_mode);
+
+    // if not in pairing mode, fetch stored address
+    if (!pairing_mode){
+        // stored address in DCT after Link Key DB + LE Device DB
+        uint32_t offset = btstack_link_key_db_wiced_dct_get_storage_size() + le_device_db_wiced_dct_get_storage_size();
+        void * entry = NULL;
+        wiced_dct_read_lock((void*) &entry, WICED_FALSE, DCT_APP_SECTION, offset, 6);
+        memcpy(remote_addr, entry, 6);
+        // read unlock
+        wiced_dct_read_unlock((void*) entry, WICED_FALSE);
+        printf("Stored remote address %s\n", bd_addr_to_str(remote_addr));
+    }
 #endif
+
+    panu_setup();
 
     // Turn on the device 
     hci_power_control(HCI_POWER_ON);
