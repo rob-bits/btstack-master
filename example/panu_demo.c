@@ -70,9 +70,15 @@ static uint32_t sdp_bnep_remote_uuid    = 0;
 static uint8_t   attribute_value[1000];
 static const unsigned int attribute_value_buffer_size = sizeof(attribute_value);
 
-// MBP 2016
-static const char * remote_addr_string = "F4-0F-24-3B-1B-E1";
-// Wiko Sunny static const char * remote_addr_string = "A0:4C:5B:0F:B2:42";
+// dummy HID service to allow iPhone to connect
+static uint8_t hid_service_buffer[250];
+static const char hid_device_name[] = "Dummy Keyboard";
+
+// from USB HID Specification 1.1, Appendix B.1
+const uint8_t hid_descriptor_dummy[] = {
+    0x05, 0x01,                    // Usage Page (Generic Desktop)
+    0x09, 0x06,                    // Usage (Keyboard)
+};
 
 static bd_addr_t remote_addr;
 
@@ -107,6 +113,26 @@ static void panu_setup(void){
 
     // Minimum L2CAP MTU for bnep is 1691 bytes
     bnep_register_service(packet_handler, BLUETOOTH_SERVICE_CLASS_PANU, 1691);  
+
+    // Register dummy HID service
+    sdp_init();
+    memset(hid_service_buffer, 0, sizeof(hid_service_buffer));
+    // hid sevice subclass 2540 Keyboard, hid counntry code 33 US, hid virtual cable off, hid reconnect initiate off, hid boot device off 
+    hid_create_sdp_record(hid_service_buffer, 0x10001, 0x2540, 33, 0, 0, 0, hid_descriptor_dummy, sizeof(hid_descriptor_dummy), hid_device_name);
+    printf("HID service record size: %u\n", de_get_len( hid_service_buffer));
+    sdp_register_service(hid_service_buffer);
+
+    // HID Device
+    hid_device_init();
+    hid_device_register_packet_handler(&packet_handler);
+
+    // Discoverable
+    // Set local name with a template Bluetooth address, that will be automatically
+    // replaced with a actual address once it is available, i.e. when BTstack boots
+    // up and starts talking to a Bluetooth module.
+    gap_set_local_name("PANU Demo 00:00:00:00:00:00");
+    gap_discoverable_control(1);
+    gap_set_class_of_device(0x2540);
 
     // Initialize network interface
     btstack_network_init(&network_send_packet_callback);
@@ -336,12 +362,14 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                 /* @text When BTSTACK_EVENT_STATE with state HCI_STATE_WORKING
                  * is received and the example is started in client mode, the remote SDP BNEP query is started.
                  */
+#if 0
                 case BTSTACK_EVENT_STATE:
                     if (btstack_event_state_get_state(packet) == HCI_STATE_WORKING){
                         printf("Start SDP BNEP query for remote PAN Network Access Point (NAP).\n");
                         sdp_client_query_uuid16(&handle_sdp_client_query_result, remote_addr, BLUETOOTH_SERVICE_CLASS_NAP);
                     }
                     break;
+#endif
 
                 /* LISTING_PAUSE */
                 case HCI_EVENT_PIN_CODE_REQUEST:
@@ -353,8 +381,11 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
 
                 case HCI_EVENT_USER_CONFIRMATION_REQUEST:
                     // inform about user confirmation request
-                    printf("SSP User Confirmation Request with numeric value '%06u'\n", little_endian_read_32(packet, 8));
                     printf("SSP User Confirmation Auto accept\n");
+
+                    printf("Start SDP BNEP query for remote PAN Network Access Point (NAP).\n");
+                    hci_event_user_confirmation_request_get_bd_addr(packet, remote_addr);
+                    sdp_client_query_uuid16(&handle_sdp_client_query_result, remote_addr, BLUETOOTH_SERVICE_CLASS_NAP);
                     break;
 
                 /* LISTING_RESUME */
@@ -461,9 +492,6 @@ int btstack_main(int argc, const char * argv[]){
     (void)argv;
 
     panu_setup();
-
-    // parse human readable Bluetooth address
-    sscanf_bd_addr(remote_addr_string, remote_addr);
 
     // Turn on the device 
     hci_power_control(HCI_POWER_ON);

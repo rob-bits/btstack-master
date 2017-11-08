@@ -36,6 +36,7 @@ $(NAME)_SOURCES += \
 	../../src/classic/hfp.c 			  \
 	../../src/classic/hfp_ag.c 			  \
 	../../src/classic/hfp_hf.c 			  \
+	../../src/classic/hid_device.c        \
 	../../src/classic/hsp_hs.c            \
 	../../src/classic/hsp_hs.c            \
 	../../src/classic/rfcomm.c            \
