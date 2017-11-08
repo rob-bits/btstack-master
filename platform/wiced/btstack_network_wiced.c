@@ -59,9 +59,6 @@ static void (*btstack_network_send_packet_callback)(const uint8_t * packet, uint
 
 static uint8_t platform_ethernet_initialized = WICED_FALSE;
 
-// used to perform ip up on seperate thread
-static wiced_worker_thread_t platform_ethernet_worker_thread;
-
 // outgoing queue & next buffer protected by mutex
 static wiced_mutex_t         platform_ethernet_outgoing_queue_mutex;
 static wiced_buffer_t        platform_ethernet_next_bnep_packet;
@@ -70,6 +67,7 @@ static btstack_linked_list_t platform_ethernet_outgoing_queue;
 // platform ethernet implementation
 platform_result_t platform_ethernet_deinit                ( void ){
     log_info("platform_ethernet_deinit");
+    platform_ethernet_initialized = WICED_FALSE;
     return PLATFORM_SUCCESS;
 }
 wiced_bool_t      platform_ethernet_is_inited             ( void ){
@@ -177,27 +175,13 @@ platform_result_t platform_ethernet_init                  ( void ){
  */
 void btstack_network_init(void (*send_packet_callback)(const uint8_t * packet, uint16_t size)){
     btstack_network_send_packet_callback = send_packet_callback;
-
-    // setup networking
     wiced_network_init();
-    wiced_rtos_create_worker_thread(&platform_ethernet_worker_thread, WICED_NETWORK_WORKER_PRIORITY, 1024, 10);
-}
-
-static wiced_result_t btstack_wiced_network_up(void * arg){
-    UNUSED(arg);
-
-    // todo: only setup network without interface
-    // todo: set hardware address somehow
-    log_info("wiced_network_up start");
-    wiced_result_t result = wiced_network_up(WICED_ETHERNET_INTERFACE, WICED_USE_EXTERNAL_DHCP_SERVER, NULL);
-    log_info("wiced_network_up done, result = %u", result);
-    return WICED_SUCCESS;
 }
 
 int btstack_network_up(bd_addr_t network_address){
     log_info("btstack_network_up start addr %s", bd_addr_to_str(network_address));
     memcpy(wwd_ethernet_hw_address, network_address, 6);
-    wiced_rtos_send_asynchronous_event(&platform_ethernet_worker_thread, &btstack_wiced_network_up, NULL);    
+    platform_ethernet_init();
     return 0;
 }
 
@@ -217,7 +201,8 @@ const char * btstack_network_get_name(void){
  * @return 0 if ok
  */
 int btstack_network_down(void){
-    // TODO: implement network down
+    log_info("btstack_network_up down");
+    platform_ethernet_deinit();
     return 0;
 }
 

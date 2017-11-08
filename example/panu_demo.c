@@ -188,7 +188,7 @@ static void handle_sdp_client_query_result(uint8_t packet_type, uint16_t channel
                                     case BLUETOOTH_SERVICE_CLASS_PANU:
                                     case BLUETOOTH_SERVICE_CLASS_NAP:
                                     case BLUETOOTH_SERVICE_CLASS_GN:
-                                        printf("SDP Attribute 0x%04x: BNEP PAN protocol UUID: %04x\n", sdp_event_query_attribute_byte_get_attribute_id(packet), uuid);
+                                        printf("SDP Attribute 0x%04x: BNEP PAN protocol UUID: %04x\n", sdp_event_query_attribute_byte_get_attribute_id(packet), (int) uuid);
                                         sdp_bnep_remote_uuid = uuid;
                                         break;
                                     default:
@@ -234,7 +234,7 @@ static void handle_sdp_client_query_result(uint8_t packet_type, uint16_t channel
                                             break;
                                     }
                                 }
-                                printf("Summary: uuid 0x%04x, l2cap_psm 0x%04x, bnep_version 0x%04x\n", sdp_bnep_remote_uuid, sdp_bnep_l2cap_psm, sdp_bnep_version);
+                                printf("Summary: uuid 0x%04x, l2cap_psm 0x%04x, bnep_version 0x%04x\n", (int) sdp_bnep_remote_uuid, sdp_bnep_l2cap_psm, sdp_bnep_version);
 
                             }
                             break;
@@ -260,6 +260,52 @@ static void handle_sdp_client_query_result(uint8_t packet_type, uint16_t channel
             break;
     }
 }
+
+#ifdef WICED_VERSION
+// Demo code for WICED
+// - start DHCP (blocking...)
+// - ping...
+#include "wiced.h"
+
+extern wiced_result_t wiced_ip_up( wiced_interface_t interface, wiced_network_config_t config, const wiced_ip_setting_t* ip_settings );
+
+static wiced_thread_t * panu_demo_wiced_thread;
+
+
+#define PING_TIMEOUT_MS          2000
+#define PING_INTERVAL_MS         1000
+
+static void panu_demo_wiced(wiced_thread_arg_t arg){
+    UNUSED(arg);
+
+    wiced_result_t status;
+
+    printf("PANU DEMO WICED started, start DHCP\n");
+    status = wiced_ip_up( WICED_ETHERNET_INTERFACE, WICED_USE_EXTERNAL_DHCP_SERVER, NULL );
+    printf("DHCP Done, result %u, Ping DEMO\n", status);
+    
+    uint32_t elapsed_ms;
+    wiced_ip_address_t ip_address;
+    SET_IPV4_ADDRESS(ip_address, 0x08080808);   // google dns
+    while (1){
+        status = wiced_ping( WICED_ETHERNET_INTERFACE, &ip_address, PING_TIMEOUT_MS, &elapsed_ms );
+        if ( status == WICED_SUCCESS )
+        {
+            printf("Ping Reply : %lu ms\n", (unsigned long)elapsed_ms );
+        }
+        else if ( status == WICED_TIMEOUT )
+        {
+            printf("Ping timeout\n");
+        }
+        else
+        {
+            printf("Ping error\n");
+        }
+        wiced_rtos_delay_milliseconds(5000);
+    }
+}
+#endif
+
 
 /*
  * @section Packet Handler
@@ -334,6 +380,9 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                         gap_local_bd_addr(local_addr);
                         btstack_network_up(local_addr);
                         printf("Network Interface %s activated\n", btstack_network_get_name());
+#ifdef WICED_VERSION
+                        wiced_rtos_create_thread(&panu_demo_wiced_thread, WICED_APPLICATION_PRIORITY, "panu-demo", &panu_demo_wiced, 1024, NULL);
+#endif                        
                     }
 					break;
                 
