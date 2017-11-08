@@ -269,8 +269,9 @@ static void handle_sdp_client_query_result(uint8_t packet_type, uint16_t channel
 
 extern wiced_result_t wiced_ip_up( wiced_interface_t interface, wiced_network_config_t config, const wiced_ip_setting_t* ip_settings );
 
-static wiced_thread_t * panu_demo_wiced_thread;
+static wiced_thread_t panu_demo_wiced_thread;
 
+static int network_down;
 
 #define PING_TIMEOUT_MS          2000
 #define PING_INTERVAL_MS         1000
@@ -287,7 +288,8 @@ static void panu_demo_wiced(wiced_thread_arg_t arg){
     uint32_t elapsed_ms;
     wiced_ip_address_t ip_address;
     SET_IPV4_ADDRESS(ip_address, 0x08080808);   // google dns
-    while (1){
+
+    while (!network_down){
         status = wiced_ping( WICED_ETHERNET_INTERFACE, &ip_address, PING_TIMEOUT_MS, &elapsed_ms );
         if ( status == WICED_SUCCESS )
         {
@@ -381,6 +383,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                         btstack_network_up(local_addr);
                         printf("Network Interface %s activated\n", btstack_network_get_name());
 #ifdef WICED_VERSION
+                        network_down = 0;
                         wiced_rtos_create_thread(&panu_demo_wiced_thread, WICED_APPLICATION_PRIORITY, "panu-demo", &panu_demo_wiced, 1024, NULL);
 #endif                        
                     }
@@ -397,6 +400,13 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                  */
                 case BNEP_EVENT_CHANNEL_CLOSED:
                     printf("BNEP channel closed\n");
+#ifdef WICED_VERSION
+                    printf("Signaling network demo to stop\n");
+                    network_down = 1;
+                    wiced_rtos_thread_join(panu_demo_wiced_thread);
+                    printf("Network demo stopped\n");
+                    wiced_rtos_delete_thread(panu_demo_wiced_thread);
+#endif                        
                     btstack_network_down();
                     break;
 
