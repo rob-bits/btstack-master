@@ -18,6 +18,9 @@ NAME := EXAMPLE
 
 GLOBAL_INCLUDES += .
 
+# Enable Ethernet Interface for BTstack PAN
+GLOBAL_DEFINES  +=  WICED_USE_ETHERNET_INTERFACE
+
 # Replace Linefeed with -> CRLF
 GLOBAL_DEFINES += CRLF_STDIO_REPLACEMENT
 

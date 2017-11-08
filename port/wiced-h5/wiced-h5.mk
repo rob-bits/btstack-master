@@ -62,6 +62,7 @@ $(NAME)_SOURCES += \
 $(NAME)_SOURCES += \
 	main.c                                     			       \
 	btstack_aes128_wiced.c 					  			       \
+	../../platform/wiced/btstack_network_wiced.c         \
 	../../platform/wiced/btstack_link_key_db_wiced_dct.c       \
 	../../platform/wiced/btstack_run_loop_wiced.c              \
 	../../platform/wiced/btstack_stdin_wiced.c                 \
