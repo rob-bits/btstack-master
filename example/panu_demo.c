@@ -80,6 +80,9 @@ const uint8_t hid_descriptor_dummy[] = {
     0x09, 0x06,                    // Usage (Keyboard)
 };
 
+// default: pairint mode = discoverable, wait for pairing/incoming HID connection
+static int pairing_mode = 1;
+
 static bd_addr_t remote_addr;
 
 static btstack_packet_callback_registration_t hci_event_callback_registration;
@@ -126,13 +129,15 @@ static void panu_setup(void){
     hid_device_init();
     hid_device_register_packet_handler(&packet_handler);
 
-    // Discoverable
-    // Set local name with a template Bluetooth address, that will be automatically
-    // replaced with a actual address once it is available, i.e. when BTstack boots
-    // up and starts talking to a Bluetooth module.
-    gap_set_local_name("PANU Demo 00:00:00:00:00:00");
-    gap_discoverable_control(1);
-    gap_set_class_of_device(0x2540);
+    if (pairing_mode){
+        // Discoverable
+        // Set local name with a template Bluetooth address, that will be automatically
+        // replaced with a actual address once it is available, i.e. when BTstack boots
+        // up and starts talking to a Bluetooth module.
+        gap_set_local_name("PANU Demo 00:00:00:00:00:00");
+        gap_discoverable_control(1);
+        gap_set_class_of_device(0x2540);
+    }
 
     // Initialize network interface
     btstack_network_init(&network_send_packet_callback);
@@ -362,14 +367,15 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                 /* @text When BTSTACK_EVENT_STATE with state HCI_STATE_WORKING
                  * is received and the example is started in client mode, the remote SDP BNEP query is started.
                  */
-#if 0
                 case BTSTACK_EVENT_STATE:
                     if (btstack_event_state_get_state(packet) == HCI_STATE_WORKING){
-                        printf("Start SDP BNEP query for remote PAN Network Access Point (NAP).\n");
-                        sdp_client_query_uuid16(&handle_sdp_client_query_result, remote_addr, BLUETOOTH_SERVICE_CLASS_NAP);
+                        if (!pairing_mode){
+                            // reconnect                            
+                            printf("Start SDP BNEP query for remote PAN Network Access Point (NAP).\n");
+                            sdp_client_query_uuid16(&handle_sdp_client_query_result, remote_addr, BLUETOOTH_SERVICE_CLASS_NAP);
+                        }
                     }
                     break;
-#endif
 
                 /* LISTING_PAUSE */
                 case HCI_EVENT_PIN_CODE_REQUEST:
@@ -383,9 +389,11 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                     // inform about user confirmation request
                     printf("SSP User Confirmation Auto accept\n");
 
-                    printf("Start SDP BNEP query for remote PAN Network Access Point (NAP).\n");
-                    hci_event_user_confirmation_request_get_bd_addr(packet, remote_addr);
-                    sdp_client_query_uuid16(&handle_sdp_client_query_result, remote_addr, BLUETOOTH_SERVICE_CLASS_NAP);
+                    if (pairing_mode){
+                        printf("Start SDP BNEP query for remote PAN Network Access Point (NAP).\n");
+                        hci_event_user_confirmation_request_get_bd_addr(packet, remote_addr);
+                        sdp_client_query_uuid16(&handle_sdp_client_query_result, remote_addr, BLUETOOTH_SERVICE_CLASS_NAP);
+                    }
                     break;
 
                 /* LISTING_RESUME */
@@ -492,6 +500,12 @@ int btstack_main(int argc, const char * argv[]){
     (void)argv;
 
     panu_setup();
+
+#ifdef WICED_VERSION
+    // detect Button 1 hold on boot
+    pairing_mode = wiced_gpio_input_get( WICED_BUTTON2 ) ? 0 : 1;  /* The button has inverse logic */
+    printf("Button 2 pressed: %u\n", pairing_mode);
+#endif
 
     // Turn on the device 
     hci_power_control(HCI_POWER_ON);
