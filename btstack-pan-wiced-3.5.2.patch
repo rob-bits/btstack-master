@@ -1,0 +1,179 @@
+diff --git a/WICED/network/LwIP/WICED/wiced_network.c b/WICED/network/LwIP/WICED/wiced_network.c
+index 0e5fe39..8be095f 100755
+--- a/WICED/network/LwIP/WICED/wiced_network.c
++++ b/WICED/network/LwIP/WICED/wiced_network.c
+@@ -127,6 +127,13 @@ typedef struct
+     #define P2P_IP_HANDLE    NULL
+ #endif
+ 
++#ifdef WICED_USE_ETHERNET_INTERFACE
++    static struct netif       ethernet_ip_handle;
++    #define ETHERNET_IP_HANDLE    &ethernet_ip_handle
++#else
++    #define ETHERNET_IP_HANDLE    NULL
++#endif
++
+ #if LWIP_NETIF_HOSTNAME
+ static wiced_hostname_t    hostname;
+ #endif /* LWIP_NETIF_HOSTNAME */
+@@ -141,11 +148,12 @@ static wiced_hostname_t    hostname;
+     #define autoip_stop(x)
+ #endif
+ 
+-struct netif* wiced_ip_handle[ 3 ] =
++struct netif* wiced_ip_handle[ 4 ] =
+ {
+     [WICED_STA_INTERFACE] = STA_IP_HANDLE,
+     [WICED_AP_INTERFACE]  = AP_IP_HANDLE,
+-    [WICED_P2P_INTERFACE] = P2P_IP_HANDLE
++    [WICED_P2P_INTERFACE] = P2P_IP_HANDLE,
++    [WICED_ETHERNET_INTERFACE] = ETHERNET_IP_HANDLE
+ };
+ 
+ static wiced_network_config_t wiced_config_cache[ WICED_INTERFACE_MAX ] =
+diff --git a/WICED/network/LwIP/WICED/wiced_network.h b/WICED/network/LwIP/WICED/wiced_network.h
+index b56e9e8..83130d7 100755
+--- a/WICED/network/LwIP/WICED/wiced_network.h
++++ b/WICED/network/LwIP/WICED/wiced_network.h
+@@ -189,7 +189,7 @@ typedef struct
+ 
+ /* Note: These objects are for internal use only! */
+ extern sys_thread_t    wiced_thread_handle;
+-extern struct netif*   wiced_ip_handle[3];
++extern struct netif*   wiced_ip_handle[4];
+ extern struct dhcp     wiced_dhcp_handle;
+ 
+ extern wiced_result_t  lwip_to_wiced_result[];
+diff --git a/WICED/network/LwIP/WWD/wwd_network.c b/WICED/network/LwIP/WWD/wwd_network.c
+index 3480a0d..5725fc9 100755
+--- a/WICED/network/LwIP/WWD/wwd_network.c
++++ b/WICED/network/LwIP/WWD/wwd_network.c
+@@ -51,6 +51,9 @@
+ #include "network/wwd_buffer_interface.h"
+ #include "wwd_assert.h"
+ #include "wiced_constants.h"
++// BK start
++#include "platform_ethernet.h"
++// BK end
+ #include <stdlib.h>
+ 
+ #ifdef ADD_LWIP_EAPOL_SUPPORT
+@@ -132,6 +135,11 @@ static err_t lwip_igmp_mac_filter(struct netif *netif,
+        const ip4_addr_t *group, enum netif_mac_filter_action action);
+ #endif
+ 
++// BK start
++// allow to set ethernet address from outside
++u8_t wwd_ethernet_hw_address[6] = { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55 };
++// BK end
++
+ /**
+  * In this function, the hardware should be initialized.
+  * Called from ethernetif_init().
+@@ -144,12 +152,18 @@ static void low_level_init( /*@partial@*/ struct netif *netif )
+     /* Set MAC hardware address length */
+     netif->hwaddr_len = (u8_t) ETHARP_HWADDR_LEN;
+ 
+-    /* Setup the physical address of this IP instance. */
+-    if ( wwd_wifi_get_mac_address( (wiced_mac_t*) ( netif->hwaddr ), (wwd_interface_t) netif->state ) != WWD_SUCCESS )
+-    {
+-        WPRINT_NETWORK_DEBUG(("Couldn't get MAC address\n"));
+-        return;
++    // BK start
++    if ((wwd_interface_t) netif->state == WWD_ETHERNET_INTERFACE){
++        memcpy(netif->hwaddr, wwd_ethernet_hw_address, 6);
++    } else {
++        /* Setup the physical address of this IP instance. */
++        if ( wwd_wifi_get_mac_address( (wiced_mac_t*) ( netif->hwaddr ), (wwd_interface_t) netif->state ) != WWD_SUCCESS )
++        {
++            WPRINT_NETWORK_DEBUG(("Couldn't get MAC address\n"));
++            return;
++        }
+     }
++    // BK end
+ 
+     /* Set Maximum Transfer Unit */
+     netif->mtu = (u16_t) WICED_PAYLOAD_MTU;
+@@ -192,7 +206,14 @@ static err_t low_level_output( struct netif *netif, /*@only@*/ struct pbuf *p )
+         pbuf_ref( p );
+ 
+         LWIP_ASSERT( "No chained buffers", ( ( p->next == NULL ) && ( ( p->tot_len == p->len ) ) ) );
+-        wwd_network_send_ethernet_data( p, (wwd_interface_t) netif->state );
++
++        // BK start
++        if ( (wiced_interface_t) (int) netif->state  == WICED_ETHERNET_INTERFACE ){
++            platform_ethernet_send_data( p );
++        } else {
++            wwd_network_send_ethernet_data( p, (wwd_interface_t) (int) netif->state );
++        }
++        // BK end
+ 
+         LINK_STATS_INC( link.xmit );
+ 
+@@ -324,8 +345,16 @@ err_t ethernetif_init( /*@partial@*/ struct netif *netif )
+      */
+     NETIF_INIT_SNMP(netif, snmp_ifType_ethernet_csmacd, LINK_SPEED_OF_YOUR_NETIF_IN_BPS);
+ 
+-    netif->name[0] = IFNAME0;
+-    netif->name[1] = IFNAME1;
++    // BK start
++    if ((wwd_interface_t) netif->state < WWD_ETHERNET_INTERFACE){
++        netif->name[0] = IFNAME0;
++        netif->name[1] = IFNAME1;
++    } else {
++        // Bluetooth PAN uses 'bt'
++        netif->name[0] = 'b';
++        netif->name[1] = 't';
++    }
++    // BK end
+ 
+     /* We directly use etharp_output() here to save a function call.
+      * You can instead declare your own function an call etharp_output()
+@@ -356,25 +385,30 @@ static err_t lwip_igmp_mac_filter(struct netif *netif,
+     UNUSED_PARAMETER(netif);
+     /*@+noeffect@*/
+ 
+-    switch ( action )
+-    {
+-        case IGMP_ADD_MAC_FILTER:
+-            if ( wwd_wifi_register_multicast_address( &mac ) != WWD_SUCCESS )
+-            {
+-                return ERR_VAL;
+-            }
+-            break;
+-
+-        case IGMP_DEL_MAC_FILTER:
+-            if ( wwd_wifi_unregister_multicast_address( &mac ) != WWD_SUCCESS )
+-            {
++    // BK start
++    if ((wwd_interface_t) netif->state != WWD_ETHERNET_INTERFACE){
++
++        switch ( action )
++        {
++            case IGMP_ADD_MAC_FILTER:
++                if ( wwd_wifi_register_multicast_address( &mac ) != WWD_SUCCESS )
++                {
++                    return ERR_VAL;
++                }
++                break;
++
++            case IGMP_DEL_MAC_FILTER:
++                if ( wwd_wifi_unregister_multicast_address( &mac ) != WWD_SUCCESS )
++                {
++                    return ERR_VAL;
++                }
++                break;
++
++            default:
+                 return ERR_VAL;
+-            }
+-            break;
+-
+-        default:
+-            return ERR_VAL;
++        }
+     }
++    // BK end
+ 
+     return ERR_OK;
+ }
