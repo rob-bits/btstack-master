@@ -43,17 +43,17 @@
 
 
 #include "wiced.h"
-#include "platform/wwd_platform_interface.h"
+#include "wwd_network.h"
 #include "platform_ethernet.h"
+#include "platform/wwd_platform_interface.h"
 #include "network/wwd_buffer_interface.h"
+
+#include "btstack_network.h"
 
 #include "btstack_config.h"
 #include "btstack_debug.h"
-#include "btstack_network.h"
+#include "btstack_util.h"
 #include "btstack_run_loop_wiced.h"
-
-// hack to set virtual hw address
-extern uint8_t wwd_ethernet_hw_address[6];
 
 static void (*btstack_network_send_packet_callback)(const uint8_t * packet, uint16_t size);
 
@@ -180,7 +180,11 @@ void btstack_network_init(void (*send_packet_callback)(const uint8_t * packet, u
 
 int btstack_network_up(bd_addr_t network_address){
     log_info("btstack_network_up start addr %s", bd_addr_to_str(network_address));
-    memcpy(wwd_ethernet_hw_address, network_address, 6);
+#ifdef WICED_ETHERNET_HAVE_SET_HW_ADDR
+    wwd_network_ethernet_set_hw_address(network_address);
+#else
+    log_error("WICED_ETHERNET_HAVE_SET_HW_ADDR not defined. Please apply BTstack WICED patches!");
+#endif
     platform_ethernet_init();
     return 0;
 }
