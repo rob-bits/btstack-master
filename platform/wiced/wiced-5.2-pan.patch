@@ -45,7 +45,7 @@ index b56e9e8..83130d7 100755
  
  extern wiced_result_t  lwip_to_wiced_result[];
 diff --git a/WICED/network/LwIP/WWD/wwd_network.c b/WICED/network/LwIP/WWD/wwd_network.c
-index 3480a0d..5725fc9 100755
+index 3480a0d..5a59517 100755
 --- a/WICED/network/LwIP/WWD/wwd_network.c
 +++ b/WICED/network/LwIP/WWD/wwd_network.c
 @@ -51,6 +51,9 @@
@@ -58,19 +58,22 @@ index 3480a0d..5725fc9 100755
  #include <stdlib.h>
  
  #ifdef ADD_LWIP_EAPOL_SUPPORT
-@@ -132,6 +135,11 @@ static err_t lwip_igmp_mac_filter(struct netif *netif,
+@@ -132,6 +135,14 @@ static err_t lwip_igmp_mac_filter(struct netif *netif,
         const ip4_addr_t *group, enum netif_mac_filter_action action);
  #endif
  
 +// BK start
-+// allow to set ethernet address from outside
-+u8_t wwd_ethernet_hw_address[6] = { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55 };
++// allow to set virtual thernet address from outside
++static u8_t wwd_network_ethernet_hw_address[6] = { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55 };
++void wwd_network_ethernet_set_hw_address(uint8_t hw_addr[6]){
++    memcpy(wwd_network_ethernet_hw_address, hw_addr, 6);
++}
 +// BK end
 +
  /**
   * In this function, the hardware should be initialized.
   * Called from ethernetif_init().
-@@ -144,12 +152,18 @@ static void low_level_init( /*@partial@*/ struct netif *netif )
+@@ -144,12 +155,18 @@ static void low_level_init( /*@partial@*/ struct netif *netif )
      /* Set MAC hardware address length */
      netif->hwaddr_len = (u8_t) ETHARP_HWADDR_LEN;
  
@@ -81,7 +84,7 @@ index 3480a0d..5725fc9 100755
 -        return;
 +    // BK start
 +    if ((wwd_interface_t) netif->state == WWD_ETHERNET_INTERFACE){
-+        memcpy(netif->hwaddr, wwd_ethernet_hw_address, 6);
++        memcpy(netif->hwaddr, wwd_network_ethernet_hw_address, 6);
 +    } else {
 +        /* Setup the physical address of this IP instance. */
 +        if ( wwd_wifi_get_mac_address( (wiced_mac_t*) ( netif->hwaddr ), (wwd_interface_t) netif->state ) != WWD_SUCCESS )
@@ -94,7 +97,7 @@ index 3480a0d..5725fc9 100755
  
      /* Set Maximum Transfer Unit */
      netif->mtu = (u16_t) WICED_PAYLOAD_MTU;
-@@ -192,7 +206,14 @@ static err_t low_level_output( struct netif *netif, /*@only@*/ struct pbuf *p )
+@@ -192,7 +209,14 @@ static err_t low_level_output( struct netif *netif, /*@only@*/ struct pbuf *p )
          pbuf_ref( p );
  
          LWIP_ASSERT( "No chained buffers", ( ( p->next == NULL ) && ( ( p->tot_len == p->len ) ) ) );
@@ -110,7 +113,7 @@ index 3480a0d..5725fc9 100755
  
          LINK_STATS_INC( link.xmit );
  
-@@ -324,8 +345,16 @@ err_t ethernetif_init( /*@partial@*/ struct netif *netif )
+@@ -324,8 +348,16 @@ err_t ethernetif_init( /*@partial@*/ struct netif *netif )
       */
      NETIF_INIT_SNMP(netif, snmp_ifType_ethernet_csmacd, LINK_SPEED_OF_YOUR_NETIF_IN_BPS);
  
@@ -129,7 +132,7 @@ index 3480a0d..5725fc9 100755
  
      /* We directly use etharp_output() here to save a function call.
       * You can instead declare your own function an call etharp_output()
-@@ -356,25 +385,30 @@ static err_t lwip_igmp_mac_filter(struct netif *netif,
+@@ -356,25 +388,30 @@ static err_t lwip_igmp_mac_filter(struct netif *netif,
      UNUSED_PARAMETER(netif);
      /*@+noeffect@*/
  
@@ -137,13 +140,6 @@ index 3480a0d..5725fc9 100755
 -    {
 -        case IGMP_ADD_MAC_FILTER:
 -            if ( wwd_wifi_register_multicast_address( &mac ) != WWD_SUCCESS )
--            {
--                return ERR_VAL;
--            }
--            break;
--
--        case IGMP_DEL_MAC_FILTER:
--            if ( wwd_wifi_unregister_multicast_address( &mac ) != WWD_SUCCESS )
 -            {
 +    // BK start
 +    if ((wwd_interface_t) netif->state != WWD_ETHERNET_INTERFACE){
@@ -169,6 +165,13 @@ index 3480a0d..5725fc9 100755
 -            }
 -            break;
 -
+-        case IGMP_DEL_MAC_FILTER:
+-            if ( wwd_wifi_unregister_multicast_address( &mac ) != WWD_SUCCESS )
+-            {
+-                return ERR_VAL;
+-            }
+-            break;
+-
 -        default:
 -            return ERR_VAL;
 +        }
@@ -177,3 +180,20 @@ index 3480a0d..5725fc9 100755
  
      return ERR_OK;
  }
+diff --git a/WICED/network/LwIP/WWD/wwd_network.h b/WICED/network/LwIP/WWD/wwd_network.h
+index 8241387..9889882 100755
+--- a/WICED/network/LwIP/WWD/wwd_network.h
++++ b/WICED/network/LwIP/WWD/wwd_network.h
+@@ -58,6 +58,12 @@ struct netif;
+ 
+ extern err_t ethernetif_init( /*@partial@*/ struct netif *netif );
+ 
++// BK start
++// @param MAC address to use for Ethernet interface
++#define WICED_ETHERNET_HAVE_SET_HW_ADDR
++extern void wwd_network_ethernet_set_hw_address(uint8_t hw_addr[6]);
++// BT end
++
+ /******************************************************
+  *             Global variables
+  ******************************************************/
