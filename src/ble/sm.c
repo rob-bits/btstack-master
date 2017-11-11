@@ -3048,6 +3048,14 @@ static void sm_handle_random_result_ph2_tk(void * arg){
     sm_run(); 
 }
 
+static void sm_handle_random_result_ph3_div(void * arg){
+    sm_connection_t * connection = (sm_connection_t*) arg;
+    // use 16 bit from random value as div
+    setup->sm_local_div = big_endian_read_16(sm_random_data, 0);
+    log_info_hex16("div", setup->sm_local_div);
+    connection->sm_engine_state = SM_PH3_Y_GET_ENC;
+}
+
 static void sm_handle_random_result_ph3_random(void * arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
     reverse_64(sm_random_data, setup->sm_local_rand);
@@ -3057,14 +3065,6 @@ static void sm_handle_random_result_ph3_random(void * arg){
     setup->sm_local_rand[7] = (setup->sm_local_rand[7] & 0xef) + (connection->sm_connection_authenticated << 4);
     connection->sm_engine_state = SM_PH3_GET_DIV;
     sm_run();
-}
-
-static void sm_handle_random_result_ph3_div(void * arg){
-    sm_connection_t * connection = (sm_connection_t*) arg;
-    // use 16 bit from random value as div
-    setup->sm_local_div = big_endian_read_16(sm_random_data, 0);
-    log_info_hex16("div", setup->sm_local_div);
-    connection->sm_engine_state = SM_PH3_Y_GET_ENC;
 }
 
 // note: random generator is ready. this doesn NOT imply that aes engine is unused!
