@@ -2987,17 +2987,16 @@ static void sm_handle_random_result_rau(void * arg){
 #ifdef ENABLE_LE_SECURE_CONNECTIONS
 static void sm_handle_random_result_sc_get_random_a(void * arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
-    memcpy(&setup->sm_local_nonce[0], data, 8);
+    memcpy(&setup->sm_local_nonce[0], sm_random_data, 8);
     connection->sm_engine_state = SM_SC_W2_GET_RANDOM_B;
 }
 
 static void sm_handle_random_result_sc_get_random_b(void * arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
-    memcpy(&setup->sm_local_nonce[8], data, 8);
+    memcpy(&setup->sm_local_nonce[8], sm_random_data, 8);
     // initiator & jw/nc -> send pairing random
     if (connection->sm_role == 0 && sm_just_works_or_numeric_comparison(setup->sm_stk_generation_method)){
         connection->sm_engine_state = SM_SC_SEND_PAIRING_RANDOM;
-        break;
     } else {
         connection->sm_engine_state = SM_SC_W2_CMAC_FOR_CONFIRMATION;
     }
