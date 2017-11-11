@@ -1959,7 +1959,7 @@ static void sm_run(void){
             break;
     }
 
-#if defined(ENABLE_LE_SECURE_CONNECTIONS) && defined(USE_SOFTWARE_ECDH_IMPLEMENTATION)
+#if defined(ENABLE_LE_SECURE_CONNECTIONS) && !defined(USE_SOFTWARE_ECDH_IMPLEMENTATION)
     if (ec_key_generation_state == EC_KEY_GENERATION_ACTIVE){
         ec_key_generation_state = EC_KEY_GENERATION_W4_KEY;
         hci_send_cmd(&hci_le_read_local_p256_public_key);
