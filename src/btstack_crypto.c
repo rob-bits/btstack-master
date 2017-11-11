@@ -87,6 +87,7 @@ static void btstack_crypto_run(void){
 static void btstack_crypto_handle_random_data(const uint8_t * data, uint16_t len){
 	btstack_crypto_wait_for_hci_result = 0;
 	btstack_crypto_random_t * btstack_crypto_random = (btstack_crypto_random_t*) btstack_linked_list_get_first_item(&btstack_crypto_operations);
+	if (!btstack_crypto_random) return;
 	if (btstack_crypto_random->btstack_crypto.operation != BTSTACK_CRYPTO_RANDOM) return;
 	uint16_t bytes_to_copy = btstack_min(btstack_crypto_random->size, len);
 	memcpy(btstack_crypto_random->buffer, data, bytes_to_copy);
@@ -105,6 +106,7 @@ static void btstack_crypto_handle_random_data(const uint8_t * data, uint16_t len
 static void btstack_crypto_handle_encryption_result(const uint8_t * data){
 	btstack_crypto_wait_for_hci_result = 0;
 	btstack_crypto_aes128_t * btstack_crypto_aes128 = (btstack_crypto_aes128_t*) btstack_linked_list_get_first_item(&btstack_crypto_operations);
+	if (!btstack_crypto_aes128) return;
 	if (btstack_crypto_aes128->btstack_crypto.operation != BTSTACK_CRYPTO_AES128) return;
     reverse_128(data, btstack_crypto_aes128->ciphertext);
 	// done
