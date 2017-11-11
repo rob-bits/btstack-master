@@ -125,7 +125,6 @@ typedef enum {
 typedef enum {
     RAU_W4_WORKING,
     RAU_IDLE,
-    RAU_GET_RANDOM,
     RAU_W4_RANDOM,
     RAU_GET_ENC,
     RAU_W4_ENC,
@@ -223,6 +222,8 @@ static derived_key_generation_t dkg_state;
 // random address update
 static random_address_update_t rau_state;
 static bd_addr_t sm_random_address;
+// temp storage for random data
+static uint8_t sm_random_data[8];
 
 // CMAC Calculation: General
 #ifdef ENABLE_CMAC_ENGINE
@@ -414,6 +415,7 @@ static inline int sm_calc_actual_encryption_key_size(int other);
 static int sm_validate_stk_generation_method(void);
 static void sm_handle_encryption_result(uint8_t * data);
 static void sm_handle_random_result_ph2_tk(void * arg);
+static void sm_handle_random_result_rau(void * arg);
 
 static void log_info_hex16(const char * name, uint16_t value){
     log_info("%-6s 0x%04x", name, value);
@@ -497,10 +499,10 @@ static btstack_timer_source_t gap_random_address_update_timer;
 static uint32_t gap_random_adress_update_period;
 
 static void gap_random_address_trigger(void){
-    if (rau_state != RAU_IDLE) return;
     log_info("gap_random_address_trigger");
-    rau_state = RAU_GET_RANDOM;
-    sm_run();
+    if (rau_state != RAU_IDLE) return;
+    rau_state = RAU_W4_RANDOM;
+    btstack_crypto_random_generate(&sm_crypto_random_request, sm_random_address, 8, &sm_handle_random_result_rau, NULL);
 }
 
 static void gap_random_address_update_handler(btstack_timer_source_t * timer){
@@ -1969,10 +1971,6 @@ static void sm_run(void){
 
     // random address updates
     switch (rau_state){
-        case RAU_GET_RANDOM:
-            rau_next_state();
-            sm_random_start(NULL);
-            return;
         case RAU_GET_ENC:
             // already busy?
             if (sm_aes128_state == SM_AES128_IDLE) {
@@ -2958,20 +2956,13 @@ static void sm_handle_random_result_ec_key_generation(void * arg){
 }
 #endif /* ENABLE_LE_SECURE_CONNECTIONS && USE_SOFTWARE_ECDH_IMPLEMENTATION */
 
-// temp storage for random data
-static uint8_t sm_random_data[8];
-
 static void sm_handle_random_result_rau(void * arg){
-
-    log_info("..... sm_handle_random_result_rau");
-
     UNUSED(arg);
     // non-resolvable vs. resolvable
     switch (gap_random_adress_type){
         case GAP_RANDOM_ADDRESS_RESOLVABLE:
             // resolvable: use random as prand and calc address hash
             // "The two most significant bits of prand shall be equal to ‘0’ and ‘1"
-            memcpy(sm_random_address, sm_random_data, 3);
             sm_random_address[0] &= 0x3f;
             sm_random_address[0] |= 0x40;
             rau_state = RAU_GET_ENC;
@@ -2979,11 +2970,11 @@ static void sm_handle_random_result_rau(void * arg){
         case GAP_RANDOM_ADDRESS_NON_RESOLVABLE:
         default:
             // "The two most significant bits of the address shall be equal to ‘0’""
-            memcpy(sm_random_address, sm_random_data, 6);
             sm_random_address[0] &= 0x3f;
             rau_state = RAU_SET_ADDRESS;
             break;
     }
+    sm_run();
 }
 
 #ifdef ENABLE_LE_SECURE_CONNECTIONS
@@ -3132,7 +3123,8 @@ static void sm_event_packet_handler (uint8_t packet_type, uint16_t channel, uint
                                 rau_state = RAU_SET_ADDRESS;
                                 break;
                             default:
-                                rau_state = RAU_GET_RANDOM;
+                                rau_state = RAU_W4_RANDOM;
+                                btstack_crypto_random_generate(&sm_crypto_random_request, sm_random_address, 8, &sm_handle_random_result_rau, NULL);
                                 break;
                         }
                         sm_run();
