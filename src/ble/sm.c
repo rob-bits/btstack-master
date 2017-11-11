@@ -1959,14 +1959,10 @@ static void sm_run(void){
             break;
     }
 
-#ifdef ENABLE_LE_SECURE_CONNECTIONS
+#if defined(ENABLE_LE_SECURE_CONNECTIONS) && defined(USE_SOFTWARE_ECDH_IMPLEMENTATION)
     if (ec_key_generation_state == EC_KEY_GENERATION_ACTIVE){
-#ifdef USE_SOFTWARE_ECDH_IMPLEMENTATION
-        sm_random_start(NULL);
-#else
         ec_key_generation_state = EC_KEY_GENERATION_W4_KEY;
         hci_send_cmd(&hci_le_read_local_p256_public_key);
-#endif
         return;
     }
 #endif
@@ -2911,6 +2907,9 @@ static int sm_generate_f_rng_mbedtls(void * context, unsigned char * buffer, siz
 
 #if defined(ENABLE_LE_SECURE_CONNECTIONS) && defined(USE_SOFTWARE_ECDH_IMPLEMENTATION)
 static void sm_handle_random_result_ec_key_generation(void * arg){
+
+    log_info("..... sm_handle_random_result_ec_key_generation\n");
+
     UNUSED(arg);
 
     // init pre-generated random data from sm_peer_q
@@ -2963,6 +2962,9 @@ static void sm_handle_random_result_ec_key_generation(void * arg){
 static uint8_t sm_random_data[8];
 
 static void sm_handle_random_result_rau(void * arg){
+
+    log_info("..... sm_handle_random_result_rau");
+
     UNUSED(arg);
     // non-resolvable vs. resolvable
     switch (gap_random_adress_type){
@@ -2986,12 +2988,14 @@ static void sm_handle_random_result_rau(void * arg){
 
 #ifdef ENABLE_LE_SECURE_CONNECTIONS
 static void sm_handle_random_result_sc_get_random_a(void * arg){
+    log_info(".... sm_handle_random_result_sc_get_random_a");
     sm_connection_t * connection = (sm_connection_t*) arg;
     memcpy(&setup->sm_local_nonce[0], sm_random_data, 8);
     connection->sm_engine_state = SM_SC_W2_GET_RANDOM_B;
 }
 
 static void sm_handle_random_result_sc_get_random_b(void * arg){
+    log_info(".... sm_handle_random_result_sc_get_random_b");
     sm_connection_t * connection = (sm_connection_t*) arg;
     memcpy(&setup->sm_local_nonce[8], sm_random_data, 8);
     // initiator & jw/nc -> send pairing random
@@ -3064,21 +3068,6 @@ static void sm_handle_random_result_ph3_random(void * arg){
 // note: random generator is ready. this doesn NOT imply that aes engine is unused!
 static void sm_handle_random_result(uint8_t * data){
 
-    log_info("..... sm_handle_random_result\n");
-
-#if defined(ENABLE_LE_SECURE_CONNECTIONS) && defined(USE_SOFTWARE_ECDH_IMPLEMENTATION)
-    if (ec_key_generation_state == EC_KEY_GENERATION_ACTIVE){
-        int num_bytes = setup->sm_passkey_bit;
-        memcpy(&setup->sm_peer_q[num_bytes], data, 8);
-        num_bytes += 8;
-        setup->sm_passkey_bit = num_bytes;
-        if (num_bytes >= 64){
-            sm_handle_random_result_ec_key_generation(NULL);
-        }
-        return;
-    }
-#endif
-
     switch (rau_state){
         case RAU_W4_RANDOM:
             memcpy(sm_random_data, data, 8);
@@ -3128,8 +3117,10 @@ static void sm_event_packet_handler (uint8_t packet_type, uint16_t channel, uint
                         dkg_state = sm_persistent_irk_ready ? DKG_CALC_DHK : DKG_CALC_IRK;
 #ifdef ENABLE_LE_SECURE_CONNECTIONS
                         if (!sm_have_ec_keypair){
-                            setup->sm_passkey_bit = 0;
                             ec_key_generation_state = EC_KEY_GENERATION_ACTIVE;
+#ifdef USE_SOFTWARE_ECDH_IMPLEMENTATION
+                            btstack_crypto_random_generate(&sm_crypto_random_request, setup->sm_peer_q, 64, &sm_handle_random_result_ec_key_generation, NULL);
+#endif
                         }
 #endif
                         // trigger Random Address generation if requested before
