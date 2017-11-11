@@ -2499,11 +2499,6 @@ static void sm_run(void){
                 break;
             }
 
-            case SM_PH3_GET_DIV:
-                sm_next_responding_state(connection);
-                sm_random_start(connection);
-                return;
-
             case SM_PH2_C1_GET_ENC_B:
             case SM_PH2_C1_GET_ENC_D:
                 // already busy?
@@ -3054,6 +3049,7 @@ static void sm_handle_random_result_ph3_div(void * arg){
     setup->sm_local_div = big_endian_read_16(sm_random_data, 0);
     log_info_hex16("div", setup->sm_local_div);
     connection->sm_engine_state = SM_PH3_Y_GET_ENC;
+    sm_run();
 }
 
 static void sm_handle_random_result_ph3_random(void * arg){
@@ -3063,8 +3059,7 @@ static void sm_handle_random_result_ph3_random(void * arg){
     setup->sm_local_rand[7] = (setup->sm_local_rand[7] & 0xf0) + (connection->sm_actual_encryption_key_size - 1);
     // no db for authenticated flag hack: store flag in bit 4 of LSB
     setup->sm_local_rand[7] = (setup->sm_local_rand[7] & 0xef) + (connection->sm_connection_authenticated << 4);
-    connection->sm_engine_state = SM_PH3_GET_DIV;
-    sm_run();
+    btstack_crypto_random_generate(&sm_crypto_random_request, sm_random_data, 2, &sm_handle_random_result_ph3_div, connection);
 }
 
 // note: random generator is ready. this doesn NOT imply that aes engine is unused!
@@ -3107,9 +3102,6 @@ static void sm_handle_random_result(uint8_t * data){
             sm_handle_random_result_sc_get_random_b(connection);
             break;
 #endif
-        case SM_PH3_W4_DIV:
-            sm_handle_random_result_ph3_div(connection);
-            break;
         default:
             break;
     }
