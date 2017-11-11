@@ -45,6 +45,7 @@
 #include "ble/core.h"
 #include "ble/sm.h"
 #include "bluetooth_company_id.h"
+#include "btstack_crypto.h"
 #include "btstack_debug.h"
 #include "btstack_event.h"
 #include "btstack_linked_list.h"
@@ -4005,6 +4006,9 @@ void sm_init(void){
     // register for HCI Events from HCI
     hci_event_callback_registration.callback = &sm_event_packet_handler;
     hci_add_event_handler(&hci_event_callback_registration);
+
+    // 
+    btstack_crypto_init();
 
     // and L2CAP PDUs + L2CAP_EVENT_CAN_SEND_NOW
     l2cap_register_fixed_channel(sm_pdu_handler, L2CAP_CID_SECURITY_MANAGER_PROTOCOL);

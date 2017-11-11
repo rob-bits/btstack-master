@@ -18,6 +18,7 @@ VPATH += ${BTSTACK_ROOT}/3rd-party/micro-ecc
 
 COMMON = \
     btstack_linked_list.c		\
+    btstack_crypto.c			\
     btstack_memory.c			\
     btstack_memory_pool.c		\
     btstack_run_loop.c			\

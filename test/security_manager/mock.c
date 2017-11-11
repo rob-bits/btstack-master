@@ -11,7 +11,7 @@
 
 
 static btstack_packet_handler_t le_data_handler;
-static btstack_packet_handler_t event_packet_handler;
+static btstack_linked_list_t event_packet_handlers;
 
 static uint8_t packet_buffer[256];
 static uint16_t packet_buffer_len = 0;
@@ -58,9 +58,19 @@ void aes128_calc_cyphertext(uint8_t key[16], uint8_t plaintext[16], uint8_t cyph
 
 void mock_simulate_hci_event(uint8_t * packet, uint16_t size){
 	hci_dump_packet(HCI_EVENT_PACKET, 1, packet, size);
-	if (event_packet_handler){
-		event_packet_handler(HCI_EVENT_PACKET, 0, packet, size);
-	}
+
+    // dispatch to all event handlers
+    btstack_linked_list_iterator_t it;
+    btstack_linked_list_iterator_init(&it, &event_packet_handlers);
+    while (btstack_linked_list_iterator_has_next(&it)){
+        btstack_packet_callback_registration_t * entry = (btstack_packet_callback_registration_t*) btstack_linked_list_iterator_next(&it);
+        entry->callback(HCI_EVENT_PACKET, 0, packet, size);
+    }
+
+	// if (event_packet_handler){
+	// 	event_packet_handler(HCI_EVENT_PACKET, 0, packet, size);
+	// }
+	
 	if (le_data_handler){
 		le_data_handler(HCI_EVENT_PACKET, 0, packet, size);
 	}
@@ -207,7 +217,7 @@ void l2cap_register_fixed_channel(btstack_packet_handler_t packet_handler, uint1
 }
 
 void hci_add_event_handler(btstack_packet_callback_registration_t * callback_handler){
-	event_packet_handler = callback_handler->callback;
+    btstack_linked_list_add_tail(&event_packet_handlers, (btstack_linked_item_t*) callback_handler);
 }
 
 int l2cap_reserve_packet_buffer(void){
