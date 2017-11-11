@@ -3058,16 +3058,6 @@ static void sm_handle_random_result_ph3_random(void * arg){
 
 // note: random generator is ready. this doesn NOT imply that aes engine is unused!
 static void sm_handle_random_result(uint8_t * data){
-
-    switch (rau_state){
-        case RAU_W4_RANDOM:
-            memcpy(sm_random_data, data, 8);
-            sm_handle_random_result_rau(NULL);
-            return;
-        default:
-            break;
-    }
-
     // retrieve sm_connection provided to sm_random_start
     sm_connection_t * connection = (sm_connection_t *) sm_random_context;
     if (!connection) return;
