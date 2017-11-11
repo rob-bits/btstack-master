@@ -53,6 +53,10 @@ static uint8_t btstack_crypto_wait_for_hci_result;
 
 static void btstack_crypto_run(void){
 
+    uint8_t key_flipped[16];
+    uint8_t plaintext_flipped[16];
+    btstack_crypto_aes128_t * btstack_crypto_aes128;
+
 	// already active?
 	if (btstack_crypto_wait_for_hci_result) return;
 
@@ -67,6 +71,13 @@ static void btstack_crypto_run(void){
 		case BTSTACK_CRYPTO_RANDOM:
 			btstack_crypto_wait_for_hci_result = 1;
 		    hci_send_cmd(&hci_le_rand);
+		    break;
+		case BTSTACK_CRYPTO_AES128:
+			btstack_crypto_wait_for_hci_result = 1;
+			btstack_crypto_aes128 = (btstack_crypto_aes128_t *) btstack_crypto;
+		    reverse_128(btstack_crypto_aes128->key, key_flipped);
+		    reverse_128(btstack_crypto_aes128->plaintext, plaintext_flipped);
+		    hci_send_cmd(&hci_le_encrypt, key_flipped, plaintext_flipped);
 		    break;
 		default:
 			break;
@@ -91,6 +102,18 @@ static void btstack_crypto_handle_random_data(const uint8_t * data, uint16_t len
 	btstack_crypto_run();
 }
 
+static void btstack_crypto_handle_encryption_result(const uint8_t * data){
+	btstack_crypto_wait_for_hci_result = 0;
+	btstack_crypto_aes128_t * btstack_crypto_aes128 = (btstack_crypto_aes128_t*) btstack_linked_list_get_first_item(&btstack_crypto_operations);
+	if (btstack_crypto_aes128->btstack_crypto.operation != BTSTACK_CRYPTO_AES128) return;
+    reverse_128(data, btstack_crypto_aes128->ciphertext);
+	// done
+	btstack_linked_list_pop(&btstack_crypto_operations);
+	(*btstack_crypto_aes128->btstack_crypto.context_callback.callback)(btstack_crypto_aes128->btstack_crypto.context_callback.context);
+	// more work?
+	btstack_crypto_run();
+}
+
 static void btstack_crypto_event_handler(uint8_t packet_type, uint16_t cid, uint8_t *packet, uint16_t size){
     UNUSED(packet_type); // ok: registered with hci_event_callback_registration
     UNUSED(cid);         // ok: there is no channel
@@ -100,12 +123,10 @@ static void btstack_crypto_event_handler(uint8_t packet_type, uint16_t cid, uint
     if (hci_get_state() 			      != HCI_STATE_WORKING) return;
 
     if (hci_event_packet_get_type(packet) == HCI_EVENT_COMMAND_COMPLETE){
-
-	    // if (HCI_EVENT_IS_COMMAND_COMPLETE(packet, hci_le_encrypt)){
-	    //     sm_handle_encryption_result(&packet[6]);
-	    //     break;
-	    // }
-
+	    if (HCI_EVENT_IS_COMMAND_COMPLETE(packet, hci_le_encrypt)){
+	        btstack_crypto_handle_encryption_result(&packet[6]);
+	        return;
+	    }
 	    if (HCI_EVENT_IS_COMMAND_COMPLETE(packet, hci_le_rand)){
 	        btstack_crypto_handle_random_data(&packet[6], 8);
 	        return;
@@ -134,3 +155,13 @@ void btstack_crypto_random_generate(btstack_crypto_random_t * request, uint8_t *
 	btstack_crypto_run();
 }
 
+void btstack_crypto_aes128_encrypt(btstack_crypto_aes128_t * request, const uint8_t * key, const uint8_t * plaintext, uint8_t * ciphertext, void (* callback)(void * arg), void * callback_arg){
+	request->btstack_crypto.context_callback.callback  = callback;
+	request->btstack_crypto.context_callback.context   = callback_arg;
+	request->btstack_crypto.operation         		   = BTSTACK_CRYPTO_AES128;
+	request->key 									   = key;
+	request->plaintext      					       = plaintext;
+	request->ciphertext 							   = ciphertext;
+	btstack_linked_list_add_tail(&btstack_crypto_operations, (btstack_linked_item_t*) request);
+	btstack_crypto_run();
+}

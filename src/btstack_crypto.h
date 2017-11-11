@@ -53,6 +53,7 @@ extern "C" {
 
 typedef enum {
 	BTSTACK_CRYPTO_RANDOM,
+	BTSTACK_CRYPTO_AES128,
 } btstack_crypto_operation_t;
 
 typedef struct {
@@ -66,6 +67,13 @@ typedef struct {
 	uint16_t   size;
 } btstack_crypto_random_t;
 
+typedef struct {
+	btstack_crypto_t btstack_crypto;
+	const uint8_t  * key;
+	const uint8_t  * plaintext;
+	uint8_t  * ciphertext;
+} btstack_crypto_aes128_t;
+
 /** 
  * Initialize crypto functions
  */
@@ -73,14 +81,26 @@ void btstack_crypto_init(void);
 
 /** 
  * Generate random data
+ * @param request
  * @param buffer for output
  * @param size of requested random data
  * @param callback
  * @param callback_arg
- * @param request
  * @note request needs to stay avaliable until callback (i.e. not provided on stack)
  */
 void btstack_crypto_random_generate(btstack_crypto_random_t * request, uint8_t * buffer, uint16_t size, void (* callback)(void * arg), void * callback_arg);
+
+/** 
+ * Encrypt plaintext using AES128
+ * @param request
+ * @param key (16 bytes)
+ * @param plaintext (16 bytes)
+ * @param ciphertext (16 bytes)
+ * @param callback
+ * @param callback_arg
+ * @note request needs to stay avaliable until callback (i.e. not provided on stack)
+ */
+void btstack_crypto_aes128_encrypt(btstack_crypto_aes128_t * request, const uint8_t * key, const uint8_t * plaintext, uint8_t * ciphertext, void (* callback)(void * arg), void * callback_arg);
 
 #if defined __cplusplus
 }
