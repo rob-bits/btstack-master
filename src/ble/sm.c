@@ -271,8 +271,10 @@ void btstack_aes128_calc(uint8_t * key, uint8_t * plaintext, uint8_t * result);
 
 // crypto 
 static btstack_crypto_random_t sm_crypto_random_request;
+static btstack_crypto_aes128_t sm_crypto_aes128_request;
 // temp storage for random data
 static uint8_t sm_random_data[8];
+static uint8_t sm_aes128_ciphertext[16];
 
 // to receive hci events
 static btstack_packet_callback_registration_t hci_event_callback_registration;
@@ -414,6 +416,7 @@ static void sm_handle_encryption_result(uint8_t * data);
 static void sm_handle_random_result_ph2_tk(void * arg);
 static void sm_handle_random_result_rau(void * arg);
 static void sm_handle_random_result_sc_get_random(void * arg);
+static void sm_handle_encryption_result_enc_a_and_c(void *arg);
 
 static void log_info_hex16(const char * name, uint16_t value){
     log_info("%-6s 0x%04x", name, value);
@@ -2520,11 +2523,12 @@ static void sm_run(void){
                 break;
             case SM_PH2_C1_GET_ENC_A:
                 // already busy?
-                if (sm_aes128_state == SM_AES128_ACTIVE) break;
+                // if (sm_aes128_state == SM_AES128_ACTIVE) break;
                 // calculate confirm using aes128 engine - step 1
                 sm_c1_t1(setup->sm_local_random, (uint8_t*) &setup->sm_m_preq, (uint8_t*) &setup->sm_s_pres, setup->sm_m_addr_type, setup->sm_s_addr_type, plaintext);
                 sm_next_responding_state(connection);
-                sm_aes128_start(setup->sm_tk, plaintext, connection);
+                btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, setup->sm_tk, plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_enc_a_and_c, connection);
+                // sm_aes128_start(setup->sm_tk, plaintext, connection);
                 break;
             case SM_PH2_CALC_STK:
                 // already busy?
@@ -2690,6 +2694,14 @@ static void sm_run(void){
     }
 }
 
+static void sm_handle_encryption_result_enc_a_and_c(void *arg){
+    log_info(".... sm_handle_encryption_result_enc_a_and_c");
+    sm_connection_t * connection = (sm_connection_t*) arg;
+    sm_c1_t3(sm_aes128_ciphertext, setup->sm_m_address, setup->sm_s_address, setup->sm_c1_t3_value);
+    sm_next_responding_state(connection);
+    sm_run();
+}
+
 // note: aes engine is ready as we just got the aes result
 static void sm_handle_encryption_result(uint8_t * data){
 
@@ -2755,14 +2767,13 @@ static void sm_handle_encryption_result(uint8_t * data){
     sm_connection_t * connection = (sm_connection_t*) sm_aes128_context;
     if (!connection) return;
     switch (connection->sm_engine_state){
-        case SM_PH2_C1_W4_ENC_A:
+        // case SM_PH2_C1_W4_ENC_A:
         case SM_PH2_C1_W4_ENC_C:
             {
             sm_key_t t2;
-            reverse_128(data, t2);
-            sm_c1_t3(t2, setup->sm_m_address, setup->sm_s_address, setup->sm_c1_t3_value);
+            reverse_128(data, sm_aes128_ciphertext);  
+            sm_handle_encryption_result_enc_a_and_c(connection);
             }
-            sm_next_responding_state(connection);
             return;
         case SM_PH2_C1_W4_ENC_B:
             reverse_128(data, setup->sm_local_confirm);
