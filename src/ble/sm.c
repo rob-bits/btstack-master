@@ -2912,86 +2912,184 @@ static int sm_generate_f_rng_mbedtls(void * context, unsigned char * buffer, siz
 #endif /* USE_MBEDTLS_FOR_ECDH */
 #endif /* ENABLE_LE_SECURE_CONNECTIONS */
 
+
+#if defined(ENABLE_LE_SECURE_CONNECTIONS) && defined(USE_SOFTWARE_ECDH_IMPLEMENTATION)
+static void sm_handle_random_result_ec_key_generation(void * arg){
+    UNUSED(arg);
+
+    // init pre-generated random data from sm_peer_q
+    setup->sm_passkey_bit = 0;
+
+    // generate EC key
+#ifdef USE_MICRO_ECC_FOR_ECDH
+
+#ifndef WICED_VERSION
+    log_info("set uECC RNG for initial key generation with 64 random bytes");
+    // micro-ecc from WICED SDK uses its wiced_crypto_get_random by default - no need to set it
+    uECC_set_rng(&sm_generate_f_rng);
+#endif /* WICED_VERSION */
+
+#if uECC_SUPPORTS_secp256r1
+    // standard version
+    uECC_make_key(ec_q, ec_d, uECC_secp256r1());
+
+    // disable RNG again, as returning no randmon data lets shared key generation fail
+    log_info("disable uECC RNG in standard version after key generation");
+    uECC_set_rng(NULL);
+#else
+    // static version
+    uECC_make_key(ec_q, ec_d);
+#endif
+#endif /* USE_MICRO_ECC_FOR_ECDH */
+
+#ifdef USE_MBEDTLS_FOR_ECDH
+    mbedtls_mpi d;
+    mbedtls_ecp_point P;
+    mbedtls_mpi_init(&d);
+    mbedtls_ecp_point_init(&P);
+    int res = mbedtls_ecp_gen_keypair(&mbedtls_ec_group, &d, &P, &sm_generate_f_rng_mbedtls, NULL);
+    log_info("gen keypair %x", res);
+    mbedtls_mpi_write_binary(&P.X, &ec_q[0],  32);
+    mbedtls_mpi_write_binary(&P.Y, &ec_q[32], 32);
+    mbedtls_mpi_write_binary(&d, ec_d, 32);
+    mbedtls_ecp_point_free(&P);
+    mbedtls_mpi_free(&d);
+#endif  /* USE_MBEDTLS_FOR_ECDH */
+
+    ec_key_generation_state = EC_KEY_GENERATION_DONE;
+    log_info("Elliptic curve: d");
+    log_info_hexdump(ec_d,32);
+    sm_log_ec_keypair();    
+}
+#endif /* ENABLE_LE_SECURE_CONNECTIONS && USE_SOFTWARE_ECDH_IMPLEMENTATION */
+
+// temp storage for random data
+static uint8_t sm_random_data[8];
+
+static void sm_handle_random_result_rau(void * arg){
+    UNUSED(arg);
+    // non-resolvable vs. resolvable
+    switch (gap_random_adress_type){
+        case GAP_RANDOM_ADDRESS_RESOLVABLE:
+            // resolvable: use random as prand and calc address hash
+            // "The two most significant bits of prand shall be equal to ‘0’ and ‘1"
+            memcpy(sm_random_address, sm_random_data, 3);
+            sm_random_address[0] &= 0x3f;
+            sm_random_address[0] |= 0x40;
+            rau_state = RAU_GET_ENC;
+            break;
+        case GAP_RANDOM_ADDRESS_NON_RESOLVABLE:
+        default:
+            // "The two most significant bits of the address shall be equal to ‘0’""
+            memcpy(sm_random_address, sm_random_data, 6);
+            sm_random_address[0] &= 0x3f;
+            rau_state = RAU_SET_ADDRESS;
+            break;
+    }
+}
+
+#ifdef ENABLE_LE_SECURE_CONNECTIONS
+static void sm_handle_random_result_sc_get_random_a(void * arg){
+    sm_connection_t * connection = (sm_connection_t*) arg;
+    memcpy(&setup->sm_local_nonce[0], data, 8);
+    connection->sm_engine_state = SM_SC_W2_GET_RANDOM_B;
+}
+
+static void sm_handle_random_result_sc_get_random_b(void * arg){
+    sm_connection_t * connection = (sm_connection_t*) arg;
+    memcpy(&setup->sm_local_nonce[8], data, 8);
+    // initiator & jw/nc -> send pairing random
+    if (connection->sm_role == 0 && sm_just_works_or_numeric_comparison(setup->sm_stk_generation_method)){
+        connection->sm_engine_state = SM_SC_SEND_PAIRING_RANDOM;
+        break;
+    } else {
+        connection->sm_engine_state = SM_SC_W2_CMAC_FOR_CONFIRMATION;
+    }
+}
+#endif
+
+static void sm_handle_random_result_ph2_tk(void * arg){
+    sm_connection_t * connection = (sm_connection_t*) arg;
+    sm_reset_tk();
+    uint32_t tk;
+    if (sm_fixed_legacy_pairing_passkey_in_display_role == 0xffffffff){
+        // map random to 0-999999 without speding much cycles on a modulus operation
+        tk = little_endian_read_32(sm_random_data,0);
+        tk = tk & 0xfffff;  // 1048575
+        if (tk >= 999999){
+            tk = tk - 999999;
+        }
+    } else {
+        // override with pre-defined passkey
+        tk = sm_fixed_legacy_pairing_passkey_in_display_role;
+    }
+    big_endian_store_32(setup->sm_tk, 12, tk);
+    if (IS_RESPONDER(connection->sm_role)){
+        connection->sm_engine_state = SM_RESPONDER_PH1_SEND_PAIRING_RESPONSE;
+    } else {
+        if (setup->sm_use_secure_connections){
+            connection->sm_engine_state = SM_SC_SEND_PUBLIC_KEY_COMMAND;
+        } else {
+            connection->sm_engine_state = SM_PH1_W4_USER_RESPONSE;
+            sm_trigger_user_response(connection);
+            // response_idle == nothing <--> sm_trigger_user_response() did not require response
+            if (setup->sm_user_response == SM_USER_RESPONSE_IDLE){
+                connection->sm_engine_state = SM_PH2_C1_GET_RANDOM_A;
+            }
+        }
+    }    
+}
+
+static void sm_handle_random_result_ph2_rand_a(void * arg){
+    sm_connection_t * connection = (sm_connection_t*) arg;
+    memcpy(&setup->sm_local_random[0], sm_random_data, 8); // random endinaness
+    connection->sm_engine_state = SM_PH2_C1_GET_RANDOM_B;
+}
+
+static void sm_handle_random_result_ph2_rand_b(void * arg){
+    sm_connection_t * connection = (sm_connection_t*) arg;
+    memcpy(&setup->sm_local_random[8], sm_random_data, 8); // random endinaness
+    connection->sm_engine_state = SM_PH2_C1_GET_ENC_A;
+}
+
+static void sm_handle_random_result_ph3_random(void * arg){
+    sm_connection_t * connection = (sm_connection_t*) arg;
+    reverse_64(sm_random_data, setup->sm_local_rand);
+    // no db for encryption size hack: encryption size is stored in lowest nibble of setup->sm_local_rand
+    setup->sm_local_rand[7] = (setup->sm_local_rand[7] & 0xf0) + (connection->sm_actual_encryption_key_size - 1);
+    // no db for authenticated flag hack: store flag in bit 4 of LSB
+    setup->sm_local_rand[7] = (setup->sm_local_rand[7] & 0xef) + (connection->sm_connection_authenticated << 4);
+    connection->sm_engine_state = SM_PH3_GET_DIV;
+}
+
+static void sm_handle_random_result_ph3_div(void * arg){
+    sm_connection_t * connection = (sm_connection_t*) arg;
+    // use 16 bit from random value as div
+    setup->sm_local_div = big_endian_read_16(sm_random_data, 0);
+    log_info_hex16("div", setup->sm_local_div);
+    connection->sm_engine_state = SM_PH3_Y_GET_ENC;
+}
+
 // note: random generator is ready. this doesn NOT imply that aes engine is unused!
 static void sm_handle_random_result(uint8_t * data){
 
 #if defined(ENABLE_LE_SECURE_CONNECTIONS) && defined(USE_SOFTWARE_ECDH_IMPLEMENTATION)
-
     if (ec_key_generation_state == EC_KEY_GENERATION_ACTIVE){
         int num_bytes = setup->sm_passkey_bit;
         memcpy(&setup->sm_peer_q[num_bytes], data, 8);
         num_bytes += 8;
         setup->sm_passkey_bit = num_bytes;
-
         if (num_bytes >= 64){
-
-            // init pre-generated random data from sm_peer_q
-            setup->sm_passkey_bit = 0;
-
-            // generate EC key
-#ifdef USE_MICRO_ECC_FOR_ECDH
-
-#ifndef WICED_VERSION
-            log_info("set uECC RNG for initial key generation with 64 random bytes");
-            // micro-ecc from WICED SDK uses its wiced_crypto_get_random by default - no need to set it
-            uECC_set_rng(&sm_generate_f_rng);
-#endif /* WICED_VERSION */
-
-#if uECC_SUPPORTS_secp256r1
-            // standard version
-            uECC_make_key(ec_q, ec_d, uECC_secp256r1());
-
-            // disable RNG again, as returning no randmon data lets shared key generation fail
-            log_info("disable uECC RNG in standard version after key generation");
-            uECC_set_rng(NULL);
-#else
-            // static version
-            uECC_make_key(ec_q, ec_d);
-#endif
-#endif /* USE_MICRO_ECC_FOR_ECDH */
-
-#ifdef USE_MBEDTLS_FOR_ECDH
-            mbedtls_mpi d;
-            mbedtls_ecp_point P;
-            mbedtls_mpi_init(&d);
-            mbedtls_ecp_point_init(&P);
-            int res = mbedtls_ecp_gen_keypair(&mbedtls_ec_group, &d, &P, &sm_generate_f_rng_mbedtls, NULL);
-            log_info("gen keypair %x", res);
-            mbedtls_mpi_write_binary(&P.X, &ec_q[0],  32);
-            mbedtls_mpi_write_binary(&P.Y, &ec_q[32], 32);
-            mbedtls_mpi_write_binary(&d, ec_d, 32);
-            mbedtls_ecp_point_free(&P);
-            mbedtls_mpi_free(&d);
-#endif  /* USE_MBEDTLS_FOR_ECDH */
-
-            ec_key_generation_state = EC_KEY_GENERATION_DONE;
-            log_info("Elliptic curve: d");
-            log_info_hexdump(ec_d,32);
-            sm_log_ec_keypair();
+            sm_handle_random_result_ec_key_generation(NULL);
         }
+        return;
     }
 #endif
 
     switch (rau_state){
         case RAU_W4_RANDOM:
-            // non-resolvable vs. resolvable
-            switch (gap_random_adress_type){
-                case GAP_RANDOM_ADDRESS_RESOLVABLE:
-                    // resolvable: use random as prand and calc address hash
-                    // "The two most significant bits of prand shall be equal to ‘0’ and ‘1"
-                    memcpy(sm_random_address, data, 3);
-                    sm_random_address[0] &= 0x3f;
-                    sm_random_address[0] |= 0x40;
-                    rau_state = RAU_GET_ENC;
-                    break;
-                case GAP_RANDOM_ADDRESS_NON_RESOLVABLE:
-                default:
-                    // "The two most significant bits of the address shall be equal to ‘0’""
-                    memcpy(sm_random_address, data, 6);
-                    sm_random_address[0] &= 0x3f;
-                    rau_state = RAU_SET_ADDRESS;
-                    break;
-            }
+            memcpy(sm_random_data, data, 8);
+            sm_handle_random_result_rau(NULL);
             return;
         default:
             break;
@@ -3000,78 +3098,31 @@ static void sm_handle_random_result(uint8_t * data){
     // retrieve sm_connection provided to sm_random_start
     sm_connection_t * connection = (sm_connection_t *) sm_random_context;
     if (!connection) return;
+    memcpy(sm_random_data, data, 8);
     switch (connection->sm_engine_state){
 #ifdef ENABLE_LE_SECURE_CONNECTIONS
         case SM_SC_W4_GET_RANDOM_A:
-            memcpy(&setup->sm_local_nonce[0], data, 8);
-            connection->sm_engine_state = SM_SC_W2_GET_RANDOM_B;
+            sm_handle_random_result_sc_get_random_a(connection);
             break;
         case SM_SC_W4_GET_RANDOM_B:
-            memcpy(&setup->sm_local_nonce[8], data, 8);
-            // initiator & jw/nc -> send pairing random
-            if (connection->sm_role == 0 && sm_just_works_or_numeric_comparison(setup->sm_stk_generation_method)){
-                connection->sm_engine_state = SM_SC_SEND_PAIRING_RANDOM;
-                break;
-            } else {
-                connection->sm_engine_state = SM_SC_W2_CMAC_FOR_CONFIRMATION;
-            }
+            sm_handle_random_result_sc_get_random_b(connection);
             break;
 #endif
-
         case SM_PH2_W4_RANDOM_TK:
-        {
-            sm_reset_tk();
-            uint32_t tk;
-            if (sm_fixed_passkey_in_display_role == 0xffffffff){
-                // map random to 0-999999 without speding much cycles on a modulus operation
-                tk = little_endian_read_32(data,0);
-                tk = tk & 0xfffff;  // 1048575
-                if (tk >= 999999){
-                    tk = tk - 999999;
-                }
-            } else {
-                // override with pre-defined passkey
-                tk = sm_fixed_passkey_in_display_role;
-            }
-            big_endian_store_32(setup->sm_tk, 12, tk);
-            if (IS_RESPONDER(connection->sm_role)){
-                connection->sm_engine_state = SM_RESPONDER_PH1_SEND_PAIRING_RESPONSE;
-            } else {
-                if (setup->sm_use_secure_connections){
-                    connection->sm_engine_state = SM_SC_SEND_PUBLIC_KEY_COMMAND;
-                } else {
-                    connection->sm_engine_state = SM_PH1_W4_USER_RESPONSE;
-                    sm_trigger_user_response(connection);
-                    // response_idle == nothing <--> sm_trigger_user_response() did not require response
-                    if (setup->sm_user_response == SM_USER_RESPONSE_IDLE){
-                        connection->sm_engine_state = SM_PH2_C1_GET_RANDOM_A;
-                    }
-                }
-            }
-            return;
-        }
+            sm_handle_random_result_ph2_tk(connection);
+            break;
         case SM_PH2_C1_W4_RANDOM_A:
-            memcpy(&setup->sm_local_random[0], data, 8); // random endinaness
-            connection->sm_engine_state = SM_PH2_C1_GET_RANDOM_B;
-            return;
+            sm_handle_random_result_ph2_rand_a(connection);
+            break;
         case SM_PH2_C1_W4_RANDOM_B:
-            memcpy(&setup->sm_local_random[8], data, 8); // random endinaness
-            connection->sm_engine_state = SM_PH2_C1_GET_ENC_A;
-            return;
+            sm_handle_random_result_ph2_rand_b(connection);
+            break;
         case SM_PH3_W4_RANDOM:
-            reverse_64(data, setup->sm_local_rand);
-            // no db for encryption size hack: encryption size is stored in lowest nibble of setup->sm_local_rand
-            setup->sm_local_rand[7] = (setup->sm_local_rand[7] & 0xf0) + (connection->sm_actual_encryption_key_size - 1);
-            // no db for authenticated flag hack: store flag in bit 4 of LSB
-            setup->sm_local_rand[7] = (setup->sm_local_rand[7] & 0xef) + (connection->sm_connection_authenticated << 4);
-            connection->sm_engine_state = SM_PH3_GET_DIV;
-            return;
+            sm_handle_random_result_ph3_random(connection);
+            break;
         case SM_PH3_W4_DIV:
-            // use 16 bit from random value as div
-            setup->sm_local_div = big_endian_read_16(data, 0);
-            log_info_hex16("div", setup->sm_local_div);
-            connection->sm_engine_state = SM_PH3_Y_GET_ENC;
-            return;
+            sm_handle_random_result_ph3_div(connection);
+            break;
         default:
             break;
     }
