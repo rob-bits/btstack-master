@@ -247,10 +247,6 @@ typedef enum {
 
     // Phase 2: Authenticating and Encrypting
 
-    // get random number for use as TK Passkey if we show it 
-    SM_PH2_GET_RANDOM_TK,
-    SM_PH2_W4_RANDOM_TK,
-
     // calculate confirm value for local side
     // state = 10
     SM_PH2_C1_GET_ENC_A,
@@ -276,8 +272,6 @@ typedef enum {
 
     // Phase 3: Transport Specific Key Distribution
     // calculate DHK, Y, EDIV, and LTK
-    SM_PH3_GET_RANDOM,
-    SM_PH3_W4_RANDOM,
     SM_PH3_GET_DIV,
     SM_PH3_W4_DIV,
     SM_PH3_Y_GET_ENC,

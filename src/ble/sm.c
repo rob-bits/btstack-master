@@ -2499,7 +2499,6 @@ static void sm_run(void){
                 break;
             }
 
-            case SM_PH3_GET_RANDOM:
             case SM_PH3_GET_DIV:
                 sm_next_responding_state(connection);
                 sm_random_start(connection);
@@ -3057,6 +3056,7 @@ static void sm_handle_random_result_ph3_random(void * arg){
     // no db for authenticated flag hack: store flag in bit 4 of LSB
     setup->sm_local_rand[7] = (setup->sm_local_rand[7] & 0xef) + (connection->sm_connection_authenticated << 4);
     connection->sm_engine_state = SM_PH3_GET_DIV;
+    sm_run();
 }
 
 static void sm_handle_random_result_ph3_div(void * arg){
@@ -3107,9 +3107,6 @@ static void sm_handle_random_result(uint8_t * data){
             sm_handle_random_result_sc_get_random_b(connection);
             break;
 #endif
-        case SM_PH3_W4_RANDOM:
-            sm_handle_random_result_ph3_random(connection);
-            break;
         case SM_PH3_W4_DIV:
             sm_handle_random_result_ph3_div(connection);
             break;
@@ -3319,14 +3316,14 @@ static void sm_event_packet_handler (uint8_t packet_type, uint16_t channel, uint
                                 if (setup->sm_use_secure_connections){
                                     sm_conn->sm_engine_state = SM_PH3_DISTRIBUTE_KEYS;
                                 } else {
-                                    sm_conn->sm_engine_state = SM_PH3_GET_RANDOM;
+                                    btstack_crypto_random_generate(&sm_crypto_random_request, sm_random_data, 8, &sm_handle_random_result_ph3_random, sm_conn);
                                 }
                             } else {
                                 // master
                                 if (sm_key_distribution_all_received(sm_conn)){
                                     // skip receiving keys as there are none
                                     sm_key_distribution_handle_all_received(sm_conn);
-                                    sm_conn->sm_engine_state = SM_PH3_GET_RANDOM;
+                                    btstack_crypto_random_generate(&sm_crypto_random_request, sm_random_data, 8, &sm_handle_random_result_ph3_random, sm_conn);
                                 } else {
                                     sm_conn->sm_engine_state = SM_PH3_RECEIVE_KEYS;
                                 }
@@ -3353,7 +3350,7 @@ static void sm_event_packet_handler (uint8_t packet_type, uint16_t channel, uint
                         case SM_PH2_W4_CONNECTION_ENCRYPTED:
                             if (IS_RESPONDER(sm_conn->sm_role)){
                                 // slave
-                                sm_conn->sm_engine_state = SM_PH3_GET_RANDOM;
+                                btstack_crypto_random_generate(&sm_crypto_random_request, sm_random_data, 8, &sm_handle_random_result_ph3_random, sm_conn);
                             } else {
                                 // master
                                 sm_conn->sm_engine_state = SM_PH3_RECEIVE_KEYS;
@@ -3882,7 +3879,7 @@ static void sm_pdu_handler(uint8_t packet_type, hci_con_handle_t con_handle, uin
                     if (setup->sm_use_secure_connections){
                         sm_conn->sm_engine_state = SM_PH3_DISTRIBUTE_KEYS;
                     } else {
-                        sm_conn->sm_engine_state = SM_PH3_GET_RANDOM;
+                        btstack_crypto_random_generate(&sm_crypto_random_request, sm_random_data, 8, &sm_handle_random_result_ph3_random, sm_conn);
                     }
                 }
             }
