@@ -413,6 +413,7 @@ static sm_connection_t * sm_get_connection_for_handle(hci_con_handle_t con_handl
 static inline int sm_calc_actual_encryption_key_size(int other);
 static int sm_validate_stk_generation_method(void);
 static void sm_handle_encryption_result(uint8_t * data);
+static void sm_handle_random_result_ph2_tk(void * arg);
 
 static void log_info_hex16(const char * name, uint16_t value){
     log_info("%-6s 0x%04x", name, value);
@@ -2148,7 +2149,7 @@ static void sm_run(void){
                     sm_timeout_start(sm_connection);
                     // generate random number first, if we need to show passkey
                     if (setup->sm_stk_generation_method == PK_INIT_INPUT){
-                        sm_connection->sm_engine_state = SM_PH2_GET_RANDOM_TK;
+                        btstack_crypto_random_generate(&sm_crypto_random_request, setup->sm_local_random, 8, &sm_handle_random_result_ph2_tk, sm_connection);
                         break;
                     }
                     sm_connection->sm_engine_state = SM_RESPONDER_PH1_SEND_PAIRING_RESPONSE;
@@ -2498,7 +2499,6 @@ static void sm_run(void){
                 break;
             }
 
-            case SM_PH2_GET_RANDOM_TK:
             case SM_PH3_GET_RANDOM:
             case SM_PH3_GET_DIV:
                 sm_next_responding_state(connection);
@@ -3011,7 +3011,6 @@ static void sm_handle_random_result_sc_get_random_b(void * arg){
 #endif
 
 static void sm_handle_random_result_ph2_random(void * arg){
-    printf("..... sm_handle_random_result_ph2_random \n");
     sm_connection_t * connection = (sm_connection_t*) arg;
     connection->sm_engine_state = SM_PH2_C1_GET_ENC_A;
     sm_run();
@@ -3046,9 +3045,9 @@ static void sm_handle_random_result_ph2_tk(void * arg){
                 btstack_crypto_random_generate(&sm_crypto_random_request, setup->sm_local_random, 16, &sm_handle_random_result_ph2_random, connection);
             }
         }
-    }    
+    }   
+    sm_run(); 
 }
-
 
 static void sm_handle_random_result_ph3_random(void * arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
@@ -3070,6 +3069,8 @@ static void sm_handle_random_result_ph3_div(void * arg){
 
 // note: random generator is ready. this doesn NOT imply that aes engine is unused!
 static void sm_handle_random_result(uint8_t * data){
+
+    log_info("..... sm_handle_random_result\n");
 
 #if defined(ENABLE_LE_SECURE_CONNECTIONS) && defined(USE_SOFTWARE_ECDH_IMPLEMENTATION)
     if (ec_key_generation_state == EC_KEY_GENERATION_ACTIVE){
@@ -3106,9 +3107,6 @@ static void sm_handle_random_result(uint8_t * data){
             sm_handle_random_result_sc_get_random_b(connection);
             break;
 #endif
-        case SM_PH2_W4_RANDOM_TK:
-            sm_handle_random_result_ph2_tk(connection);
-            break;
         case SM_PH3_W4_RANDOM:
             sm_handle_random_result_ph3_random(connection);
             break;
@@ -3576,7 +3574,7 @@ static void sm_pdu_handler(uint8_t packet_type, hci_con_handle_t con_handle, uin
 
             // generate random number first, if we need to show passkey
             if (setup->sm_stk_generation_method == PK_RESP_INPUT){
-                sm_conn->sm_engine_state = SM_PH2_GET_RANDOM_TK;
+                btstack_crypto_random_generate(&sm_crypto_random_request, setup->sm_local_random, 8, &sm_handle_random_result_ph2_tk, sm_conn);
                 break;
             }
 
