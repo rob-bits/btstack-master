@@ -251,12 +251,6 @@ typedef enum {
     SM_PH2_GET_RANDOM_TK,
     SM_PH2_W4_RANDOM_TK,
 
-    // get local random number for confirm c1
-    SM_PH2_C1_GET_RANDOM_A,
-    SM_PH2_C1_W4_RANDOM_A,
-    SM_PH2_C1_GET_RANDOM_B,
-    SM_PH2_C1_W4_RANDOM_B,
-
     // calculate confirm value for local side
     // state = 10
     SM_PH2_C1_GET_ENC_A,

@@ -273,6 +273,9 @@ void btstack_aes128_calc(uint8_t * key, uint8_t * plaintext, uint8_t * result);
 // random engine. store context (ususally sm_connection_t)
 static void * sm_random_context;
 
+// crypto 
+static btstack_crypto_random_t sm_crypto_random_request;
+
 // to receive hci events
 static btstack_packet_callback_registration_t hci_event_callback_registration;
 
@@ -2496,8 +2499,6 @@ static void sm_run(void){
             }
 
             case SM_PH2_GET_RANDOM_TK:
-            case SM_PH2_C1_GET_RANDOM_A:
-            case SM_PH2_C1_GET_RANDOM_B:
             case SM_PH3_GET_RANDOM:
             case SM_PH3_GET_DIV:
                 sm_next_responding_state(connection);
@@ -3009,6 +3010,13 @@ static void sm_handle_random_result_sc_get_random_b(void * arg){
 }
 #endif
 
+static void sm_handle_random_result_ph2_random(void * arg){
+    printf("..... sm_handle_random_result_ph2_random \n");
+    sm_connection_t * connection = (sm_connection_t*) arg;
+    connection->sm_engine_state = SM_PH2_C1_GET_ENC_A;
+    sm_run();
+}
+
 static void sm_handle_random_result_ph2_tk(void * arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
     sm_reset_tk();
@@ -3035,23 +3043,12 @@ static void sm_handle_random_result_ph2_tk(void * arg){
             sm_trigger_user_response(connection);
             // response_idle == nothing <--> sm_trigger_user_response() did not require response
             if (setup->sm_user_response == SM_USER_RESPONSE_IDLE){
-                connection->sm_engine_state = SM_PH2_C1_GET_RANDOM_A;
+                btstack_crypto_random_generate(&sm_crypto_random_request, setup->sm_local_random, 16, &sm_handle_random_result_ph2_random, connection);
             }
         }
     }    
 }
 
-static void sm_handle_random_result_ph2_rand_a(void * arg){
-    sm_connection_t * connection = (sm_connection_t*) arg;
-    memcpy(&setup->sm_local_random[0], sm_random_data, 8); // random endinaness
-    connection->sm_engine_state = SM_PH2_C1_GET_RANDOM_B;
-}
-
-static void sm_handle_random_result_ph2_rand_b(void * arg){
-    sm_connection_t * connection = (sm_connection_t*) arg;
-    memcpy(&setup->sm_local_random[8], sm_random_data, 8); // random endinaness
-    connection->sm_engine_state = SM_PH2_C1_GET_ENC_A;
-}
 
 static void sm_handle_random_result_ph3_random(void * arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
@@ -3111,12 +3108,6 @@ static void sm_handle_random_result(uint8_t * data){
 #endif
         case SM_PH2_W4_RANDOM_TK:
             sm_handle_random_result_ph2_tk(connection);
-            break;
-        case SM_PH2_C1_W4_RANDOM_A:
-            sm_handle_random_result_ph2_rand_a(connection);
-            break;
-        case SM_PH2_C1_W4_RANDOM_B:
-            sm_handle_random_result_ph2_rand_b(connection);
             break;
         case SM_PH3_W4_RANDOM:
             sm_handle_random_result_ph3_random(connection);
@@ -3608,7 +3599,7 @@ static void sm_pdu_handler(uint8_t packet_type, hci_con_handle_t con_handle, uin
             sm_trigger_user_response(sm_conn);
             // response_idle == nothing <--> sm_trigger_user_response() did not require response
             if (setup->sm_user_response == SM_USER_RESPONSE_IDLE){
-                sm_conn->sm_engine_state = SM_PH2_C1_GET_RANDOM_A;
+                btstack_crypto_random_generate(&sm_crypto_random_request, setup->sm_local_random, 16, &sm_handle_random_result_ph2_random, sm_conn);
             }
             break;
 
@@ -3829,7 +3820,7 @@ static void sm_pdu_handler(uint8_t packet_type, hci_con_handle_t con_handle, uin
             }
 
             // calculate and send local_confirm
-            sm_conn->sm_engine_state = SM_PH2_C1_GET_RANDOM_A;
+            btstack_crypto_random_generate(&sm_crypto_random_request, setup->sm_local_random, 16, &sm_handle_random_result_ph2_random, sm_conn);
             break;
 
         case SM_RESPONDER_PH2_W4_PAIRING_RANDOM:
@@ -4204,7 +4195,7 @@ void sm_just_works_confirm(hci_con_handle_t con_handle){
         if (setup->sm_use_secure_connections){
             sm_conn->sm_engine_state = SM_SC_SEND_PUBLIC_KEY_COMMAND;
         } else {
-            sm_conn->sm_engine_state = SM_PH2_C1_GET_RANDOM_A;
+            btstack_crypto_random_generate(&sm_crypto_random_request, setup->sm_local_random, 16, &sm_handle_random_result_ph2_random, sm_conn);
         }
     }
 
@@ -4229,7 +4220,7 @@ void sm_passkey_input(hci_con_handle_t con_handle, uint32_t passkey){
     big_endian_store_32(setup->sm_tk, 12, passkey);
     setup->sm_user_response = SM_USER_RESPONSE_PASSKEY;
     if (sm_conn->sm_engine_state == SM_PH1_W4_USER_RESPONSE){
-        sm_conn->sm_engine_state = SM_PH2_C1_GET_RANDOM_A;
+        btstack_crypto_random_generate(&sm_crypto_random_request, setup->sm_local_random, 16, &sm_handle_random_result_ph2_random, sm_conn);
     }
 #ifdef ENABLE_LE_SECURE_CONNECTIONS
     memcpy(setup->sm_ra, setup->sm_tk, 16);
