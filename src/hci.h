@@ -272,8 +272,6 @@ typedef enum {
 
     // Phase 3: Transport Specific Key Distribution
     // calculate DHK, Y, EDIV, and LTK
-    SM_PH3_GET_DIV,
-    SM_PH3_W4_DIV,
     SM_PH3_Y_GET_ENC,
     SM_PH3_Y_W4_ENC,
     SM_PH3_LTK_GET_ENC,
@@ -326,10 +324,6 @@ typedef enum {
     SM_SC_RECEIVED_LTK_REQUEST,
     SM_SC_SEND_PUBLIC_KEY_COMMAND,
     SM_SC_W4_PUBLIC_KEY_COMMAND,
-    SM_SC_W2_GET_RANDOM_A,
-    SM_SC_W4_GET_RANDOM_A,
-    SM_SC_W2_GET_RANDOM_B,
-    SM_SC_W4_GET_RANDOM_B,
     SM_SC_W2_CMAC_FOR_CONFIRMATION,
     SM_SC_W4_CMAC_FOR_CONFIRMATION,
     SM_SC_SEND_CONFIRMATION,

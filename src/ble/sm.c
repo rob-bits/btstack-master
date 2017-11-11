@@ -222,8 +222,6 @@ static derived_key_generation_t dkg_state;
 // random address update
 static random_address_update_t rau_state;
 static bd_addr_t sm_random_address;
-// temp storage for random data
-static uint8_t sm_random_data[8];
 
 // CMAC Calculation: General
 #ifdef ENABLE_CMAC_ENGINE
@@ -271,11 +269,10 @@ static btstack_timer_source_t aes128_timer;
 void btstack_aes128_calc(uint8_t * key, uint8_t * plaintext, uint8_t * result);
 #endif
 
-// random engine. store context (ususally sm_connection_t)
-static void * sm_random_context;
-
 // crypto 
 static btstack_crypto_random_t sm_crypto_random_request;
+// temp storage for random data
+static uint8_t sm_random_data[8];
 
 // to receive hci events
 static btstack_packet_callback_registration_t hci_event_callback_registration;
@@ -416,6 +413,7 @@ static int sm_validate_stk_generation_method(void);
 static void sm_handle_encryption_result(uint8_t * data);
 static void sm_handle_random_result_ph2_tk(void * arg);
 static void sm_handle_random_result_rau(void * arg);
+static void sm_handle_random_result_sc_get_random(void * arg);
 
 static void log_info_hex16(const char * name, uint16_t value){
     log_info("%-6s 0x%04x", name, value);
@@ -524,11 +522,6 @@ static void gap_random_address_update_stop(void){
     btstack_run_loop_remove_timer(&gap_random_address_update_timer);
 }
 
-
-static void sm_random_start(void * context){
-    sm_random_context = context;
-    hci_send_cmd(&hci_le_rand);
-}
 
 #ifdef HAVE_AES128
 static void aes128_completed(btstack_timer_source_t * ts){
@@ -1455,7 +1448,8 @@ static void sm_log_ec_keypair(void){
 
 static void sm_sc_start_calculating_local_confirm(sm_connection_t * sm_conn){
     if (sm_passkey_used(setup->sm_stk_generation_method)){
-        sm_conn->sm_engine_state = SM_SC_W2_GET_RANDOM_A;
+        // sm_conn->sm_engine_state = SM_SC_W2_GET_RANDOM_A;
+        btstack_crypto_random_generate(&sm_crypto_random_request, setup->sm_local_nonce, 8, &sm_handle_random_result_sc_get_random, sm_conn);
     } else {
         sm_conn->sm_engine_state = SM_SC_W2_CMAC_FOR_CONFIRMATION;
     }
@@ -2261,14 +2255,6 @@ static void sm_run(void){
 
             // responding state
 #ifdef ENABLE_LE_SECURE_CONNECTIONS
-            case SM_SC_W2_GET_RANDOM_A:
-                sm_random_start(connection);
-                connection->sm_engine_state = SM_SC_W4_GET_RANDOM_A;
-                break;
-            case SM_SC_W2_GET_RANDOM_B:
-                sm_random_start(connection);
-                connection->sm_engine_state = SM_SC_W4_GET_RANDOM_B;
-                break;
             case SM_SC_W2_CMAC_FOR_CONFIRMATION:
                 if (!sm_cmac_ready()) break;
                 connection->sm_engine_state = SM_SC_W4_CMAC_FOR_CONFIRMATION;
@@ -2905,9 +2891,6 @@ static int sm_generate_f_rng_mbedtls(void * context, unsigned char * buffer, siz
 
 #if defined(ENABLE_LE_SECURE_CONNECTIONS) && defined(USE_SOFTWARE_ECDH_IMPLEMENTATION)
 static void sm_handle_random_result_ec_key_generation(void * arg){
-
-    log_info("..... sm_handle_random_result_ec_key_generation\n");
-
     UNUSED(arg);
 
     // init pre-generated random data from sm_peer_q
@@ -2978,17 +2961,8 @@ static void sm_handle_random_result_rau(void * arg){
 }
 
 #ifdef ENABLE_LE_SECURE_CONNECTIONS
-static void sm_handle_random_result_sc_get_random_a(void * arg){
-    log_info(".... sm_handle_random_result_sc_get_random_a");
+static void sm_handle_random_result_sc_get_random(void * arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
-    memcpy(&setup->sm_local_nonce[0], sm_random_data, 8);
-    connection->sm_engine_state = SM_SC_W2_GET_RANDOM_B;
-}
-
-static void sm_handle_random_result_sc_get_random_b(void * arg){
-    log_info(".... sm_handle_random_result_sc_get_random_b");
-    sm_connection_t * connection = (sm_connection_t*) arg;
-    memcpy(&setup->sm_local_nonce[8], sm_random_data, 8);
     // initiator & jw/nc -> send pairing random
     if (connection->sm_role == 0 && sm_just_works_or_numeric_comparison(setup->sm_stk_generation_method)){
         connection->sm_engine_state = SM_SC_SEND_PAIRING_RANDOM;
@@ -3054,26 +3028,6 @@ static void sm_handle_random_result_ph3_random(void * arg){
     // no db for authenticated flag hack: store flag in bit 4 of LSB
     setup->sm_local_rand[7] = (setup->sm_local_rand[7] & 0xef) + (connection->sm_connection_authenticated << 4);
     btstack_crypto_random_generate(&sm_crypto_random_request, sm_random_data, 2, &sm_handle_random_result_ph3_div, connection);
-}
-
-// note: random generator is ready. this doesn NOT imply that aes engine is unused!
-static void sm_handle_random_result(uint8_t * data){
-    // retrieve sm_connection provided to sm_random_start
-    sm_connection_t * connection = (sm_connection_t *) sm_random_context;
-    if (!connection) return;
-    memcpy(sm_random_data, data, 8);
-    switch (connection->sm_engine_state){
-#ifdef ENABLE_LE_SECURE_CONNECTIONS
-        case SM_SC_W4_GET_RANDOM_A:
-            sm_handle_random_result_sc_get_random_a(connection);
-            break;
-        case SM_SC_W4_GET_RANDOM_B:
-            sm_handle_random_result_sc_get_random_b(connection);
-            break;
-#endif
-        default:
-            break;
-    }
 }
 
 static void sm_event_packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
@@ -3346,10 +3300,6 @@ static void sm_event_packet_handler (uint8_t packet_type, uint16_t channel, uint
 				case HCI_EVENT_COMMAND_COMPLETE:
                     if (HCI_EVENT_IS_COMMAND_COMPLETE(packet, hci_le_encrypt)){
                         sm_handle_encryption_result(&packet[6]);
-                        break;
-                    }
-                    if (HCI_EVENT_IS_COMMAND_COMPLETE(packet, hci_le_rand)){
-                        sm_handle_random_result(&packet[6]);
                         break;
                     }
                     if (HCI_EVENT_IS_COMMAND_COMPLETE(packet, hci_read_bd_addr)){
@@ -3698,7 +3648,8 @@ static void sm_pdu_handler(uint8_t packet_type, hci_con_handle_t con_handle, uin
             } else {
                 // initiator
                 if (sm_just_works_or_numeric_comparison(setup->sm_stk_generation_method)){
-                    sm_conn->sm_engine_state = SM_SC_W2_GET_RANDOM_A;
+                    // sm_conn->sm_engine_state = SM_SC_W2_GET_RANDOM_A;
+                    btstack_crypto_random_generate(&sm_crypto_random_request, setup->sm_local_nonce, 8, &sm_handle_random_result_sc_get_random, sm_conn);
                 } else {
                     sm_conn->sm_engine_state = SM_SC_SEND_PAIRING_RANDOM;
                 }
