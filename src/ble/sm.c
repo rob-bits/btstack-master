@@ -2521,13 +2521,13 @@ static void sm_run(void){
                 sm_next_responding_state(connection);
                 sm_aes128_start(setup->sm_tk, plaintext, connection);
                 break;
-            case SM_PH2_C1_GET_ENC_A:
+            // case SM_PH2_C1_GET_ENC_A:
                 // already busy?
                 // if (sm_aes128_state == SM_AES128_ACTIVE) break;
                 // calculate confirm using aes128 engine - step 1
-                sm_c1_t1(setup->sm_local_random, (uint8_t*) &setup->sm_m_preq, (uint8_t*) &setup->sm_s_pres, setup->sm_m_addr_type, setup->sm_s_addr_type, plaintext);
-                sm_next_responding_state(connection);
-                btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, setup->sm_tk, plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_enc_a_and_c, connection);
+                // sm_c1_t1(setup->sm_local_random, (uint8_t*) &setup->sm_m_preq, (uint8_t*) &setup->sm_s_pres, setup->sm_m_addr_type, setup->sm_s_addr_type, plaintext);
+                // sm_next_responding_state(connection);
+                // btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, setup->sm_tk, plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_enc_a_and_c, connection);
                 // sm_aes128_start(setup->sm_tk, plaintext, connection);
                 break;
             case SM_PH2_CALC_STK:
@@ -2694,8 +2694,20 @@ static void sm_run(void){
     }
 }
 
-static void sm_handle_encryption_result_enc_a_and_c(void *arg){
-    log_info(".... sm_handle_encryption_result_enc_a_and_c");
+static void sm_handle_encryption_result_enc_a(void *arg){
+    sm_connection_t * connection = (sm_connection_t*) arg;
+    sm_c1_t3(sm_aes128_ciphertext, setup->sm_m_address, setup->sm_s_address, setup->sm_c1_t3_value);
+    sm_next_responding_state(connection);
+    sm_run();
+}
+
+static void sm_handle_encryption_result_enc_b(void *arg){
+    sm_connection_t * connection = (sm_connection_t*) arg;
+    log_info_key("c1!", setup->sm_local_confirm);
+    connection->sm_engine_state = SM_PH2_C1_SEND_PAIRING_CONFIRM;
+}
+
+static void sm_handle_encryption_result_enc_c(void *arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
     sm_c1_t3(sm_aes128_ciphertext, setup->sm_m_address, setup->sm_s_address, setup->sm_c1_t3_value);
     sm_next_responding_state(connection);
@@ -2772,10 +2784,13 @@ static void sm_handle_encryption_result(uint8_t * data){
             {
             sm_key_t t2;
             reverse_128(data, sm_aes128_ciphertext);  
-            sm_handle_encryption_result_enc_a_and_c(connection);
+            sm_handle_encryption_result_enc_c(connection);
             }
             return;
         case SM_PH2_C1_W4_ENC_B:
+            reverse_128(data, setup->sm_local_confirm);
+            sm_handle_encryption_result_enc_b(connection);
+
             reverse_128(data, setup->sm_local_confirm);
             log_info_key("c1!", setup->sm_local_confirm);
             connection->sm_engine_state = SM_PH2_C1_SEND_PAIRING_CONFIRM;
@@ -2985,8 +3000,12 @@ static void sm_handle_random_result_sc_get_random(void * arg){
 
 static void sm_handle_random_result_ph2_random(void * arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
-    connection->sm_engine_state = SM_PH2_C1_GET_ENC_A;
-    sm_run();
+
+    // calculate confirm using aes128 engine - step 1
+    sm_key_t plaintext;
+    sm_c1_t1(setup->sm_local_random, (uint8_t*) &setup->sm_m_preq, (uint8_t*) &setup->sm_s_pres, setup->sm_m_addr_type, setup->sm_s_addr_type, plaintext);
+    connection->sm_engine_state = SM_PH2_C1_W4_ENC_A;
+    btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, setup->sm_tk, plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_enc_a, connection);
 }
 
 static void sm_handle_random_result_ph2_tk(void * arg){
