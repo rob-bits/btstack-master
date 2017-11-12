@@ -2709,6 +2709,69 @@ static void sm_handle_encryption_result_enc_stk(void *arg){
     sm_run();
 }
 
+static void sm_handle_encryption_result_enc_ph3_y(void *arg){
+    sm_connection_t * connection = (sm_connection_t*) arg;
+    setup->sm_local_y = big_endian_read_16(sm_aes128_ciphertext, 14);
+    log_info_hex16("y", setup->sm_local_y);
+    // PH3B3 - calculate EDIV
+    setup->sm_local_ediv = setup->sm_local_y ^ setup->sm_local_div;
+    log_info_hex16("ediv", setup->sm_local_ediv);
+    // PH3B4 - calculate LTK         - enc
+    // LTK = d1(ER, DIV, 0))
+    connection->sm_engine_state = SM_PH3_LTK_GET_ENC;
+}
+
+static void sm_handle_encryption_result_enc_ph4_y(void *arg){
+    sm_connection_t * connection = (sm_connection_t*) arg;
+    setup->sm_local_y = big_endian_read_16(sm_aes128_ciphertext, 14);
+    log_info_hex16("y", setup->sm_local_y);
+
+    // PH3B3 - calculate DIV
+    setup->sm_local_div = setup->sm_local_y ^ setup->sm_local_ediv;
+    log_info_hex16("ediv", setup->sm_local_ediv);
+    // PH3B4 - calculate LTK         - enc
+    // LTK = d1(ER, DIV, 0))
+    connection->sm_engine_state = SM_RESPONDER_PH4_LTK_GET_ENC;
+}
+
+static void sm_handle_encryption_result_enc_ph3_ltk(void *arg){
+    sm_connection_t * connection = (sm_connection_t*) arg;
+    log_info_key("ltk", setup->sm_ltk);
+    // calc CSRK next
+    connection->sm_engine_state = SM_PH3_CSRK_GET_ENC;
+}
+
+static void sm_handle_encryption_result_enc_csrk(void *arg){
+    sm_connection_t * connection = (sm_connection_t*) arg;
+    log_info_key("csrk", setup->sm_local_csrk);
+    if (setup->sm_key_distribution_send_set){
+        connection->sm_engine_state = SM_PH3_DISTRIBUTE_KEYS;
+    } else {
+        // no keys to send, just continue
+        if (IS_RESPONDER(connection->sm_role)){
+            // slave -> receive master keys
+            connection->sm_engine_state = SM_PH3_RECEIVE_KEYS;
+        } else {
+            if (setup->sm_use_secure_connections && (setup->sm_key_distribution_received_set & SM_KEYDIST_FLAG_IDENTITY_ADDRESS_INFORMATION)){
+                connection->sm_engine_state = SM_SC_W2_CALCULATE_H6_ILK;
+            } else {
+                // master -> all done
+                connection->sm_engine_state = SM_INITIATOR_CONNECTED;
+                sm_done_for_handle(connection->sm_handle);
+            }
+        }
+    }
+}
+
+#ifdef ENABLE_LE_PERIPHERAL
+static void sm_handle_encryption_result_enc_ph4_ltkk(void *arg){
+    sm_connection_t * connection = (sm_connection_t*) arg;
+    sm_truncate_key(setup->sm_ltk, connection->sm_actual_encryption_key_size);
+    log_info_key("ltk", setup->sm_ltk);
+    connection->sm_engine_state = SM_RESPONDER_PH4_SEND_LTK_REPLY;
+}
+#endif
+
 // note: aes engine is ready as we just got the aes result
 static void sm_handle_encryption_result(uint8_t * data){
 
@@ -2774,66 +2837,26 @@ static void sm_handle_encryption_result(uint8_t * data){
     sm_connection_t * connection = (sm_connection_t*) sm_aes128_context;
     if (!connection) return;
     switch (connection->sm_engine_state){
-        case SM_PH3_Y_W4_ENC:{
-            sm_key_t y128;
-            reverse_128(data, y128);
-            setup->sm_local_y = big_endian_read_16(y128, 14);
-            log_info_hex16("y", setup->sm_local_y);
-            // PH3B3 - calculate EDIV
-            setup->sm_local_ediv = setup->sm_local_y ^ setup->sm_local_div;
-            log_info_hex16("ediv", setup->sm_local_ediv);
-            // PH3B4 - calculate LTK         - enc
-            // LTK = d1(ER, DIV, 0))
-            connection->sm_engine_state = SM_PH3_LTK_GET_ENC;
+        case SM_PH3_Y_W4_ENC:
+            reverse_128(data, sm_aes128_ciphertext);
+            sm_handle_encryption_result_enc_ph3_y(connection);
             return;
-        }
-        case SM_RESPONDER_PH4_Y_W4_ENC:{
-            sm_key_t y128;
-            reverse_128(data, y128);
-            setup->sm_local_y = big_endian_read_16(y128, 14);
-            log_info_hex16("y", setup->sm_local_y);
-
-            // PH3B3 - calculate DIV
-            setup->sm_local_div = setup->sm_local_y ^ setup->sm_local_ediv;
-            log_info_hex16("ediv", setup->sm_local_ediv);
-            // PH3B4 - calculate LTK         - enc
-            // LTK = d1(ER, DIV, 0))
-            connection->sm_engine_state = SM_RESPONDER_PH4_LTK_GET_ENC;
+        case SM_RESPONDER_PH4_Y_W4_ENC:
+            reverse_128(data, sm_aes128_ciphertext);
+            sm_handle_encryption_result_enc_ph4_y(connection);
             return;
-        }
         case SM_PH3_LTK_W4_ENC:
             reverse_128(data, setup->sm_ltk);
-            log_info_key("ltk", setup->sm_ltk);
-            // calc CSRK next
-            connection->sm_engine_state = SM_PH3_CSRK_GET_ENC;
+            sm_handle_encryption_result_enc_ph3_ltk(connection);
             return;
         case SM_PH3_CSRK_W4_ENC:
             reverse_128(data, setup->sm_local_csrk);
-            log_info_key("csrk", setup->sm_local_csrk);
-            if (setup->sm_key_distribution_send_set){
-                connection->sm_engine_state = SM_PH3_DISTRIBUTE_KEYS;
-            } else {
-                // no keys to send, just continue
-                if (IS_RESPONDER(connection->sm_role)){
-                    // slave -> receive master keys
-                    connection->sm_engine_state = SM_PH3_RECEIVE_KEYS;
-                } else {
-                    if (setup->sm_use_secure_connections && (setup->sm_key_distribution_received_set & SM_KEYDIST_FLAG_IDENTITY_ADDRESS_INFORMATION)){
-                        connection->sm_engine_state = SM_SC_W2_CALCULATE_H6_ILK;
-                    } else {
-                        // master -> all done
-                        connection->sm_engine_state = SM_INITIATOR_CONNECTED;
-                        sm_done_for_handle(connection->sm_handle);
-                    }
-                }
-            }
+            sm_handle_encryption_result_enc_csrk(connection);
             return;
 #ifdef ENABLE_LE_PERIPHERAL
         case SM_RESPONDER_PH4_LTK_W4_ENC:
             reverse_128(data, setup->sm_ltk);
-            sm_truncate_key(setup->sm_ltk, connection->sm_actual_encryption_key_size);
-            log_info_key("ltk", setup->sm_ltk);
-            connection->sm_engine_state = SM_RESPONDER_PH4_SEND_LTK_REPLY;
+            sm_handle_encryption_result_enc_ph4_ltkk(connection);
             return;
 #endif
         default:
