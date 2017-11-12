@@ -419,6 +419,7 @@ static void sm_handle_random_result_sc_get_random(void * arg);
 static void sm_handle_encryption_result_enc_b(void *arg);
 static void sm_handle_encryption_result_enc_d(void * arg);
 static void sm_handle_encryption_result_enc_stk(void *arg);
+static void sm_handle_encryption_result_enc_ph3_ltk(void *arg);
 
 static void log_info_hex16(const char * name, uint16_t value){
     log_info("%-6s 0x%04x", name, value);
@@ -2484,13 +2485,23 @@ static void sm_run(void){
                 break;
             }
 
-            case SM_PH3_LTK_GET_ENC:
+            // case SM_PH3_LTK_GET_ENC:
+            //     // already busy?
+            //     if (sm_aes128_state == SM_AES128_IDLE) {
+            //         sm_key_t d_prime;
+            //         sm_d1_d_prime(setup->sm_local_div, 0, d_prime);
+            //         connection->sm_engine_state = SM_PH3_LTK_W4_ENC;
+            //         sm_aes128_start(sm_persistent_er, d_prime, connection);
+            //         return;
+            //     }
+            //     break;
+
             case SM_RESPONDER_PH4_LTK_GET_ENC:
                 // already busy?
                 if (sm_aes128_state == SM_AES128_IDLE) {
                     sm_key_t d_prime;
                     sm_d1_d_prime(setup->sm_local_div, 0, d_prime);
-                    sm_next_responding_state(connection);
+                    connection->sm_engine_state = SM_RESPONDER_PH4_LTK_W4_ENC;
                     sm_aes128_start(sm_persistent_er, d_prime, connection);
                     return;
                 }
@@ -2717,8 +2728,10 @@ static void sm_handle_encryption_result_enc_ph3_y(void *arg){
     log_info_hex16("ediv", setup->sm_local_ediv);
     // PH3B4 - calculate LTK         - enc
     // LTK = d1(ER, DIV, 0))
-    connection->sm_engine_state = SM_PH3_LTK_GET_ENC;
-    sm_run();
+    sm_key_t d_prime;
+    sm_d1_d_prime(setup->sm_local_div, 0, d_prime);
+    connection->sm_engine_state = SM_PH3_LTK_W4_ENC;
+    btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_er, d_prime, setup->sm_ltk, sm_handle_encryption_result_enc_ph3_ltk, connection);
 }
 
 static void sm_handle_encryption_result_enc_ph4_y(void *arg){
@@ -2739,6 +2752,7 @@ static void sm_handle_encryption_result_enc_ph3_ltk(void *arg){
     log_info_key("ltk", setup->sm_ltk);
     // calc CSRK next
     connection->sm_engine_state = SM_PH3_CSRK_GET_ENC;
+    sm_run();
 }
 
 static void sm_handle_encryption_result_enc_csrk(void *arg){
@@ -2764,7 +2778,7 @@ static void sm_handle_encryption_result_enc_csrk(void *arg){
 }
 
 #ifdef ENABLE_LE_PERIPHERAL
-static void sm_handle_encryption_result_enc_ph4_ltkk(void *arg){
+static void sm_handle_encryption_result_enc_ph4_ltk(void *arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
     sm_truncate_key(setup->sm_ltk, connection->sm_actual_encryption_key_size);
     log_info_key("ltk", setup->sm_ltk);
@@ -2841,10 +2855,6 @@ static void sm_handle_encryption_result(uint8_t * data){
             reverse_128(data, sm_aes128_ciphertext);
             sm_handle_encryption_result_enc_ph4_y(connection);
             return;
-        case SM_PH3_LTK_W4_ENC:
-            reverse_128(data, setup->sm_ltk);
-            sm_handle_encryption_result_enc_ph3_ltk(connection);
-            return;
         case SM_PH3_CSRK_W4_ENC:
             reverse_128(data, setup->sm_local_csrk);
             sm_handle_encryption_result_enc_csrk(connection);
@@ -2852,7 +2862,7 @@ static void sm_handle_encryption_result(uint8_t * data){
 #ifdef ENABLE_LE_PERIPHERAL
         case SM_RESPONDER_PH4_LTK_W4_ENC:
             reverse_128(data, setup->sm_ltk);
-            sm_handle_encryption_result_enc_ph4_ltkk(connection);
+            sm_handle_encryption_result_enc_ph4_ltk(connection);
             return;
 #endif
         default:
@@ -3017,8 +3027,6 @@ static void sm_handle_random_result_ph3_div(void * arg){
     // use 16 bit from random value as div
     setup->sm_local_div = big_endian_read_16(sm_random_data, 0);
     log_info_hex16("div", setup->sm_local_div);
-    // connection->sm_engine_state = SM_PH3_Y_GET_ENC;
-    // sm_run();
 
     // PH3B2 - calculate Y from      - enc
     // Y = dm(DHK, Rand)
