@@ -2506,15 +2506,15 @@ static void sm_run(void){
                     return;
                 }
                 break;
-            case SM_PH3_Y_GET_ENC:
-                // already busy?
-                if (sm_aes128_state == SM_AES128_ACTIVE) break;
-                // PH3B2 - calculate Y from      - enc
-                // Y = dm(DHK, Rand)
-                sm_dm_r_prime(setup->sm_local_rand, plaintext);
-                sm_next_responding_state(connection);
-                sm_aes128_start(sm_persistent_dhk, plaintext, connection);
-                return;
+            // case SM_PH3_Y_GET_ENC:
+            //     // already busy?
+            //     if (sm_aes128_state == SM_AES128_ACTIVE) break;
+            //     // PH3B2 - calculate Y from      - enc
+            //     // Y = dm(DHK, Rand)
+            //     sm_dm_r_prime(setup->sm_local_rand, plaintext);
+            //     sm_next_responding_state(connection);
+            //     sm_aes128_start(sm_persistent_dhk, plaintext, connection);
+            //     return;
             case SM_PH2_C1_SEND_PAIRING_CONFIRM: {
                 uint8_t buffer[17];
                 buffer[0] = SM_CODE_PAIRING_CONFIRM;
@@ -2691,7 +2691,6 @@ static void sm_handle_encryption_result_enc_d(void * arg){
     } else {
         sm_key_t plaintext;
         sm_s1_r_prime(setup->sm_peer_random, setup->sm_local_random, plaintext);
-        connection->sm_engine_state = SM_PH2_W4_STK;
         btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, setup->sm_tk, plaintext, setup->sm_ltk, sm_handle_encryption_result_enc_stk, connection);
     }
     sm_run();
@@ -2719,6 +2718,7 @@ static void sm_handle_encryption_result_enc_ph3_y(void *arg){
     // PH3B4 - calculate LTK         - enc
     // LTK = d1(ER, DIV, 0))
     connection->sm_engine_state = SM_PH3_LTK_GET_ENC;
+    sm_run();
 }
 
 static void sm_handle_encryption_result_enc_ph4_y(void *arg){
@@ -2837,10 +2837,6 @@ static void sm_handle_encryption_result(uint8_t * data){
     sm_connection_t * connection = (sm_connection_t*) sm_aes128_context;
     if (!connection) return;
     switch (connection->sm_engine_state){
-        case SM_PH3_Y_W4_ENC:
-            reverse_128(data, sm_aes128_ciphertext);
-            sm_handle_encryption_result_enc_ph3_y(connection);
-            return;
         case SM_RESPONDER_PH4_Y_W4_ENC:
             reverse_128(data, sm_aes128_ciphertext);
             sm_handle_encryption_result_enc_ph4_y(connection);
@@ -3021,8 +3017,15 @@ static void sm_handle_random_result_ph3_div(void * arg){
     // use 16 bit from random value as div
     setup->sm_local_div = big_endian_read_16(sm_random_data, 0);
     log_info_hex16("div", setup->sm_local_div);
-    connection->sm_engine_state = SM_PH3_Y_GET_ENC;
-    sm_run();
+    // connection->sm_engine_state = SM_PH3_Y_GET_ENC;
+    // sm_run();
+
+    // PH3B2 - calculate Y from      - enc
+    // Y = dm(DHK, Rand)
+    sm_key_t plaintext;
+    sm_dm_r_prime(setup->sm_local_rand, plaintext);
+    connection->sm_engine_state = SM_PH3_Y_W4_ENC;
+    btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_dhk, plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_enc_ph3_y, connection);
 }
 
 static void sm_handle_random_result_ph3_random(void * arg){
@@ -3140,7 +3143,6 @@ static void sm_event_packet_handler (uint8_t packet_type, uint16_t channel, uint
                                 } else {
                                     sm_s1_r_prime(setup->sm_peer_random, setup->sm_local_random, plaintext);
                                 }
-                                sm_conn->sm_engine_state = SM_PH2_W4_STK;
                                 btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, setup->sm_tk, plaintext, setup->sm_ltk, sm_handle_encryption_result_enc_stk, sm_conn);
                                 break;
                             }
