@@ -2483,7 +2483,6 @@ static void sm_run(void){
                 break;
             }
 
-            // case SM_PH2_C1_GET_ENC_B:
             case SM_PH2_C1_GET_ENC_D:
                 // already busy?
                 if (sm_aes128_state == SM_AES128_ACTIVE) break;
@@ -2512,24 +2511,6 @@ static void sm_run(void){
                     sm_aes128_start(sm_persistent_er, d_prime, connection);
                     return;
                 }
-                break;
-
-            case SM_PH2_C1_GET_ENC_C:
-                // already busy?
-                if (sm_aes128_state == SM_AES128_ACTIVE) break;
-                // calculate m_confirm using aes128 engine - step 1
-                sm_c1_t1(setup->sm_peer_random, (uint8_t*) &setup->sm_m_preq, (uint8_t*) &setup->sm_s_pres, setup->sm_m_addr_type, setup->sm_s_addr_type, plaintext);
-                sm_next_responding_state(connection);
-                sm_aes128_start(setup->sm_tk, plaintext, connection);
-                break;
-            // case SM_PH2_C1_GET_ENC_A:
-                // already busy?
-                // if (sm_aes128_state == SM_AES128_ACTIVE) break;
-                // calculate confirm using aes128 engine - step 1
-                // sm_c1_t1(setup->sm_local_random, (uint8_t*) &setup->sm_m_preq, (uint8_t*) &setup->sm_s_pres, setup->sm_m_addr_type, setup->sm_s_addr_type, plaintext);
-                // sm_next_responding_state(connection);
-                // btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, setup->sm_tk, plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_enc_a_and_c, connection);
-                // sm_aes128_start(setup->sm_tk, plaintext, connection);
                 break;
             case SM_PH2_CALC_STK:
                 // already busy?
@@ -2780,18 +2761,6 @@ static void sm_handle_encryption_result(uint8_t * data){
     sm_connection_t * connection = (sm_connection_t*) sm_aes128_context;
     if (!connection) return;
     switch (connection->sm_engine_state){
-        // case SM_PH2_C1_W4_ENC_A:
-        case SM_PH2_C1_W4_ENC_C:
-            {
-            sm_key_t t2;
-            reverse_128(data, sm_aes128_ciphertext);  
-            sm_handle_encryption_result_enc_c(connection);
-            }
-            return;
-        // case SM_PH2_C1_W4_ENC_B:
-        //     reverse_128(data, setup->sm_local_confirm);
-        //     sm_handle_encryption_result_enc_b(connection);
-        //     return;
         case SM_PH2_C1_W4_ENC_D:
             {
             sm_key_t peer_confirm_test;
@@ -3451,6 +3420,7 @@ static void sm_pdu_handler(uint8_t packet_type, hci_con_handle_t con_handle, uin
     log_debug("sm_pdu_handler: state %u, pdu 0x%02x", sm_conn->sm_engine_state, sm_pdu_code);
 
     int err;
+    sm_key_t plaintext;
     UNUSED(err);
 
     if (sm_pdu_code == SM_CODE_KEYPRESS_NOTIFICATION){
@@ -3558,7 +3528,13 @@ static void sm_pdu_handler(uint8_t packet_type, hci_con_handle_t con_handle, uin
 
             // received random value
             reverse_128(&packet[1], setup->sm_peer_random);
-            sm_conn->sm_engine_state = SM_PH2_C1_GET_ENC_C;
+            sm_conn->sm_engine_state = SM_PH2_C1_W4_ENC_C;
+
+            // calculate m_confirm using aes128 engine - step 1
+            sm_c1_t1(setup->sm_peer_random, (uint8_t*) &setup->sm_m_preq, (uint8_t*) &setup->sm_s_pres, setup->sm_m_addr_type, setup->sm_s_addr_type, plaintext);
+            //     sm_next_responding_state(connection);
+            //     sm_aes128_start(setup->sm_tk, plaintext, connection);
+            btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, setup->sm_tk, plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_enc_c, sm_conn);
             break;
 #endif
 
@@ -3768,7 +3744,10 @@ static void sm_pdu_handler(uint8_t packet_type, hci_con_handle_t con_handle, uin
 
             // received random value
             reverse_128(&packet[1], setup->sm_peer_random);
-            sm_conn->sm_engine_state = SM_PH2_C1_GET_ENC_C;
+            sm_conn->sm_engine_state = SM_PH2_C1_W4_ENC_C;
+            // calculate m_confirm using aes128 engine - step 1
+            sm_c1_t1(setup->sm_peer_random, (uint8_t*) &setup->sm_m_preq, (uint8_t*) &setup->sm_s_pres, setup->sm_m_addr_type, setup->sm_s_addr_type, plaintext);
+            btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, setup->sm_tk, plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_enc_c, sm_conn);
             break;
 #endif
 
