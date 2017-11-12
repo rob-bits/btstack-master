@@ -70,7 +70,6 @@ static void btstack_crypto_run(void){
 	switch (btstack_crypto->operation){
 		case BTSTACK_CRYPTO_RANDOM:
 			btstack_crypto_wait_for_hci_result = 1;
-			log_info("Generate random data");
 		    hci_send_cmd(&hci_le_rand);
 		    break;
 		case BTSTACK_CRYPTO_AES128:
@@ -94,7 +93,6 @@ static void btstack_crypto_handle_random_data(const uint8_t * data, uint16_t len
 	memcpy(btstack_crypto_random->buffer, data, bytes_to_copy);
 	btstack_crypto_random->buffer += bytes_to_copy;
 	btstack_crypto_random->size   -= bytes_to_copy;
-	log_info("Got random data, %u to go", btstack_crypto_random->size );
 	// data processed, more?
 	if (!btstack_crypto_random->size) {
 		// done
