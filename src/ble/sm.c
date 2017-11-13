@@ -274,6 +274,8 @@ static btstack_crypto_random_t sm_crypto_random_request;
 static btstack_crypto_aes128_t sm_crypto_aes128_request;
 // temp storage for random data
 static uint8_t sm_random_data[8];
+// static uint8_t sm_aes128_key[16];
+static uint8_t sm_aes128_plaintext[16];
 static uint8_t sm_aes128_ciphertext[16];
 
 // to receive hci events
@@ -424,6 +426,8 @@ static void sm_handle_encryption_result_enc_csrk(void *arg);
 static void sm_handle_encryption_result_enc_ph4_y(void *arg);
 static void sm_handle_encryption_result_enc_ph4_ltk(void *arg);
 static void sm_handle_encryption_result_address_resolution(void *arg);
+static void sm_handle_encryption_result_dkg_irk(void *arg);
+static void sm_handle_encryption_result_dkg_dhk(void *arg);
 
 static void log_info_hex16(const char * name, uint16_t value){
     log_info("%-6s 0x%04x", name, value);
@@ -926,14 +930,11 @@ int sm_address_resolution_lookup(uint8_t address_type, bd_addr_t address){
 }
 
 // while x_state++ for an enum is possible in C, it isn't in C++. we use this helpers to avoid compile errors for now
-static inline void dkg_next_state(void){
-    dkg_state = (derived_key_generation_t) (((int)dkg_state) + 1);
-}
 static inline void rau_next_state(void){
     rau_state = (random_address_update_t) (((int)rau_state) + 1);
 }
 
-// CMAC calculation using AES Engine
+// CMAC calculation using AES Engineq
 #ifdef ENABLE_CMAC_ENGINE
 
 static inline void sm_cmac_next_state(void){
@@ -1945,22 +1946,24 @@ static void sm_run(void){
         case DKG_CALC_IRK:
             // already busy?
             if (sm_aes128_state == SM_AES128_IDLE) {
+                log_info("DKG_CALC_IRK started");
+                sm_aes128_state = SM_AES128_ACTIVE;
                 // IRK = d1(IR, 1, 0)
-                sm_key_t d1_prime;
-                sm_d1_d_prime(1, 0, d1_prime);  // plaintext
-                dkg_next_state();
-                sm_aes128_start(sm_persistent_ir, d1_prime, NULL);
+                sm_d1_d_prime(1, 0, sm_aes128_plaintext);  // plaintext = d1 prime
+                dkg_state = DKG_W4_IRK;
+                btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_ir, sm_aes128_plaintext, sm_persistent_irk, sm_handle_encryption_result_dkg_irk, NULL);
                 return;
             }
             break;
         case DKG_CALC_DHK:
             // already busy?
             if (sm_aes128_state == SM_AES128_IDLE) {
+                log_info("DKG_CALC_DHK started");
+                sm_aes128_state = SM_AES128_ACTIVE;
                 // DHK = d1(IR, 3, 0)
-                sm_key_t d1_prime;
-                sm_d1_d_prime(3, 0, d1_prime);  // plaintext
-                dkg_next_state();
-                sm_aes128_start(sm_persistent_ir, d1_prime, NULL);
+                sm_d1_d_prime(3, 0, sm_aes128_plaintext);  // plaintext = d1 prime
+                dkg_state = DKG_W4_DHK;
+                btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_ir, sm_aes128_plaintext, sm_persistent_dhk, sm_handle_encryption_result_dkg_dhk, NULL);
                 return;
             }
             break;
@@ -1981,6 +1984,7 @@ static void sm_run(void){
         case RAU_GET_ENC:
             // already busy?
             if (sm_aes128_state == SM_AES128_IDLE) {
+                log_info("RAU_GET_ENC started");
                 sm_key_t r_prime;
                 sm_ah_r_prime(sm_random_address, r_prime);
                 rau_next_state();
@@ -2765,14 +2769,16 @@ static void sm_handle_encryption_result_address_resolution(void *arg){
 static void sm_handle_encryption_result_dkg_irk(void *arg){
     UNUSED(arg);
     log_info_key("irk", sm_persistent_irk);
-    dkg_next_state();
+    dkg_state = DKG_CALC_DHK;
+    sm_aes128_state = SM_AES128_IDLE;
     sm_run();
 }
 
 static void sm_handle_encryption_result_dkg_dhk(void *arg){
     UNUSED(arg);
     log_info_key("dhk", sm_persistent_dhk);
-    dkg_next_state();
+    dkg_state = DKG_READY;
+    sm_aes128_state = SM_AES128_IDLE;
     // SM Init Finished
     sm_run();
 }
@@ -2794,23 +2800,9 @@ static void sm_handle_encryption_result_cmac(void *arg){
 // note: aes engine is ready as we just got the aes result
 static void sm_handle_encryption_result(uint8_t * data){
 
-    sm_aes128_state = SM_AES128_IDLE;
-
-    switch (dkg_state){
-        case DKG_W4_IRK:
-            reverse_128(data, sm_persistent_irk);
-            sm_handle_encryption_result_dkg_irk(NULL);
-            return;
-        case DKG_W4_DHK:
-            reverse_128(data, sm_persistent_dhk);
-            sm_handle_encryption_result_dkg_dhk(NULL);
-            return;
-        default:
-            break;
-    }
-
     switch (rau_state){
         case RAU_W4_ENC:
+            sm_aes128_state = SM_AES128_IDLE;
             reverse_128(data, sm_aes128_ciphertext);
             sm_handle_encryption_result_rau(NULL);
             return;
@@ -2823,6 +2815,7 @@ static void sm_handle_encryption_result(uint8_t * data){
         case CMAC_W4_SUBKEYS:
         case CMAC_W4_MI:
         case CMAC_W4_MLAST:
+            sm_aes128_state = SM_AES128_IDLE;
             reverse_128(data, sm_aes128_ciphertext);
             sm_handle_encryption_result_cmac(NULL);
             return;
