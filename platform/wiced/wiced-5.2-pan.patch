@@ -45,7 +45,7 @@ index b56e9e8..83130d7 100755
  
  extern wiced_result_t  lwip_to_wiced_result[];
 diff --git a/WICED/network/LwIP/WWD/wwd_network.c b/WICED/network/LwIP/WWD/wwd_network.c
-index 3480a0d..5a59517 100755
+index 3480a0d..7bcbbc5 100755
 --- a/WICED/network/LwIP/WWD/wwd_network.c
 +++ b/WICED/network/LwIP/WWD/wwd_network.c
 @@ -51,6 +51,9 @@
@@ -97,42 +97,49 @@ index 3480a0d..5a59517 100755
  
      /* Set Maximum Transfer Unit */
      netif->mtu = (u16_t) WICED_PAYLOAD_MTU;
-@@ -192,7 +209,14 @@ static err_t low_level_output( struct netif *netif, /*@only@*/ struct pbuf *p )
+@@ -192,7 +209,18 @@ static err_t low_level_output( struct netif *netif, /*@only@*/ struct pbuf *p )
          pbuf_ref( p );
  
          LWIP_ASSERT( "No chained buffers", ( ( p->next == NULL ) && ( ( p->tot_len == p->len ) ) ) );
 -        wwd_network_send_ethernet_data( p, (wwd_interface_t) netif->state );
 +
 +        // BK start
++#ifdef WICED_USE_ETHERNET_INTERFACE
 +        if ( (wiced_interface_t) (int) netif->state  == WICED_ETHERNET_INTERFACE ){
 +            platform_ethernet_send_data( p );
-+        } else {
++        }
++        else 
++#endif
++        {
 +            wwd_network_send_ethernet_data( p, (wwd_interface_t) (int) netif->state );
 +        }
 +        // BK end
  
          LINK_STATS_INC( link.xmit );
  
-@@ -324,8 +348,16 @@ err_t ethernetif_init( /*@partial@*/ struct netif *netif )
+@@ -324,8 +352,19 @@ err_t ethernetif_init( /*@partial@*/ struct netif *netif )
       */
      NETIF_INIT_SNMP(netif, snmp_ifType_ethernet_csmacd, LINK_SPEED_OF_YOUR_NETIF_IN_BPS);
  
 -    netif->name[0] = IFNAME0;
 -    netif->name[1] = IFNAME1;
 +    // BK start
-+    if ((wwd_interface_t) netif->state < WWD_ETHERNET_INTERFACE){
-+        netif->name[0] = IFNAME0;
-+        netif->name[1] = IFNAME1;
-+    } else {
++#ifdef WICED_USE_ETHERNET_INTERFACE
++    if ((wwd_interface_t) netif->state == WWD_ETHERNET_INTERFACE){
 +        // Bluetooth PAN uses 'bt'
 +        netif->name[0] = 'b';
 +        netif->name[1] = 't';
++    }
++#endif
++    {
++        netif->name[0] = IFNAME0;
++        netif->name[1] = IFNAME1;
 +    }
 +    // BK end
  
      /* We directly use etharp_output() here to save a function call.
       * You can instead declare your own function an call etharp_output()
-@@ -356,25 +388,30 @@ static err_t lwip_igmp_mac_filter(struct netif *netif,
+@@ -356,25 +395,30 @@ static err_t lwip_igmp_mac_filter(struct netif *netif,
      UNUSED_PARAMETER(netif);
      /*@+noeffect@*/
  
@@ -141,8 +148,15 @@ index 3480a0d..5a59517 100755
 -        case IGMP_ADD_MAC_FILTER:
 -            if ( wwd_wifi_register_multicast_address( &mac ) != WWD_SUCCESS )
 -            {
+-                return ERR_VAL;
+-            }
+-            break;
+-
+-        case IGMP_DEL_MAC_FILTER:
+-            if ( wwd_wifi_unregister_multicast_address( &mac ) != WWD_SUCCESS )
+-            {
 +    // BK start
-+    if ((wwd_interface_t) netif->state != WWD_ETHERNET_INTERFACE){
++    if ((wwd_interface_t) netif->state < WWD_ETHERNET_INTERFACE){
 +
 +        switch ( action )
 +        {
@@ -162,13 +176,6 @@ index 3480a0d..5a59517 100755
 +
 +            default:
                  return ERR_VAL;
--            }
--            break;
--
--        case IGMP_DEL_MAC_FILTER:
--            if ( wwd_wifi_unregister_multicast_address( &mac ) != WWD_SUCCESS )
--            {
--                return ERR_VAL;
 -            }
 -            break;
 -
