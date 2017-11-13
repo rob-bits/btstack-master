@@ -249,14 +249,14 @@ typedef enum {
 
     // calculate confirm value for local side
     // state = 10
-    // SM_PH2_C1_GET_ENC_A,
-    // SM_PH2_C1_W4_ENC_A,
+    SM_PH2_C1_GET_ENC_A,
+    SM_PH2_C1_W4_ENC_A,
     // SM_PH2_C1_GET_ENC_B,
     // SM_PH2_C1_W4_ENC_B,
 
     // calculate confirm value for remote side
-    // SM_PH2_C1_GET_ENC_C,
-    // SM_PH2_C1_W4_ENC_C,
+    SM_PH2_C1_GET_ENC_C,
+    SM_PH2_C1_W4_ENC_C,
     // SM_PH2_C1_GET_ENC_D,
     // SM_PH2_C1_W4_ENC_D,
 
@@ -265,15 +265,15 @@ typedef enum {
 
     // calc STK
     // state = 20
-    // SM_PH2_CALC_STK,
-    // SM_PH2_W4_STK,
+    SM_PH2_CALC_STK,
+    SM_PH2_W4_STK,
 
     SM_PH2_W4_CONNECTION_ENCRYPTED,
 
     // Phase 3: Transport Specific Key Distribution
     // calculate DHK, Y, EDIV, and LTK
-    // SM_PH3_Y_GET_ENC,
-    // SM_PH3_Y_W4_ENC,
+    SM_PH3_Y_GET_ENC,
+    SM_PH3_Y_W4_ENC,
     // SM_PH3_LTK_GET_ENC,
     // state = 30
     // SM_PH3_LTK_W4_ENC,
@@ -301,8 +301,8 @@ typedef enum {
 
     // Phase 4: re-establish previously distributed LTK
     // state == 46
-    // SM_RESPONDER_PH4_Y_GET_ENC,
-    // SM_RESPONDER_PH4_Y_W4_ENC,
+    SM_RESPONDER_PH4_Y_GET_ENC,
+    SM_RESPONDER_PH4_Y_W4_ENC,
     // SM_RESPONDER_PH4_LTK_GET_ENC,
     // SM_RESPONDER_PH4_LTK_W4_ENC,
     SM_RESPONDER_PH4_SEND_LTK_REPLY,

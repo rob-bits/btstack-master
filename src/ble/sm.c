@@ -413,20 +413,23 @@ static sm_connection_t * sm_get_connection_for_handle(hci_con_handle_t con_handl
 static inline int sm_calc_actual_encryption_key_size(int other);
 static int sm_validate_stk_generation_method(void);
 static void sm_handle_encryption_result(uint8_t * data);
+static void sm_handle_encryption_result_address_resolution(void *arg);
+static void sm_handle_encryption_result_dkg_dhk(void *arg);
+static void sm_handle_encryption_result_dkg_irk(void *arg);
+static void sm_handle_encryption_result_enc_a(void *arg);
+static void sm_handle_encryption_result_enc_b(void *arg);
+static void sm_handle_encryption_result_enc_c(void *arg);
+static void sm_handle_encryption_result_enc_csrk(void *arg);
+static void sm_handle_encryption_result_enc_d(void * arg);
+static void sm_handle_encryption_result_enc_ph3_ltk(void *arg);
+static void sm_handle_encryption_result_enc_ph3_y(void *arg);
+static void sm_handle_encryption_result_enc_ph4_ltk(void *arg);
+static void sm_handle_encryption_result_enc_ph4_y(void *arg);
+static void sm_handle_encryption_result_enc_stk(void *arg);
+static void sm_handle_encryption_result_rau(void *arg);
 static void sm_handle_random_result_ph2_tk(void * arg);
 static void sm_handle_random_result_rau(void * arg);
 static void sm_handle_random_result_sc_get_random(void * arg);
-static void sm_handle_encryption_result_enc_b(void *arg);
-static void sm_handle_encryption_result_enc_d(void * arg);
-static void sm_handle_encryption_result_enc_stk(void *arg);
-static void sm_handle_encryption_result_enc_ph3_ltk(void *arg);
-static void sm_handle_encryption_result_enc_csrk(void *arg);
-static void sm_handle_encryption_result_enc_ph4_y(void *arg);
-static void sm_handle_encryption_result_enc_ph4_ltk(void *arg);
-static void sm_handle_encryption_result_address_resolution(void *arg);
-static void sm_handle_encryption_result_dkg_irk(void *arg);
-static void sm_handle_encryption_result_dkg_dhk(void *arg);
-static void sm_handle_encryption_result_rau(void *arg);
 
 static void log_info_hex16(const char * name, uint16_t value){
     log_info("%-6s 0x%04x", name, value);
@@ -1911,13 +1914,8 @@ static void sm_start_calculating_ltk_from_ediv_and_rand(sm_connection_t * sm_con
     sm_connection->sm_connection_authenticated = (setup->sm_local_rand[7] & 0x10) >> 4;
     log_info("sm: received ltk request with key size %u, authenticated %u",
             sm_connection->sm_actual_encryption_key_size, sm_connection->sm_connection_authenticated);
-    // sm_connection->sm_engine_state = SM_RESPONDER_PH4_Y_GET_ENC;
-    log_info("LTK Request: recalculating with ediv 0x%04x", setup->sm_local_ediv);
-    // Y = dm(DHK, Rand)
-    sm_key_t plaintext;
-    sm_dm_r_prime(setup->sm_local_rand, plaintext);
-    btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_dhk, plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_enc_ph4_y, sm_connection);
-    return;
+    sm_connection->sm_engine_state = SM_RESPONDER_PH4_Y_GET_ENC;
+    sm_run();
 }
 #endif
 
@@ -1941,9 +1939,9 @@ static void sm_run(void){
             // already busy?
             if (sm_aes128_state == SM_AES128_IDLE) {
                 log_info("DKG_CALC_IRK started");
-                sm_aes128_state = SM_AES128_ACTIVE;
                 // IRK = d1(IR, 1, 0)
                 sm_d1_d_prime(1, 0, sm_aes128_plaintext);  // plaintext = d1 prime
+                sm_aes128_state = SM_AES128_ACTIVE;
                 btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_ir, sm_aes128_plaintext, sm_persistent_irk, sm_handle_encryption_result_dkg_irk, NULL);
                 return;
             }
@@ -1952,9 +1950,9 @@ static void sm_run(void){
             // already busy?
             if (sm_aes128_state == SM_AES128_IDLE) {
                 log_info("DKG_CALC_DHK started");
-                sm_aes128_state = SM_AES128_ACTIVE;
                 // DHK = d1(IR, 3, 0)
                 sm_d1_d_prime(3, 0, sm_aes128_plaintext);  // plaintext = d1 prime
+                sm_aes128_state = SM_AES128_ACTIVE;
                 btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_ir, sm_aes128_plaintext, sm_persistent_dhk, sm_handle_encryption_result_dkg_dhk, NULL);
                 return;
             }
@@ -1977,6 +1975,7 @@ static void sm_run(void){
             // already busy?
             if (sm_aes128_state == SM_AES128_IDLE) {
                 sm_ah_r_prime(sm_random_address, sm_aes128_plaintext);
+                sm_aes128_state = SM_AES128_ACTIVE;
                 btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_irk, sm_aes128_plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_rau, NULL);
                 return;
             }
@@ -2060,6 +2059,7 @@ static void sm_run(void){
             sm_key_t r_prime;
             sm_ah_r_prime(sm_address_resolution_address, r_prime);
             sm_address_resolution_ah_calculation_active = 1;
+            sm_aes128_state = SM_AES128_ACTIVE;
             btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, irk, r_prime, sm_aes128_ciphertext, sm_handle_encryption_result_address_resolution, NULL);
             return;
         }
@@ -2483,6 +2483,52 @@ static void sm_run(void){
                 sm_timeout_reset(connection);
                 break;
             }
+
+            case SM_PH2_C1_GET_ENC_A:
+                // already busy?
+                if (sm_aes128_state == SM_AES128_ACTIVE) break;
+                // calculate confirm using aes128 engine - step 1
+                sm_c1_t1(setup->sm_local_random, (uint8_t*) &setup->sm_m_preq, (uint8_t*) &setup->sm_s_pres, setup->sm_m_addr_type, setup->sm_s_addr_type, sm_aes128_plaintext);
+                connection->sm_engine_state = SM_PH2_C1_W4_ENC_A;
+                sm_aes128_state = SM_AES128_ACTIVE;
+                btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, setup->sm_tk, sm_aes128_plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_enc_a, connection);
+                break;
+
+            case SM_PH2_C1_GET_ENC_C:
+                // already busy?
+                if (sm_aes128_state == SM_AES128_ACTIVE) break;
+                // calculate m_confirm using aes128 engine - step 1
+                sm_c1_t1(setup->sm_peer_random, (uint8_t*) &setup->sm_m_preq, (uint8_t*) &setup->sm_s_pres, setup->sm_m_addr_type, setup->sm_s_addr_type, sm_aes128_plaintext);
+                connection->sm_engine_state = SM_PH2_C1_W4_ENC_C;
+                sm_aes128_state = SM_AES128_ACTIVE;
+                btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, setup->sm_tk, sm_aes128_plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_enc_c, connection);
+                break;
+
+            case SM_PH2_CALC_STK:
+                // already busy?
+                if (sm_aes128_state == SM_AES128_ACTIVE) break;
+                // calculate STK
+                if (IS_RESPONDER(connection->sm_role)){
+                    sm_s1_r_prime(setup->sm_local_random, setup->sm_peer_random, sm_aes128_plaintext);
+                } else {
+                    sm_s1_r_prime(setup->sm_peer_random, setup->sm_local_random, sm_aes128_plaintext);
+                }
+                connection->sm_engine_state = SM_PH2_W4_STK;
+                sm_aes128_state = SM_AES128_ACTIVE;
+                btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, setup->sm_tk, sm_aes128_plaintext, setup->sm_ltk, sm_handle_encryption_result_enc_stk, connection);
+                break;
+
+            case SM_PH3_Y_GET_ENC:
+                // already busy?
+                if (sm_aes128_state == SM_AES128_ACTIVE) break;
+                // PH3B2 - calculate Y from      - enc
+                // Y = dm(DHK, Rand)
+                sm_dm_r_prime(setup->sm_local_rand, sm_aes128_plaintext);
+                connection->sm_engine_state = SM_PH3_Y_W4_ENC;
+                sm_aes128_state = SM_AES128_ACTIVE;
+                btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_dhk, sm_aes128_plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_enc_ph3_y, connection);
+                break;
+
             case SM_PH2_C1_SEND_PAIRING_CONFIRM: {
                 uint8_t buffer[17];
                 buffer[0] = SM_CODE_PAIRING_CONFIRM;
@@ -2512,6 +2558,16 @@ static void sm_run(void){
                 sm_done_for_handle(connection->sm_handle);
                 return;
             }
+            case SM_RESPONDER_PH4_Y_GET_ENC:
+                // already busy?
+                if (sm_aes128_state == SM_AES128_ACTIVE) break;
+                log_info("LTK Request: recalculating with ediv 0x%04x", setup->sm_local_ediv);
+                // Y = dm(DHK, Rand)
+                sm_dm_r_prime(setup->sm_local_rand, sm_aes128_plaintext);
+                connection->sm_engine_state = SM_RESPONDER_PH4_Y_W4_ENC;
+                sm_aes128_state = SM_AES128_ACTIVE;
+                btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_dhk, sm_aes128_plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_enc_ph4_y, connection);
+                return;
 #endif
 #ifdef ENABLE_LE_CENTRAL
             case SM_INITIATOR_PH3_SEND_START_ENCRYPTION: {
@@ -2926,11 +2982,8 @@ static void sm_handle_random_result_sc_get_random(void * arg){
 
 static void sm_handle_random_result_ph2_random(void * arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
-    // calculate confirm using aes128 engine - step 1
-    sm_key_t plaintext;
-    sm_c1_t1(setup->sm_local_random, (uint8_t*) &setup->sm_m_preq, (uint8_t*) &setup->sm_s_pres, setup->sm_m_addr_type, setup->sm_s_addr_type, plaintext);
-    // connection->sm_engine_state = SM_PH2_C1_W4_ENC_A;
-    btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, setup->sm_tk, plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_enc_a, connection);
+    connection->sm_engine_state = SM_PH2_C1_GET_ENC_A;
+    sm_run();
 }
 
 static void sm_handle_random_result_ph2_tk(void * arg){
@@ -2971,12 +3024,8 @@ static void sm_handle_random_result_ph3_div(void * arg){
     // use 16 bit from random value as div
     setup->sm_local_div = big_endian_read_16(sm_random_data, 0);
     log_info_hex16("div", setup->sm_local_div);
-
-    // PH3B2 - calculate Y from      - enc
-    // Y = dm(DHK, Rand)
-    sm_key_t plaintext;
-    sm_dm_r_prime(setup->sm_local_rand, plaintext);
-    btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_dhk, plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_enc_ph3_y, connection);
+    connection->sm_engine_state = SM_PH3_Y_GET_ENC;
+    sm_run();
 }
 
 static void sm_handle_random_result_ph3_random(void * arg){
@@ -3088,13 +3137,7 @@ static void sm_event_packet_handler (uint8_t packet_type, uint16_t channel, uint
 
                             log_info("LTK Request: state %u", sm_conn->sm_engine_state);
                             if (sm_conn->sm_engine_state == SM_RESPONDER_PH2_W4_LTK_REQUEST){
-                                sm_key_t plaintext;
-                                if (IS_RESPONDER(sm_conn->sm_role)){
-                                    sm_s1_r_prime(setup->sm_local_random, setup->sm_peer_random, plaintext);
-                                } else {
-                                    sm_s1_r_prime(setup->sm_peer_random, setup->sm_local_random, plaintext);
-                                }
-                                btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, setup->sm_tk, plaintext, setup->sm_ltk, sm_handle_encryption_result_enc_stk, sm_conn);
+                                sm_conn->sm_engine_state = SM_PH2_CALC_STK;
                                 break;
                             }
                             if (sm_conn->sm_engine_state == SM_SC_W4_LTK_REQUEST_SC){
@@ -3497,10 +3540,7 @@ static void sm_pdu_handler(uint8_t packet_type, hci_con_handle_t con_handle, uin
 
             // received random value
             reverse_128(&packet[1], setup->sm_peer_random);
-
-            // calculate m_confirm using aes128 engine - step 1
-            sm_c1_t1(setup->sm_peer_random, (uint8_t*) &setup->sm_m_preq, (uint8_t*) &setup->sm_s_pres, setup->sm_m_addr_type, setup->sm_s_addr_type, plaintext);
-            btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, setup->sm_tk, plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_enc_c, sm_conn);
+            sm_conn->sm_engine_state = SM_PH2_C1_GET_ENC_C;
             break;
 #endif
 
@@ -3710,9 +3750,7 @@ static void sm_pdu_handler(uint8_t packet_type, hci_con_handle_t con_handle, uin
 
             // received random value
             reverse_128(&packet[1], setup->sm_peer_random);
-            // calculate m_confirm using aes128 engine - step 1
-            sm_c1_t1(setup->sm_peer_random, (uint8_t*) &setup->sm_m_preq, (uint8_t*) &setup->sm_s_pres, setup->sm_m_addr_type, setup->sm_s_addr_type, plaintext);
-            btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, setup->sm_tk, plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_enc_c, sm_conn);
+            sm_conn->sm_engine_state = SM_PH2_C1_GET_ENC_C;
             break;
 #endif
 
