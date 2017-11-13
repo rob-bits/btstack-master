@@ -421,6 +421,7 @@ static void sm_handle_encryption_result_enc_d(void * arg);
 static void sm_handle_encryption_result_enc_stk(void *arg);
 static void sm_handle_encryption_result_enc_ph3_ltk(void *arg);
 static void sm_handle_encryption_result_enc_csrk(void *arg);
+static void sm_handle_encryption_result_enc_ph4_y(void *arg);
 
 static void log_info_hex16(const char * name, uint16_t value){
     log_info("%-6s 0x%04x", name, value);
@@ -1916,7 +1917,13 @@ static void sm_start_calculating_ltk_from_ediv_and_rand(sm_connection_t * sm_con
     sm_connection->sm_connection_authenticated = (setup->sm_local_rand[7] & 0x10) >> 4;
     log_info("sm: received ltk request with key size %u, authenticated %u",
             sm_connection->sm_actual_encryption_key_size, sm_connection->sm_connection_authenticated);
-    sm_connection->sm_engine_state = SM_RESPONDER_PH4_Y_GET_ENC;
+    // sm_connection->sm_engine_state = SM_RESPONDER_PH4_Y_GET_ENC;
+    log_info("LTK Request: recalculating with ediv 0x%04x", setup->sm_local_ediv);
+    // Y = dm(DHK, Rand)
+    sm_key_t plaintext;
+    sm_dm_r_prime(setup->sm_local_rand, plaintext);
+    btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_dhk, plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_enc_ph4_y, sm_connection);
+    return;
 }
 #endif
 
@@ -2524,15 +2531,6 @@ static void sm_run(void){
                 sm_done_for_handle(connection->sm_handle);
                 return;
             }
-            case SM_RESPONDER_PH4_Y_GET_ENC:
-                // already busy?
-                if (sm_aes128_state == SM_AES128_ACTIVE) break;
-                log_info("LTK Request: recalculating with ediv 0x%04x", setup->sm_local_ediv);
-                // Y = dm(DHK, Rand)
-                sm_dm_r_prime(setup->sm_local_rand, plaintext);
-                sm_next_responding_state(connection);
-                sm_aes128_start(sm_persistent_dhk, plaintext, connection);
-                return;
 #endif
 #ifdef ENABLE_LE_CENTRAL
             case SM_INITIATOR_PH3_SEND_START_ENCRYPTION: {
@@ -2825,10 +2823,6 @@ static void sm_handle_encryption_result(uint8_t * data){
     sm_connection_t * connection = (sm_connection_t*) sm_aes128_context;
     if (!connection) return;
     switch (connection->sm_engine_state){
-        case SM_RESPONDER_PH4_Y_W4_ENC:
-            reverse_128(data, sm_aes128_ciphertext);
-            sm_handle_encryption_result_enc_ph4_y(connection);
-            return;
 #ifdef ENABLE_LE_PERIPHERAL
         case SM_RESPONDER_PH4_LTK_W4_ENC:
             reverse_128(data, setup->sm_ltk);

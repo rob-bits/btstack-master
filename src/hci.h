@@ -278,7 +278,7 @@ typedef enum {
     // state = 30
     // SM_PH3_LTK_W4_ENC,
     // SM_PH3_CSRK_GET_ENC,
-    SM_PH3_CSRK_W4_ENC,
+    // SM_PH3_CSRK_W4_ENC,
 
     // exchange keys
     SM_PH3_DISTRIBUTE_KEYS,
@@ -301,8 +301,8 @@ typedef enum {
 
     // Phase 4: re-establish previously distributed LTK
     // state == 46
-    SM_RESPONDER_PH4_Y_GET_ENC,
-    SM_RESPONDER_PH4_Y_W4_ENC,
+    // SM_RESPONDER_PH4_Y_GET_ENC,
+    // SM_RESPONDER_PH4_Y_W4_ENC,
     SM_RESPONDER_PH4_LTK_GET_ENC,
     SM_RESPONDER_PH4_LTK_W4_ENC,
     SM_RESPONDER_PH4_SEND_LTK_REPLY,
