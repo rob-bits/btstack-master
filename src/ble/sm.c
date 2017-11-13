@@ -116,9 +116,7 @@
 typedef enum {
     DKG_W4_WORKING,
     DKG_CALC_IRK,
-    DKG_W4_IRK,
     DKG_CALC_DHK,
-    DKG_W4_DHK,
     DKG_READY
 } derived_key_generation_t;
 
@@ -1950,7 +1948,6 @@ static void sm_run(void){
                 sm_aes128_state = SM_AES128_ACTIVE;
                 // IRK = d1(IR, 1, 0)
                 sm_d1_d_prime(1, 0, sm_aes128_plaintext);  // plaintext = d1 prime
-                dkg_state = DKG_W4_IRK;
                 btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_ir, sm_aes128_plaintext, sm_persistent_irk, sm_handle_encryption_result_dkg_irk, NULL);
                 return;
             }
@@ -1962,7 +1959,6 @@ static void sm_run(void){
                 sm_aes128_state = SM_AES128_ACTIVE;
                 // DHK = d1(IR, 3, 0)
                 sm_d1_d_prime(3, 0, sm_aes128_plaintext);  // plaintext = d1 prime
-                dkg_state = DKG_W4_DHK;
                 btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_ir, sm_aes128_plaintext, sm_persistent_dhk, sm_handle_encryption_result_dkg_dhk, NULL);
                 return;
             }
@@ -2779,7 +2775,7 @@ static void sm_handle_encryption_result_dkg_dhk(void *arg){
     log_info_key("dhk", sm_persistent_dhk);
     dkg_state = DKG_READY;
     sm_aes128_state = SM_AES128_IDLE;
-    // SM Init Finished
+    // DKG calculation complete => SM Init Finished
     sm_run();
 }
 
