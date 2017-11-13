@@ -423,6 +423,7 @@ static void sm_handle_encryption_result_enc_ph3_ltk(void *arg);
 static void sm_handle_encryption_result_enc_csrk(void *arg);
 static void sm_handle_encryption_result_enc_ph4_y(void *arg);
 static void sm_handle_encryption_result_enc_ph4_ltk(void *arg);
+static void sm_handle_encryption_result_address_resolution(void *arg);
 
 static void log_info_hex16(const char * name, uint16_t value){
     log_info("%-6s 0x%04x", name, value);
@@ -2066,7 +2067,7 @@ static void sm_run(void){
             sm_key_t r_prime;
             sm_ah_r_prime(sm_address_resolution_address, r_prime);
             sm_address_resolution_ah_calculation_active = 1;
-            sm_aes128_start(irk, r_prime, sm_address_resolution_context);   // keep context
+            btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, irk, r_prime, sm_aes128_ciphertext, sm_handle_encryption_result_address_resolution, NULL);
             return;
         }
 
@@ -2710,8 +2711,6 @@ static void sm_handle_encryption_result_enc_ph3_ltk(void *arg){
     // sm_run();
     sm_key_t d_prime;
     sm_d1_d_prime(setup->sm_local_div, 1, d_prime);
-    // sm_next_responding_state(connection);
-    // sm_aes128_start(sm_persistent_er, d_prime, connection);
     btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_er, d_prime, setup->sm_local_csrk, sm_handle_encryption_result_enc_csrk, connection);
 }
 
@@ -2796,12 +2795,6 @@ static void sm_handle_encryption_result_cmac(void *arg){
 static void sm_handle_encryption_result(uint8_t * data){
 
     sm_aes128_state = SM_AES128_IDLE;
-
-    if (sm_address_resolution_ah_calculation_active){
-        reverse_128(data, sm_aes128_ciphertext);
-        sm_handle_encryption_result_address_resolution(NULL);
-        return;
-    }
 
     switch (dkg_state){
         case DKG_W4_IRK:
