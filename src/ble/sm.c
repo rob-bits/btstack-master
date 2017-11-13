@@ -2709,10 +2709,9 @@ static void sm_handle_encryption_result_enc_d(void * arg){
         connection->sm_engine_state = SM_PH2_SEND_PAIRING_RANDOM;
         sm_run();
     } else {
-        sm_key_t plaintext;
-        sm_s1_r_prime(setup->sm_peer_random, setup->sm_local_random, plaintext);
+        sm_s1_r_prime(setup->sm_peer_random, setup->sm_local_random, sm_aes128_plaintext);
         sm_aes128_state = SM_AES128_ACTIVE;
-        btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, setup->sm_tk, plaintext, setup->sm_ltk, sm_handle_encryption_result_enc_stk, connection);
+        btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, setup->sm_tk, sm_aes128_plaintext, setup->sm_ltk, sm_handle_encryption_result_enc_stk, connection);
     }
 }
 
