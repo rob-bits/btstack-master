@@ -277,7 +277,7 @@ typedef enum {
     // SM_PH3_LTK_GET_ENC,
     // state = 30
     // SM_PH3_LTK_W4_ENC,
-    SM_PH3_CSRK_GET_ENC,
+    // SM_PH3_CSRK_GET_ENC,
     SM_PH3_CSRK_W4_ENC,
 
     // exchange keys

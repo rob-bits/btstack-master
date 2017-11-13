@@ -420,6 +420,7 @@ static void sm_handle_encryption_result_enc_b(void *arg);
 static void sm_handle_encryption_result_enc_d(void * arg);
 static void sm_handle_encryption_result_enc_stk(void *arg);
 static void sm_handle_encryption_result_enc_ph3_ltk(void *arg);
+static void sm_handle_encryption_result_enc_csrk(void *arg);
 
 static void log_info_hex16(const char * name, uint16_t value){
     log_info("%-6s 0x%04x", name, value);
@@ -2484,24 +2485,12 @@ static void sm_run(void){
                 sm_timeout_reset(connection);
                 break;
             }
-
             case SM_RESPONDER_PH4_LTK_GET_ENC:
                 // already busy?
                 if (sm_aes128_state == SM_AES128_IDLE) {
                     sm_key_t d_prime;
                     sm_d1_d_prime(setup->sm_local_div, 0, d_prime);
                     connection->sm_engine_state = SM_RESPONDER_PH4_LTK_W4_ENC;
-                    sm_aes128_start(sm_persistent_er, d_prime, connection);
-                    return;
-                }
-                break;
-
-            case SM_PH3_CSRK_GET_ENC:
-                // already busy?
-                if (sm_aes128_state == SM_AES128_IDLE) {
-                    sm_key_t d_prime;
-                    sm_d1_d_prime(setup->sm_local_div, 1, d_prime);
-                    sm_next_responding_state(connection);
                     sm_aes128_start(sm_persistent_er, d_prime, connection);
                     return;
                 }
@@ -2730,8 +2719,13 @@ static void sm_handle_encryption_result_enc_ph3_ltk(void *arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
     log_info_key("ltk", setup->sm_ltk);
     // calc CSRK next
-    connection->sm_engine_state = SM_PH3_CSRK_GET_ENC;
-    sm_run();
+    // connection->sm_engine_state = SM_PH3_CSRK_GET_ENC;
+    // sm_run();
+    sm_key_t d_prime;
+    sm_d1_d_prime(setup->sm_local_div, 1, d_prime);
+    // sm_next_responding_state(connection);
+    // sm_aes128_start(sm_persistent_er, d_prime, connection);
+    btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_er, d_prime, setup->sm_local_csrk, sm_handle_encryption_result_enc_csrk, connection);
 }
 
 static void sm_handle_encryption_result_enc_csrk(void *arg){
@@ -2754,6 +2748,7 @@ static void sm_handle_encryption_result_enc_csrk(void *arg){
             }
         }
     }
+    sm_run();
 }
 
 #ifdef ENABLE_LE_PERIPHERAL
@@ -2833,10 +2828,6 @@ static void sm_handle_encryption_result(uint8_t * data){
         case SM_RESPONDER_PH4_Y_W4_ENC:
             reverse_128(data, sm_aes128_ciphertext);
             sm_handle_encryption_result_enc_ph4_y(connection);
-            return;
-        case SM_PH3_CSRK_W4_ENC:
-            reverse_128(data, setup->sm_local_csrk);
-            sm_handle_encryption_result_enc_csrk(connection);
             return;
 #ifdef ENABLE_LE_PERIPHERAL
         case SM_RESPONDER_PH4_LTK_W4_ENC:
