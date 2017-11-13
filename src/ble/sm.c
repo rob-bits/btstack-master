@@ -406,6 +406,7 @@ static inline int sm_calc_actual_encryption_key_size(int other);
 static int sm_validate_stk_generation_method(void);
 static void sm_handle_encryption_result(uint8_t * data);
 static void sm_handle_encryption_result_address_resolution(void *arg);
+static void sm_handle_encryption_result_cmac(void *arg);
 static void sm_handle_encryption_result_dkg_dhk(void *arg);
 static void sm_handle_encryption_result_dkg_irk(void *arg);
 static void sm_handle_encryption_result_enc_a(void *arg);
@@ -528,19 +529,6 @@ static void gap_random_address_update_start(void){
 
 static void gap_random_address_update_stop(void){
     btstack_run_loop_remove_timer(&gap_random_address_update_timer);
-}
-
-
-// pre: sm_aes128_state != SM_AES128_ACTIVE, hci_can_send_command == 1
-// context is made availabe to aes128 result handler by this
-static void sm_aes128_start(sm_key_t key, sm_key_t plaintext, void * context){
-    memcpy(sm_aes128_key, key, 16);
-    memcpy(sm_aes128_plaintext, plaintext, 16);
-    sm_aes128_state = SM_AES128_ACTIVE;
-    sm_key_t key_flipped, plaintext_flipped;
-    reverse_128(key, key_flipped);
-    reverse_128(plaintext, plaintext_flipped);
-    hci_send_cmd(&hci_le_encrypt, key_flipped, plaintext_flipped);
 }
 
 // ah(k,r) helper
@@ -972,13 +960,23 @@ void sm_cmac_signed_write_start(const sm_key_t k, uint8_t opcode, hci_con_handle
 #endif
 
 #ifdef ENABLE_CMAC_ENGINE
+
+// pre: sm_aes128_state != SM_AES128_ACTIVE, hci_can_send_command == 1
+// context is made availabe to aes128 result handler by this
+static void sm_aes128_start(sm_key_t key, sm_key_t plaintext){
+    memcpy(sm_aes128_key, key, 16);
+    memcpy(sm_aes128_plaintext, plaintext, 16);
+    sm_aes128_state = SM_AES128_ACTIVE;
+    btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_aes128_key, sm_aes128_plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_cmac, NULL);
+}
+
 static void sm_cmac_handle_aes_engine_ready(void){
     switch (sm_cmac_state){
         case CMAC_CALC_SUBKEYS: {
             sm_key_t const_zero;
             memset(const_zero, 0, 16);
             sm_cmac_next_state();
-            sm_aes128_start(sm_cmac_k, const_zero, NULL);
+            sm_aes128_start(sm_cmac_k, const_zero);
             break;
         }
         case CMAC_CALC_MI: {
@@ -989,7 +987,7 @@ static void sm_cmac_handle_aes_engine_ready(void){
             }
             sm_cmac_block_current++;
             sm_cmac_next_state();
-            sm_aes128_start(sm_cmac_k, y, NULL);
+            sm_aes128_start(sm_cmac_k, y);
             break;
         }
         case CMAC_CALC_MLAST: {
@@ -998,10 +996,9 @@ static void sm_cmac_handle_aes_engine_ready(void){
             for (i=0;i<16;i++){
                 y[i] = sm_cmac_x[i] ^ sm_cmac_m_last[i];
             }
-            log_info_key("Y", y);
             sm_cmac_block_current++;
             sm_cmac_next_state();
-            sm_aes128_start(sm_cmac_k, y, NULL);
+            sm_aes128_start(sm_cmac_k, y);
             break;
         }
         default:
@@ -2812,25 +2809,9 @@ static void sm_handle_encryption_result_cmac(void *arg){
     UNUSED(arg);
     sm_aes128_state = SM_AES128_IDLE;
     sm_cmac_handle_encryption_result(sm_aes128_ciphertext);
+    sm_run();
 }
 #endif
-
-// note: aes engine is ready as we just got the aes result
-static void sm_handle_encryption_result(uint8_t * data){
-
-#ifdef ENABLE_CMAC_ENGINE
-    switch (sm_cmac_state){
-        case CMAC_W4_SUBKEYS:
-        case CMAC_W4_MI:
-        case CMAC_W4_MLAST:
-            reverse_128(data, sm_aes128_ciphertext);
-            sm_handle_encryption_result_cmac(NULL);
-            return;
-        default:
-            break;
-    }
-#endif
-}
 
 #ifdef ENABLE_LE_SECURE_CONNECTIONS
 
@@ -3267,10 +3248,6 @@ static void sm_event_packet_handler (uint8_t packet_type, uint16_t channel, uint
                     break;
 
 				case HCI_EVENT_COMMAND_COMPLETE:
-                    if (HCI_EVENT_IS_COMMAND_COMPLETE(packet, hci_le_encrypt)){
-                        sm_handle_encryption_result(&packet[6]);
-                        break;
-                    }
                     if (HCI_EVENT_IS_COMMAND_COMPLETE(packet, hci_read_bd_addr)){
                         // set local addr for le device db
                         bd_addr_t addr;
@@ -3393,7 +3370,6 @@ static void sm_pdu_handler(uint8_t packet_type, hci_con_handle_t con_handle, uin
     log_debug("sm_pdu_handler: state %u, pdu 0x%02x", sm_conn->sm_engine_state, sm_pdu_code);
 
     int err;
-    sm_key_t plaintext;
     UNUSED(err);
 
     if (sm_pdu_code == SM_CODE_KEYPRESS_NOTIFICATION){
