@@ -426,6 +426,7 @@ static void sm_handle_encryption_result_enc_ph4_ltk(void *arg);
 static void sm_handle_encryption_result_address_resolution(void *arg);
 static void sm_handle_encryption_result_dkg_irk(void *arg);
 static void sm_handle_encryption_result_dkg_dhk(void *arg);
+static void sm_handle_encryption_result_rau(void *arg);
 
 static void log_info_hex16(const char * name, uint16_t value){
     log_info("%-6s 0x%04x", name, value);
@@ -925,11 +926,6 @@ int sm_address_resolution_lookup(uint8_t address_type, bd_addr_t address){
     btstack_linked_list_add(&sm_address_resolution_general_queue, (btstack_linked_item_t *) entry);
     sm_run();
     return 0;
-}
-
-// while x_state++ for an enum is possible in C, it isn't in C++. we use this helpers to avoid compile errors for now
-static inline void rau_next_state(void){
-    rau_state = (random_address_update_t) (((int)rau_state) + 1);
 }
 
 // CMAC calculation using AES Engineq
@@ -1980,11 +1976,8 @@ static void sm_run(void){
         case RAU_GET_ENC:
             // already busy?
             if (sm_aes128_state == SM_AES128_IDLE) {
-                log_info("RAU_GET_ENC started");
-                sm_key_t r_prime;
-                sm_ah_r_prime(sm_random_address, r_prime);
-                rau_next_state();
-                sm_aes128_start(sm_persistent_irk, r_prime, NULL);
+                sm_ah_r_prime(sm_random_address, sm_aes128_plaintext);
+                btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_irk, sm_aes128_plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_rau, NULL);
                 return;
             }
             break;
@@ -2781,8 +2774,9 @@ static void sm_handle_encryption_result_dkg_dhk(void *arg){
 
 static void sm_handle_encryption_result_rau(void *arg){
     UNUSED(arg);
+    sm_aes128_state = SM_AES128_IDLE;
     memcpy(&sm_random_address[3], &sm_aes128_ciphertext[13], 3);
-    rau_next_state();
+    rau_state = RAU_SET_ADDRESS;
     sm_run();
 }
 
@@ -2795,16 +2789,6 @@ static void sm_handle_encryption_result_cmac(void *arg){
 
 // note: aes engine is ready as we just got the aes result
 static void sm_handle_encryption_result(uint8_t * data){
-
-    switch (rau_state){
-        case RAU_W4_ENC:
-            sm_aes128_state = SM_AES128_IDLE;
-            reverse_128(data, sm_aes128_ciphertext);
-            sm_handle_encryption_result_rau(NULL);
-            return;
-        default:
-            break;
-    }
 
 #ifdef ENABLE_CMAC_ENGINE
     switch (sm_cmac_state){
