@@ -2485,17 +2485,6 @@ static void sm_run(void){
                 break;
             }
 
-            // case SM_PH3_LTK_GET_ENC:
-            //     // already busy?
-            //     if (sm_aes128_state == SM_AES128_IDLE) {
-            //         sm_key_t d_prime;
-            //         sm_d1_d_prime(setup->sm_local_div, 0, d_prime);
-            //         connection->sm_engine_state = SM_PH3_LTK_W4_ENC;
-            //         sm_aes128_start(sm_persistent_er, d_prime, connection);
-            //         return;
-            //     }
-            //     break;
-
             case SM_RESPONDER_PH4_LTK_GET_ENC:
                 // already busy?
                 if (sm_aes128_state == SM_AES128_IDLE) {
@@ -2517,15 +2506,6 @@ static void sm_run(void){
                     return;
                 }
                 break;
-            // case SM_PH3_Y_GET_ENC:
-            //     // already busy?
-            //     if (sm_aes128_state == SM_AES128_ACTIVE) break;
-            //     // PH3B2 - calculate Y from      - enc
-            //     // Y = dm(DHK, Rand)
-            //     sm_dm_r_prime(setup->sm_local_rand, plaintext);
-            //     sm_next_responding_state(connection);
-            //     sm_aes128_start(sm_persistent_dhk, plaintext, connection);
-            //     return;
             case SM_PH2_C1_SEND_PAIRING_CONFIRM: {
                 uint8_t buffer[17];
                 buffer[0] = SM_CODE_PAIRING_CONFIRM;
@@ -2730,7 +2710,6 @@ static void sm_handle_encryption_result_enc_ph3_y(void *arg){
     // LTK = d1(ER, DIV, 0))
     sm_key_t d_prime;
     sm_d1_d_prime(setup->sm_local_div, 0, d_prime);
-    connection->sm_engine_state = SM_PH3_LTK_W4_ENC;
     btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_er, d_prime, setup->sm_ltk, sm_handle_encryption_result_enc_ph3_ltk, connection);
 }
 
@@ -2993,7 +2972,7 @@ static void sm_handle_random_result_ph2_tk(void * arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
     sm_reset_tk();
     uint32_t tk;
-    if (sm_fixed_legacy_pairing_passkey_in_display_role == 0xffffffff){
+    if (sm_fixed_passkey_in_display_role == 0xffffffff){
         // map random to 0-999999 without speding much cycles on a modulus operation
         tk = little_endian_read_32(sm_random_data,0);
         tk = tk & 0xfffff;  // 1048575
@@ -3002,7 +2981,7 @@ static void sm_handle_random_result_ph2_tk(void * arg){
         }
     } else {
         // override with pre-defined passkey
-        tk = sm_fixed_legacy_pairing_passkey_in_display_role;
+        tk = sm_fixed_passkey_in_display_role;
     }
     big_endian_store_32(setup->sm_tk, 12, tk);
     if (IS_RESPONDER(connection->sm_role)){
@@ -3032,7 +3011,6 @@ static void sm_handle_random_result_ph3_div(void * arg){
     // Y = dm(DHK, Rand)
     sm_key_t plaintext;
     sm_dm_r_prime(setup->sm_local_rand, plaintext);
-    connection->sm_engine_state = SM_PH3_Y_W4_ENC;
     btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_dhk, plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_enc_ph3_y, connection);
 }
 
