@@ -272,7 +272,7 @@ static btstack_crypto_random_t sm_crypto_random_request;
 static btstack_crypto_aes128_t sm_crypto_aes128_request;
 // temp storage for random data
 static uint8_t sm_random_data[8];
-// static uint8_t sm_aes128_key[16];
+static uint8_t sm_aes128_key[16];
 static uint8_t sm_aes128_plaintext[16];
 static uint8_t sm_aes128_ciphertext[16];
 
@@ -2056,11 +2056,11 @@ static void sm_run(void){
             log_info("LE Device Lookup: calculate AH");
             log_info_key("IRK", irk);
 
-            sm_key_t r_prime;
-            sm_ah_r_prime(sm_address_resolution_address, r_prime);
+            memcpy(sm_aes128_key, irk, 16);
+            sm_ah_r_prime(sm_address_resolution_address, sm_aes128_plaintext);
             sm_address_resolution_ah_calculation_active = 1;
             sm_aes128_state = SM_AES128_ACTIVE;
-            btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, irk, r_prime, sm_aes128_ciphertext, sm_handle_encryption_result_address_resolution, NULL);
+            btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_aes128_key, sm_aes128_plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_address_resolution, NULL);
             return;
         }
 
@@ -2739,9 +2739,8 @@ static void sm_handle_encryption_result_enc_ph3_y(void *arg){
     log_info_hex16("ediv", setup->sm_local_ediv);
     // PH3B4 - calculate LTK         - enc
     // LTK = d1(ER, DIV, 0))
-    sm_key_t d_prime;
-    sm_d1_d_prime(setup->sm_local_div, 0, d_prime);
-    btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_er, d_prime, setup->sm_ltk, sm_handle_encryption_result_enc_ph3_ltk, connection);
+    sm_d1_d_prime(setup->sm_local_div, 0, sm_aes128_plaintext);
+    btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_er, sm_aes128_plaintext, setup->sm_ltk, sm_handle_encryption_result_enc_ph3_ltk, connection);
 }
 
 // sm_aes128_state stays active
@@ -2755,9 +2754,8 @@ static void sm_handle_encryption_result_enc_ph4_y(void *arg){
     log_info_hex16("ediv", setup->sm_local_ediv);
     // PH3B4 - calculate LTK         - enc
     // LTK = d1(ER, DIV, 0))
-    sm_key_t d_prime;
-    sm_d1_d_prime(setup->sm_local_div, 0, d_prime);
-    btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_er, d_prime, setup->sm_ltk, sm_handle_encryption_result_enc_ph4_ltk, connection);
+    sm_d1_d_prime(setup->sm_local_div, 0, sm_aes128_plaintext);
+    btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_er, sm_aes128_plaintext, setup->sm_ltk, sm_handle_encryption_result_enc_ph4_ltk, connection);
 }
 
 // sm_aes128_state stays active
@@ -2765,9 +2763,8 @@ static void sm_handle_encryption_result_enc_ph3_ltk(void *arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
     log_info_key("ltk", setup->sm_ltk);
     // calc CSRK next
-    sm_key_t d_prime;
-    sm_d1_d_prime(setup->sm_local_div, 1, d_prime);
-    btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_er, d_prime, setup->sm_local_csrk, sm_handle_encryption_result_enc_csrk, connection);
+    sm_d1_d_prime(setup->sm_local_div, 1, sm_aes128_plaintext);
+    btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_er, sm_aes128_plaintext, setup->sm_local_csrk, sm_handle_encryption_result_enc_csrk, connection);
 }
 
 static void sm_handle_encryption_result_enc_csrk(void *arg){
