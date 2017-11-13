@@ -422,6 +422,7 @@ static void sm_handle_encryption_result_enc_stk(void *arg);
 static void sm_handle_encryption_result_enc_ph3_ltk(void *arg);
 static void sm_handle_encryption_result_enc_csrk(void *arg);
 static void sm_handle_encryption_result_enc_ph4_y(void *arg);
+static void sm_handle_encryption_result_enc_ph4_ltk(void *arg);
 
 static void log_info_hex16(const char * name, uint16_t value){
     log_info("%-6s 0x%04x", name, value);
@@ -924,9 +925,6 @@ int sm_address_resolution_lookup(uint8_t address_type, bd_addr_t address){
 }
 
 // while x_state++ for an enum is possible in C, it isn't in C++. we use this helpers to avoid compile errors for now
-static inline void sm_next_responding_state(sm_connection_t * sm_conn){
-    sm_conn->sm_engine_state = (security_manager_state_t) (((int)sm_conn->sm_engine_state) + 1);
-}
 static inline void dkg_next_state(void){
     dkg_state = (derived_key_generation_t) (((int)dkg_state) + 1);
 }
@@ -2248,7 +2246,6 @@ static void sm_run(void){
             return;
         }
 
-        sm_key_t plaintext;
         int key_distribution_flags;
         UNUSED(key_distribution_flags);
 
@@ -2492,16 +2489,6 @@ static void sm_run(void){
                 sm_timeout_reset(connection);
                 break;
             }
-            case SM_RESPONDER_PH4_LTK_GET_ENC:
-                // already busy?
-                if (sm_aes128_state == SM_AES128_IDLE) {
-                    sm_key_t d_prime;
-                    sm_d1_d_prime(setup->sm_local_div, 0, d_prime);
-                    connection->sm_engine_state = SM_RESPONDER_PH4_LTK_W4_ENC;
-                    sm_aes128_start(sm_persistent_er, d_prime, connection);
-                    return;
-                }
-                break;
             case SM_PH2_C1_SEND_PAIRING_CONFIRM: {
                 uint8_t buffer[17];
                 buffer[0] = SM_CODE_PAIRING_CONFIRM;
@@ -2710,7 +2697,9 @@ static void sm_handle_encryption_result_enc_ph4_y(void *arg){
     log_info_hex16("ediv", setup->sm_local_ediv);
     // PH3B4 - calculate LTK         - enc
     // LTK = d1(ER, DIV, 0))
-    connection->sm_engine_state = SM_RESPONDER_PH4_LTK_GET_ENC;
+    sm_key_t d_prime;
+    sm_d1_d_prime(setup->sm_local_div, 0, d_prime);
+    btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_er, d_prime, setup->sm_ltk, sm_handle_encryption_result_enc_ph4_ltk, connection);
 }
 
 static void sm_handle_encryption_result_enc_ph3_ltk(void *arg){
@@ -2755,6 +2744,7 @@ static void sm_handle_encryption_result_enc_ph4_ltk(void *arg){
     sm_truncate_key(setup->sm_ltk, connection->sm_actual_encryption_key_size);
     log_info_key("ltk", setup->sm_ltk);
     connection->sm_engine_state = SM_RESPONDER_PH4_SEND_LTK_REPLY;
+    sm_run();
 }
 #endif
 
@@ -2818,20 +2808,6 @@ static void sm_handle_encryption_result(uint8_t * data){
             break;
     }
 #endif
-
-    // retrieve sm_connection provided to sm_aes128_start_encryption
-    sm_connection_t * connection = (sm_connection_t*) sm_aes128_context;
-    if (!connection) return;
-    switch (connection->sm_engine_state){
-#ifdef ENABLE_LE_PERIPHERAL
-        case SM_RESPONDER_PH4_LTK_W4_ENC:
-            reverse_128(data, setup->sm_ltk);
-            sm_handle_encryption_result_enc_ph4_ltk(connection);
-            return;
-#endif
-        default:
-            break;
-    }
 }
 
 #ifdef ENABLE_LE_SECURE_CONNECTIONS
