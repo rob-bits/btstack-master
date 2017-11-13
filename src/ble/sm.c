@@ -2748,37 +2748,69 @@ static void sm_handle_encryption_result_enc_ph4_ltk(void *arg){
 }
 #endif
 
+static void sm_handle_encryption_result_address_resolution(void *arg){
+    UNUSED(arg);
+    sm_address_resolution_ah_calculation_active = 0;
+    // compare calulated address against connecting device
+    uint8_t * hash = &sm_aes128_ciphertext[13];
+    if (memcmp(&sm_address_resolution_address[3], hash, 3) == 0){
+        log_info("LE Device Lookup: matched resolvable private address");
+        sm_address_resolution_handle_event(ADDRESS_RESOLUTION_SUCEEDED);
+        return;
+    }
+    // no match, try next
+    sm_address_resolution_test++;
+    sm_run();
+}
+
+static void sm_handle_encryption_result_dkg_irk(void *arg){
+    UNUSED(arg);
+    log_info_key("irk", sm_persistent_irk);
+    dkg_next_state();
+    sm_run();
+}
+
+static void sm_handle_encryption_result_dkg_dhk(void *arg){
+    UNUSED(arg);
+    log_info_key("dhk", sm_persistent_dhk);
+    dkg_next_state();
+    // SM Init Finished
+    sm_run();
+}
+
+static void sm_handle_encryption_result_rau(void *arg){
+    UNUSED(arg);
+    memcpy(&sm_random_address[3], &sm_aes128_ciphertext[13], 3);
+    rau_next_state();
+    sm_run();
+}
+
+#ifdef ENABLE_CMAC_ENGINE
+static void sm_handle_encryption_result_cmac(void *arg){
+    UNUSED(arg);
+    sm_cmac_handle_encryption_result(sm_aes128_ciphertext);
+}
+#endif
+
 // note: aes engine is ready as we just got the aes result
 static void sm_handle_encryption_result(uint8_t * data){
 
     sm_aes128_state = SM_AES128_IDLE;
 
     if (sm_address_resolution_ah_calculation_active){
-        sm_address_resolution_ah_calculation_active = 0;
-        // compare calulated address against connecting device
-        uint8_t hash[3];
-        reverse_24(data, hash);
-        if (memcmp(&sm_address_resolution_address[3], hash, 3) == 0){
-            log_info("LE Device Lookup: matched resolvable private address");
-            sm_address_resolution_handle_event(ADDRESS_RESOLUTION_SUCEEDED);
-            return;
-        }
-        // no match, try next
-        sm_address_resolution_test++;
+        reverse_128(data, sm_aes128_ciphertext);
+        sm_handle_encryption_result_address_resolution(NULL);
         return;
     }
 
     switch (dkg_state){
         case DKG_W4_IRK:
             reverse_128(data, sm_persistent_irk);
-            log_info_key("irk", sm_persistent_irk);
-            dkg_next_state();
+            sm_handle_encryption_result_dkg_irk(NULL);
             return;
         case DKG_W4_DHK:
             reverse_128(data, sm_persistent_dhk);
-            log_info_key("dhk", sm_persistent_dhk);
-            dkg_next_state();
-            // SM Init Finished
+            sm_handle_encryption_result_dkg_dhk(NULL);
             return;
         default:
             break;
@@ -2786,8 +2818,8 @@ static void sm_handle_encryption_result(uint8_t * data){
 
     switch (rau_state){
         case RAU_W4_ENC:
-            reverse_24(data, &sm_random_address[3]);
-            rau_next_state();
+            reverse_128(data, sm_aes128_ciphertext);
+            sm_handle_encryption_result_rau(NULL);
             return;
         default:
             break;
@@ -2798,11 +2830,8 @@ static void sm_handle_encryption_result(uint8_t * data){
         case CMAC_W4_SUBKEYS:
         case CMAC_W4_MI:
         case CMAC_W4_MLAST:
-            {
-            sm_key_t t;
-            reverse_128(data, t);
-            sm_cmac_handle_encryption_result(t);
-            }
+            reverse_128(data, sm_aes128_ciphertext);
+            sm_handle_encryption_result_cmac(NULL);
             return;
         default:
             break;
