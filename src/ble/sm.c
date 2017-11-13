@@ -2617,6 +2617,7 @@ static void sm_run(void){
     }
 }
 
+// sm_aes128_state stays active
 static void sm_handle_encryption_result_enc_a(void *arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
     sm_c1_t3(sm_aes128_ciphertext, setup->sm_m_address, setup->sm_s_address, setup->sm_c1_t3_value);
@@ -2625,11 +2626,13 @@ static void sm_handle_encryption_result_enc_a(void *arg){
 
 static void sm_handle_encryption_result_enc_b(void *arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
+    sm_aes128_state = SM_AES128_IDLE;
     log_info_key("c1!", setup->sm_local_confirm);
     connection->sm_engine_state = SM_PH2_C1_SEND_PAIRING_CONFIRM;
     sm_run();
 }
 
+// sm_aes128_state stays active
 static void sm_handle_encryption_result_enc_c(void *arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
     sm_c1_t3(sm_aes128_ciphertext, setup->sm_m_address, setup->sm_s_address, setup->sm_c1_t3_value);
@@ -2638,6 +2641,7 @@ static void sm_handle_encryption_result_enc_c(void *arg){
 
 static void sm_handle_encryption_result_enc_d(void * arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
+    sm_aes128_state = SM_AES128_IDLE;
     log_info_key("c1!", sm_aes128_ciphertext);
     if (memcmp(setup->sm_peer_confirm, sm_aes128_ciphertext, 16) != 0){
         setup->sm_pairing_failed_reason = SM_REASON_CONFIRM_VALUE_FAILED;
@@ -2647,16 +2651,18 @@ static void sm_handle_encryption_result_enc_d(void * arg){
     }
     if (IS_RESPONDER(connection->sm_role)){
         connection->sm_engine_state = SM_PH2_SEND_PAIRING_RANDOM;
+        sm_run();
     } else {
         sm_key_t plaintext;
         sm_s1_r_prime(setup->sm_peer_random, setup->sm_local_random, plaintext);
+        sm_aes128_state = SM_AES128_ACTIVE;
         btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, setup->sm_tk, plaintext, setup->sm_ltk, sm_handle_encryption_result_enc_stk, connection);
     }
-    sm_run();
 }
 
 static void sm_handle_encryption_result_enc_stk(void *arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
+    sm_aes128_state = SM_AES128_IDLE;
     sm_truncate_key(setup->sm_ltk, connection->sm_actual_encryption_key_size);
     log_info_key("stk", setup->sm_ltk);
     if (IS_RESPONDER(connection->sm_role)){
@@ -2667,6 +2673,7 @@ static void sm_handle_encryption_result_enc_stk(void *arg){
     sm_run();
 }
 
+// sm_aes128_state stays active
 static void sm_handle_encryption_result_enc_ph3_y(void *arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
     setup->sm_local_y = big_endian_read_16(sm_aes128_ciphertext, 14);
@@ -2681,6 +2688,7 @@ static void sm_handle_encryption_result_enc_ph3_y(void *arg){
     btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_er, d_prime, setup->sm_ltk, sm_handle_encryption_result_enc_ph3_ltk, connection);
 }
 
+// sm_aes128_state stays active
 static void sm_handle_encryption_result_enc_ph4_y(void *arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
     setup->sm_local_y = big_endian_read_16(sm_aes128_ciphertext, 14);
@@ -2696,12 +2704,11 @@ static void sm_handle_encryption_result_enc_ph4_y(void *arg){
     btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_er, d_prime, setup->sm_ltk, sm_handle_encryption_result_enc_ph4_ltk, connection);
 }
 
+// sm_aes128_state stays active
 static void sm_handle_encryption_result_enc_ph3_ltk(void *arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
     log_info_key("ltk", setup->sm_ltk);
     // calc CSRK next
-    // connection->sm_engine_state = SM_PH3_CSRK_GET_ENC;
-    // sm_run();
     sm_key_t d_prime;
     sm_d1_d_prime(setup->sm_local_div, 1, d_prime);
     btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_persistent_er, d_prime, setup->sm_local_csrk, sm_handle_encryption_result_enc_csrk, connection);
@@ -2709,6 +2716,7 @@ static void sm_handle_encryption_result_enc_ph3_ltk(void *arg){
 
 static void sm_handle_encryption_result_enc_csrk(void *arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
+    sm_aes128_state = SM_AES128_IDLE;
     log_info_key("csrk", setup->sm_local_csrk);
     if (setup->sm_key_distribution_send_set){
         connection->sm_engine_state = SM_PH3_DISTRIBUTE_KEYS;
@@ -2733,6 +2741,7 @@ static void sm_handle_encryption_result_enc_csrk(void *arg){
 #ifdef ENABLE_LE_PERIPHERAL
 static void sm_handle_encryption_result_enc_ph4_ltk(void *arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
+    sm_aes128_state = SM_AES128_IDLE;
     sm_truncate_key(setup->sm_ltk, connection->sm_actual_encryption_key_size);
     log_info_key("ltk", setup->sm_ltk);
     connection->sm_engine_state = SM_RESPONDER_PH4_SEND_LTK_REPLY;
@@ -2742,6 +2751,7 @@ static void sm_handle_encryption_result_enc_ph4_ltk(void *arg){
 
 static void sm_handle_encryption_result_address_resolution(void *arg){
     UNUSED(arg);
+    sm_aes128_state = SM_AES128_IDLE;
     sm_address_resolution_ah_calculation_active = 0;
     // compare calulated address against connecting device
     uint8_t * hash = &sm_aes128_ciphertext[13];
@@ -2757,17 +2767,17 @@ static void sm_handle_encryption_result_address_resolution(void *arg){
 
 static void sm_handle_encryption_result_dkg_irk(void *arg){
     UNUSED(arg);
+    sm_aes128_state = SM_AES128_IDLE;
     log_info_key("irk", sm_persistent_irk);
     dkg_state = DKG_CALC_DHK;
-    sm_aes128_state = SM_AES128_IDLE;
     sm_run();
 }
 
 static void sm_handle_encryption_result_dkg_dhk(void *arg){
     UNUSED(arg);
+    sm_aes128_state = SM_AES128_IDLE;
     log_info_key("dhk", sm_persistent_dhk);
     dkg_state = DKG_READY;
-    sm_aes128_state = SM_AES128_IDLE;
     // DKG calculation complete => SM Init Finished
     sm_run();
 }
@@ -2783,6 +2793,7 @@ static void sm_handle_encryption_result_rau(void *arg){
 #ifdef ENABLE_CMAC_ENGINE
 static void sm_handle_encryption_result_cmac(void *arg){
     UNUSED(arg);
+    sm_aes128_state = SM_AES128_IDLE;
     sm_cmac_handle_encryption_result(sm_aes128_ciphertext);
 }
 #endif
@@ -2795,7 +2806,6 @@ static void sm_handle_encryption_result(uint8_t * data){
         case CMAC_W4_SUBKEYS:
         case CMAC_W4_MI:
         case CMAC_W4_MLAST:
-            sm_aes128_state = SM_AES128_IDLE;
             reverse_128(data, sm_aes128_ciphertext);
             sm_handle_encryption_result_cmac(NULL);
             return;
@@ -2916,7 +2926,6 @@ static void sm_handle_random_result_sc_get_random(void * arg){
 
 static void sm_handle_random_result_ph2_random(void * arg){
     sm_connection_t * connection = (sm_connection_t*) arg;
-
     // calculate confirm using aes128 engine - step 1
     sm_key_t plaintext;
     sm_c1_t1(setup->sm_local_random, (uint8_t*) &setup->sm_m_preq, (uint8_t*) &setup->sm_s_pres, setup->sm_m_addr_type, setup->sm_s_addr_type, plaintext);
