@@ -54,7 +54,7 @@ typedef enum {
     CMAC_W4_MI,
     CMAC_CALC_MLAST,
     CMAC_W4_MLAST
-} cmac_state_t;
+} btstack_crypto_cmac_state_t;
 
 static void btstack_crypto_run(void);
 
@@ -64,52 +64,59 @@ static btstack_packet_callback_registration_t hci_event_callback_registration;
 static uint8_t btstack_crypto_wait_for_hci_result;
 
 // state for AES-CMAC
-static cmac_state_t sm_cmac_state;
-static uint16_t     sm_cmac_message_len;
+static btstack_crypto_cmac_state_t sm_cmac_state;
 static sm_key_t     sm_cmac_k;
 static sm_key_t     sm_cmac_x;
 static sm_key_t     sm_cmac_m_last;
 static uint8_t      sm_cmac_block_current;
 static uint8_t      sm_cmac_block_count;
-static uint8_t      (*sm_cmac_get_byte)(uint16_t offset);
 static void         (*sm_cmac_done_handler)(uint8_t * hash);
 
-static inline void sm_cmac_next_state(void){
-    sm_cmac_state = (cmac_state_t) (((int)sm_cmac_state) + 1);
+static inline void btstack_crypto_cmac_next_state(void){
+    sm_cmac_state = (btstack_crypto_cmac_state_t) (((int)sm_cmac_state) + 1);
 }
 
-static int sm_cmac_last_block_complete(void){
-    if (sm_cmac_message_len == 0) return 0;
-    return (sm_cmac_message_len & 0x0f) == 0;
+static int btstack_crytpo_cmac_last_block_complete(btstack_crypto_aes128_cmac_t * btstack_crypto_cmac){
+	uint16_t len = btstack_crypto_cmac->size;
+    if (len == 0) return 0;
+    return (len & 0x0f) == 0;
 }
 
-static void sm_aes128_start(sm_key_t key, sm_key_t plaintext){
- 	btstack_crypto_wait_for_hci_result = 1;
+static void btstack_crypto_aes128_start(const sm_key_t key, const sm_key_t plaintext){
  	uint8_t key_flipped[16];
  	uint8_t plaintext_flipped[16];
     reverse_128(key, key_flipped);
     reverse_128(plaintext, plaintext_flipped);
+ 	btstack_crypto_wait_for_hci_result = 1;
     hci_send_cmd(&hci_le_encrypt, key_flipped, plaintext_flipped);
 }
 
-static void sm_cmac_handle_aes_engine_ready(void){
+static uint8_t btstack_crypto_cmac_get_byte(btstack_crypto_aes128_cmac_t * btstack_crypto_cmac, uint16_t pos){
+	if (btstack_crypto_cmac->btstack_crypto.operation == BTSTACK_CRYPTO_CMAC_GENERATOR){
+		return (*btstack_crypto_cmac->get_byte_callback)(pos);
+	} else {
+		return btstack_crypto_cmac->message[pos]; 
+	}
+}
+
+static void btstack_crytpo_cmac_handle_aes_engine_ready(btstack_crypto_aes128_cmac_t * btstack_crypto_cmac){
     switch (sm_cmac_state){
         case CMAC_CALC_SUBKEYS: {
             sm_key_t const_zero;
             memset(const_zero, 0, 16);
-            sm_cmac_next_state();
-            sm_aes128_start(sm_cmac_k, const_zero);
+            btstack_crypto_cmac_next_state();
+            btstack_crypto_aes128_start(sm_cmac_k, const_zero);
             break;
         }
         case CMAC_CALC_MI: {
             int j;
             sm_key_t y;
             for (j=0;j<16;j++){
-                y[j] = sm_cmac_x[j] ^ sm_cmac_get_byte(sm_cmac_block_current*16 + j);
+                y[j] = sm_cmac_x[j] ^ btstack_crypto_cmac_get_byte(btstack_crypto_cmac, sm_cmac_block_current*16 + j);
             }
             sm_cmac_block_current++;
-            sm_cmac_next_state();
-            sm_aes128_start(sm_cmac_k, y);
+            btstack_crypto_cmac_next_state();
+            btstack_crypto_aes128_start(sm_cmac_k, y);
             break;
         }
         case CMAC_CALC_MLAST: {
@@ -119,18 +126,17 @@ static void sm_cmac_handle_aes_engine_ready(void){
                 y[i] = sm_cmac_x[i] ^ sm_cmac_m_last[i];
             }
             sm_cmac_block_current++;
-            sm_cmac_next_state();
-            sm_aes128_start(sm_cmac_k, y);
+            btstack_crypto_cmac_next_state();
+            btstack_crypto_aes128_start(sm_cmac_k, y);
             break;
         }
         default:
-            log_info("sm_cmac_handle_aes_engine_ready called in state %u", sm_cmac_state);
+            log_info("btstack_crytpo_cmac_handle_aes_engine_ready called in state %u", sm_cmac_state);
             break;
     }
 }
 
-// CMAC Implementation using AES128 engine
-static void sm_shift_left_by_one_bit_inplace(int len, uint8_t * data){
+static void btstack_crypto_cmac_shift_left_by_one_bit_inplace(int len, uint8_t * data){
     int i;
     int carry = 0;
     for (i=len-1; i >= 0 ; i--){
@@ -140,18 +146,18 @@ static void sm_shift_left_by_one_bit_inplace(int len, uint8_t * data){
     }
 }
 
-static void sm_cmac_handle_encryption_result(btstack_crypto_aes128_cmac_t * btstack_crypto_cmac, sm_key_t data){
+static void btstack_crypto_cmac_handle_encryption_result(btstack_crypto_aes128_cmac_t * btstack_crypto_cmac, sm_key_t data){
     switch (sm_cmac_state){
         case CMAC_W4_SUBKEYS: {
             sm_key_t k1;
             memcpy(k1, data, 16);
-            sm_shift_left_by_one_bit_inplace(16, k1);
+            btstack_crypto_cmac_shift_left_by_one_bit_inplace(16, k1);
             if (data[0] & 0x80){
                 k1[15] ^= 0x87;
             }
             sm_key_t k2;
             memcpy(k2, k1, 16);
-            sm_shift_left_by_one_bit_inplace(16, k2);
+            btstack_crypto_cmac_shift_left_by_one_bit_inplace(16, k2);
             if (k1[0] & 0x80){
                 k2[15] ^= 0x87;
             }
@@ -162,15 +168,15 @@ static void sm_cmac_handle_encryption_result(btstack_crypto_aes128_cmac_t * btst
 
             // step 4: set m_last
             int i;
-            if (sm_cmac_last_block_complete()){
+            if (btstack_crytpo_cmac_last_block_complete(btstack_crypto_cmac)){
                 for (i=0;i<16;i++){
-                    sm_cmac_m_last[i] = sm_cmac_get_byte(sm_cmac_message_len - 16 + i) ^ k1[i];
+                    sm_cmac_m_last[i] = btstack_crypto_cmac_get_byte(btstack_crypto_cmac, btstack_crypto_cmac->size - 16 + i) ^ k1[i];
                 }
             } else {
-                int valid_octets_in_last_block = sm_cmac_message_len & 0x0f;
+                int valid_octets_in_last_block = btstack_crypto_cmac->size & 0x0f;
                 for (i=0;i<16;i++){
                     if (i < valid_octets_in_last_block){
-                        sm_cmac_m_last[i] = sm_cmac_get_byte((sm_cmac_message_len & 0xfff0) + i) ^ k2[i];
+                        sm_cmac_m_last[i] = btstack_crypto_cmac_get_byte(btstack_crypto_cmac, (btstack_crypto_cmac->size & 0xfff0) + i) ^ k2[i];
                         continue;
                     }
                     if (i == valid_octets_in_last_block){
@@ -199,40 +205,33 @@ static void sm_cmac_handle_encryption_result(btstack_crypto_aes128_cmac_t * btst
 			(*btstack_crypto_cmac->btstack_crypto.context_callback.callback)(btstack_crypto_cmac->btstack_crypto.context_callback.context);
             break;
         default:
-            log_info("sm_cmac_handle_encryption_result called in state %u", sm_cmac_state);
+            log_info("btstack_crypto_cmac_handle_encryption_result called in state %u", sm_cmac_state);
             break;
     }
 }
 
-// generic cmac calculation
-static void sm_cmac_general_start(const sm_key_t key, uint16_t message_len, uint8_t (*get_byte_callback)(uint16_t offset), void (*done_callback)(uint8_t hash[8])){
-    // Generalized CMAC
-    memcpy(sm_cmac_k, key, 16);
+static void btstack_crypo_cmac_start(btstack_crypto_aes128_cmac_t * btstack_crypto_cmac){
+
+    memcpy(sm_cmac_k, btstack_crypto_cmac->key, 16);
     memset(sm_cmac_x, 0, 16);
     sm_cmac_block_current = 0;
-    sm_cmac_message_len  = message_len;
-    sm_cmac_done_handler = done_callback;
-    sm_cmac_get_byte     = get_byte_callback;
 
     // step 2: n := ceil(len/const_Bsize);
-    sm_cmac_block_count = (sm_cmac_message_len + 15) / 16;
+    sm_cmac_block_count = (btstack_crypto_cmac->size + 15) / 16;
 
     // step 3: ..
     if (sm_cmac_block_count==0){
         sm_cmac_block_count = 1;
     }
-    log_info("sm_cmac_general_start: len %u, block count %u", sm_cmac_message_len, sm_cmac_block_count);
+    log_info("btstack_crypo_cmac_start: len %u, block count %u", btstack_crypto_cmac->size, sm_cmac_block_count);
 
     // first, we need to compute l for k1, k2, and m_last
     sm_cmac_state = CMAC_CALC_SUBKEYS;
 
     // let's go
-    sm_cmac_handle_aes_engine_ready();
+    btstack_crytpo_cmac_handle_aes_engine_ready(btstack_crypto_cmac);
 }
 
-
-
-// end cmac
 static void btstack_crypto_run(void){
 
     uint8_t key_flipped[16];
@@ -257,20 +256,17 @@ static void btstack_crypto_run(void){
 		    hci_send_cmd(&hci_le_rand);
 		    break;
 		case BTSTACK_CRYPTO_AES128:
-			btstack_crypto_wait_for_hci_result = 1;
 			btstack_crypto_aes128 = (btstack_crypto_aes128_t *) btstack_crypto;
-		    reverse_128(btstack_crypto_aes128->key, key_flipped);
-		    reverse_128(btstack_crypto_aes128->plaintext, plaintext_flipped);
-		    hci_send_cmd(&hci_le_encrypt, key_flipped, plaintext_flipped);
+			btstack_crypto_aes128_start(btstack_crypto_aes128->key, btstack_crypto_aes128->plaintext);
 		    break;
 		case BTSTACK_CRYPTO_CMAC_MESSAGE:
 		case BTSTACK_CRYPTO_CMAC_GENERATOR:
 			btstack_crypto_wait_for_hci_result = 1;
 			btstack_crypto_cmac = (btstack_crypto_aes128_cmac_t *) btstack_crypto;
 			if (sm_cmac_state == CMAC_IDLE){
-				sm_cmac_general_start(btstack_crypto_cmac->key, btstack_crypto_cmac->size, btstack_crypto_cmac->get_byte_callback, NULL);
+				btstack_crypo_cmac_start(btstack_crypto_cmac);
 			} else {
-				sm_cmac_handle_aes_engine_ready();
+				btstack_crytpo_cmac_handle_aes_engine_ready(btstack_crypto_cmac);
 			}
 			break;
 			break;
@@ -317,7 +313,7 @@ static void btstack_crypto_handle_encryption_result(const uint8_t * data){
 		case BTSTACK_CRYPTO_CMAC_MESSAGE:
 			btstack_crypto_cmac = (btstack_crypto_aes128_cmac_t*) btstack_linked_list_get_first_item(&btstack_crypto_operations);
 		    reverse_128(data, result);
-		    sm_cmac_handle_encryption_result(btstack_crypto_cmac, result);
+		    btstack_crypto_cmac_handle_encryption_result(btstack_crypto_cmac, result);
 			break;
 		default:
 			break;
@@ -374,8 +370,6 @@ void btstack_crypto_aes128_encrypt(btstack_crypto_aes128_t * request, const uint
 	btstack_crypto_run();
 }
 
-#ifdef CMAC_TEMP_API
-// Temporary API
 void btstack_crypto_aes128_cmac_generator(btstack_crypto_aes128_cmac_t * request, const uint8_t * key, uint16_t size, uint8_t (*get_byte_callback)(uint16_t pos), uint8_t * hash, void (* callback)(void * arg), void * callback_arg){
 	request->btstack_crypto.context_callback.callback  = callback;
 	request->btstack_crypto.context_callback.context   = callback_arg;
@@ -387,32 +381,17 @@ void btstack_crypto_aes128_cmac_generator(btstack_crypto_aes128_cmac_t * request
 	btstack_linked_list_add_tail(&btstack_crypto_operations, (btstack_linked_item_t*) request);
 	btstack_crypto_run();
 }
-#else
-// Final API
-void btstack_crypto_aes128_cmac_generator(btstack_crypto_aes128_cmac_t * request, const uint8_t * key, uint16_t size, void (*generator)(void * context, uint8_t ** data, uint16_t * size), void * generator_arg, uint8_t * hash, void (* callback)(void * arg), void * callback_arg){
-	request->btstack_crypto.context_callback.callback  = callback;
-	request->btstack_crypto.context_callback.context   = callback_arg;
-	request->btstack_crypto.operation         		   = BTSTACK_CRYPTO_CMAC_GENERATOR;
-	request->key 									   = key;
-	request->size 									   = size;
-	request->hash 									   = hash;
-	request->generator 								   = generator;
-	request->generator_arg  					       = generator_arg;
-	btstack_linked_list_add_tail(&btstack_crypto_operations, (btstack_linked_item_t*) request);
-	btstack_crypto_run();
-}
 
 void btstack_crypto_aes128_cmac_message(btstack_crypto_aes128_cmac_t * request, const uint8_t * key, uint16_t size, const uint8_t * message, uint8_t * hash, void (* callback)(void * arg), void * callback_arg){
 	request->btstack_crypto.context_callback.callback  = callback;
 	request->btstack_crypto.context_callback.context   = callback_arg;
 	request->btstack_crypto.operation         		   = BTSTACK_CRYPTO_CMAC_MESSAGE;
 	request->key 									   = key;
+	request->size 									   = size;
+	request->message        						   = message;
 	request->hash 									   = hash;
-	request->generator 								   = NULL;
-	request->generator_arg  					       = message;
 	btstack_linked_list_add_tail(&btstack_crypto_operations, (btstack_linked_item_t*) request);
 	btstack_crypto_run();
 }
-#endif
 
 

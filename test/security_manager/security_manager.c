@@ -241,7 +241,7 @@ static void validate_message(const char * name, const char * message_string, con
     // printf_hexdump(key, 16);
 
     cmac_hash_received = 0;
-    btstack_crypto_aes128_cmac_generator(&btstack_crypto_aes128_cmac, key, len, &get_byte, cmac_hash, &cmac_done2, NULL);
+    btstack_crypto_aes128_cmac_message(&btstack_crypto_aes128_cmac, key, len, m, cmac_hash, &cmac_done2, NULL);
     while (!cmac_hash_received){
         aes128_report_result();
     }
