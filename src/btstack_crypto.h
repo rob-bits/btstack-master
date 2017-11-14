@@ -51,9 +51,13 @@
 extern "C" {
 #endif
 
+#define CMAC_TEMP_API
+
 typedef enum {
 	BTSTACK_CRYPTO_RANDOM,
 	BTSTACK_CRYPTO_AES128,
+	BTSTACK_CRYPTO_CMAC_GENERATOR,
+	BTSTACK_CRYPTO_CMAC_MESSAGE,
 } btstack_crypto_operation_t;
 
 typedef struct {
@@ -73,6 +77,19 @@ typedef struct {
 	const uint8_t  * plaintext;
 	uint8_t  * ciphertext;
 } btstack_crypto_aes128_t;
+
+typedef struct {
+	btstack_crypto_t btstack_crypto;
+	const uint8_t  * key;
+	uint16_t         size;
+#ifdef CMAC_TEMP_API
+	uint8_t (*get_byte_callback)(uint16_t pos);
+#else
+	void (*generator)(void * context, uint8_t ** data, uint16_t * size);
+	void * generator_context;
+#endif
+	uint8_t  * hash;
+} btstack_crypto_aes128_cmac_t;
 
 /** 
  * Initialize crypto functions
@@ -101,6 +118,51 @@ void btstack_crypto_random_generate(btstack_crypto_random_t * request, uint8_t *
  * @note request needs to stay avaliable until callback (i.e. not provided on stack)
  */
 void btstack_crypto_aes128_encrypt(btstack_crypto_aes128_t * request, const uint8_t * key, const uint8_t * plaintext, uint8_t * ciphertext, void (* callback)(void * arg), void * callback_arg);
+
+#ifdef CMAC_TEMP_API
+
+// Temporary API
+
+/**
+ * Calculate Cipher-based Message Authentication Code (CMAC) using AES128 and a generator function to provide data
+ * @param request
+ * @param key (16 bytes)
+ * @param size of message
+ * @param generator provides byte at requested position
+ * @param callback
+ * @param callback_arg
+ */
+void btstack_crypto_aes128_cmac_generator(btstack_crypto_aes128_cmac_t * request, const uint8_t * key, uint16_t size, uint8_t (*get_byte_callback)(uint16_t pos), uint8_t * hash, void (* callback)(void * arg), void * callback_arg);
+
+#else
+
+// Final API
+
+/**
+ * Calculate Cipher-based Message Authentication Code (CMAC) using AES128 and a generator function to provide data
+ * @param request
+ * @param key (16 bytes)
+ * @param len of message
+ * @param generator provides next chunk of data
+ * @param generator_arg
+ * @param hash result
+ * @param callback
+ * @param callback_arg
+ */
+void btstack_crypto_aes128_cmac_generator(btstack_crypto_aes128_cmac_t * request, const uint8_t * key, uint16_t len, void (*generator)(void * context, uint8_t ** data, uint16_t * size), void * generator_arg,  uint8_t * hash, void (* callback)(void * arg), void * callback_arg);
+
+/**
+ * Calculate Cipher-based Message Authentication Code (CMAC) using AES128 and complete message
+ * @param request
+ * @param key (16 bytes)
+ * @param len of message
+ * @param message
+ * @param hash result
+ * @param callback
+ * @param callback_arg
+ */
+void btstack_crypto_aes128_cmac_message(btstack_crypto_aes128_cmac_t * request, const uint8_t * key, uint16_t len, const uint8_t * message,  uint8_t * hash, void (* callback)(void * arg), void * callback_arg);
+#endif
 
 #if defined __cplusplus
 }

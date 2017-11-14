@@ -18,8 +18,10 @@
 
 #include "hci_cmd.h"
 #include "btstack_util.h"
+#include "btstack_debug.h"
 
 #include "btstack_memory.h"
+#include "btstack_crypto.h"
 #include "hci.h"
 #include "hci_dump.h"
 #include "l2cap.h"
@@ -207,6 +209,13 @@ static void cmac_done(uint8_t * hash){
     printf_hexdump(hash, 16);
     cmac_hash_received = 1;
 }
+static void cmac_done2(void * arg){
+    UNUSED(arg);
+    printf("cmac hash: ");
+    printf_hexdump(cmac_hash, 16);
+    cmac_hash_received = 1;
+}
+
 
 static uint8_t m[128];
 static uint8_t get_byte(uint16_t offset){
@@ -236,7 +245,33 @@ static void validate_message(const char * name, const char * message_string, con
     CHECK_EQUAL_ARRAY(cmac, cmac_hash, 16);
 }
 
+static void validate_message2(const char * name, const char * message_string, const char * cmac_string){
+
+    btstack_crypto_aes128_cmac_t btstack_crypto_aes128_cmac;
+    
+    mock_clear_packet_buffer();
+    int len = parse_hex(m, message_string);
+
+    // expected result
+    sm_key_t cmac;
+    parse_hex(cmac, cmac_string);
+
+    printf("-- verify key %s message %s, len %u:\nm:    %s\ncmac: %s\n", key_string, name, len, message_string, cmac_string);
+
+    sm_key_t key;
+    parse_hex(key, key_string);
+    // printf_hexdump(key, 16);
+
+    cmac_hash_received = 0;
+    btstack_crypto_aes128_cmac_generator(&btstack_crypto_aes128_cmac, key, len, &get_byte, cmac_hash, &cmac_done2, NULL);
+    while (!cmac_hash_received){
+        aes128_report_result();
+    }
+    CHECK_EQUAL_ARRAY(cmac, cmac_hash, 16);
+}
+
 #define VALIDATE_MESSAGE(NAME) validate_message(#NAME, NAME##_string, cmac_##NAME##_string)
+#define VALIDATE_MESSAGE2(NAME) validate_message2(#NAME, NAME##_string, cmac_##NAME##_string)
 
 TEST_GROUP(SecurityManager){
 	void setup(void){
@@ -288,6 +323,32 @@ TEST(SecurityManager, CMACTest){
     VALIDATE_MESSAGE(m40);
     VALIDATE_MESSAGE(m64);
 }
+
+TEST(SecurityManager, CMACTest2){
+
+    mock_init();
+    mock_simulate_hci_state_working();
+
+    // expect le encrypt commmand
+    CHECK_HCI_COMMAND(test_command_packet_01);
+
+    aes128_report_result();
+
+    // expect le encrypt commmand
+    CHECK_HCI_COMMAND(test_command_packet_02);
+
+    aes128_report_result();
+    mock_clear_packet_buffer();
+
+    log_info("CMACTest2 starts");
+
+    // generic aes cmac tests
+    VALIDATE_MESSAGE2(m0);
+    VALIDATE_MESSAGE2(m16);
+    VALIDATE_MESSAGE2(m40);
+    VALIDATE_MESSAGE2(m64);
+}
+
 
 TEST(SecurityManager, MainTest){
 
