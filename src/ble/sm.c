@@ -222,17 +222,11 @@ static random_address_update_t rau_state;
 static bd_addr_t sm_random_address;
 
 // CMAC Calculation: General
-#ifdef ENABLE_CMAC_ENGINE
-static cmac_state_t sm_cmac_state;
 static uint16_t     sm_cmac_message_len;
-static sm_key_t     sm_cmac_k;
-static sm_key_t     sm_cmac_x;
-static sm_key_t     sm_cmac_m_last;
-static uint8_t      sm_cmac_block_current;
-static uint8_t      sm_cmac_block_count;
-static uint8_t      (*sm_cmac_get_byte)(uint16_t offset);
-static void         (*sm_cmac_done_handler)(uint8_t * hash);
-#endif
+static btstack_crypto_aes128_cmac_t sm_cmac_request;
+static void (*sm_cmac_done_callback)(uint8_t hash[8]);
+static uint8_t sm_cmac_active;
+static uint8_t sm_cmac_hash[16];
 
 // CMAC for ATT Signed Writes
 #ifdef ENABLE_LE_SIGNED_WRITE
@@ -400,12 +394,13 @@ static const stk_generation_method_t stk_generation_method_with_secure_connectio
 #endif
 
 static void sm_run(void);
+static void sm_cmac_general_start(const sm_key_t key, uint16_t message_len, uint8_t (*get_byte_callback)(uint16_t offset), void (*done_callback)(uint8_t * hash));
 static void sm_done_for_handle(hci_con_handle_t con_handle);
 static sm_connection_t * sm_get_connection_for_handle(hci_con_handle_t con_handle);
 static inline int sm_calc_actual_encryption_key_size(int other);
 static int sm_validate_stk_generation_method(void);
 static void sm_handle_encryption_result_address_resolution(void *arg);
-static void sm_handle_encryption_result_cmac(void *arg);
+// static void sm_handle_encryption_result_cmac(void *arg);
 static void sm_handle_encryption_result_dkg_dhk(void *arg);
 static void sm_handle_encryption_result_dkg_irk(void *arg);
 static void sm_handle_encryption_result_enc_a(void *arg);
@@ -614,91 +609,9 @@ static void sm_s1_r_prime(sm_key_t r1, sm_key_t r2, uint8_t * r_prime){
 
 #ifdef ENABLE_LE_SECURE_CONNECTIONS
 // Software implementations of crypto toolbox for LE Secure Connection
-// TODO: replace with code to use AES Engine of HCI Controller
 typedef uint8_t sm_key24_t[3];
 typedef uint8_t sm_key56_t[7];
 typedef uint8_t sm_key256_t[32];
-
-#if 0
-static void aes128_calc_cyphertext(const uint8_t key[16], const uint8_t plaintext[16], uint8_t cyphertext[16]){
-    uint32_t rk[RKLENGTH(KEYBITS)];
-    int nrounds = rijndaelSetupEncrypt(rk, &key[0], KEYBITS);
-    rijndaelEncrypt(rk, nrounds, plaintext, cyphertext);
-}
-
-static void calc_subkeys(sm_key_t k0, sm_key_t k1, sm_key_t k2){
-    memcpy(k1, k0, 16);
-    sm_shift_left_by_one_bit_inplace(16, k1);
-    if (k0[0] & 0x80){
-        k1[15] ^= 0x87;
-    }
-    memcpy(k2, k1, 16);
-    sm_shift_left_by_one_bit_inplace(16, k2);
-    if (k1[0] & 0x80){
-        k2[15] ^= 0x87;
-    }
-}
-
-static void aes_cmac(sm_key_t aes_cmac, const sm_key_t key, const uint8_t * data, int cmac_message_len){
-    sm_key_t k0, k1, k2, zero;
-    memset(zero, 0, 16);
-
-    aes128_calc_cyphertext(key, zero, k0);
-    calc_subkeys(k0, k1, k2);
-
-    int cmac_block_count = (cmac_message_len + 15) / 16;
-
-    // step 3: ..
-    if (cmac_block_count==0){
-        cmac_block_count = 1;
-    }
-
-    // step 4: set m_last
-    sm_key_t cmac_m_last;
-    int sm_cmac_last_block_complete = cmac_message_len != 0 && (cmac_message_len & 0x0f) == 0;
-    int i;
-    if (sm_cmac_last_block_complete){
-        for (i=0;i<16;i++){
-            cmac_m_last[i] = data[cmac_message_len - 16 + i] ^ k1[i];
-        }
-    } else {
-        int valid_octets_in_last_block = cmac_message_len & 0x0f;
-        for (i=0;i<16;i++){
-            if (i < valid_octets_in_last_block){
-                cmac_m_last[i] = data[(cmac_message_len & 0xfff0) + i] ^ k2[i];
-                continue;
-            }
-            if (i == valid_octets_in_last_block){
-                cmac_m_last[i] = 0x80 ^ k2[i];
-                continue;
-            }
-            cmac_m_last[i] = k2[i];
-        }
-    }
-
-    // printf("sm_cmac_start: len %u, block count %u\n", cmac_message_len, cmac_block_count);
-    // LOG_KEY(cmac_m_last);
-
-    // Step 5
-    sm_key_t cmac_x;
-    memset(cmac_x, 0, 16);
-
-    // Step 6
-    sm_key_t sm_cmac_y;
-    for (int block = 0 ; block < cmac_block_count-1 ; block++){
-        for (i=0;i<16;i++){
-            sm_cmac_y[i] = cmac_x[i] ^ data[block * 16 + i];
-        }
-        aes128_calc_cyphertext(key, sm_cmac_y, cmac_x);
-    }
-    for (i=0;i<16;i++){
-        sm_cmac_y[i] = cmac_x[i] ^ cmac_m_last[i];
-    }
-
-    // Step 7
-    aes128_calc_cyphertext(key, sm_cmac_y, aes_cmac);
-}
-#endif
 #endif
 
 static void sm_setup_event_base(uint8_t * event, int event_size, uint8_t type, hci_con_handle_t con_handle, uint8_t addr_type, bd_addr_t address){
@@ -886,43 +799,23 @@ int sm_address_resolution_lookup(uint8_t address_type, bd_addr_t address){
 // CMAC calculation using AES Engineq
 #ifdef ENABLE_CMAC_ENGINE
 
-static inline void sm_cmac_next_state(void){
-    sm_cmac_state = (cmac_state_t) (((int)sm_cmac_state) + 1);
+static void sm_cmac_done_trampoline(void * arg){
+    UNUSED(arg);
+    sm_cmac_active = 0;
+    (*sm_cmac_done_callback)(sm_cmac_hash);
+    sm_run();
 }
 
-static int sm_cmac_last_block_complete(void){
-    if (sm_cmac_message_len == 0) return 0;
-    return (sm_cmac_message_len & 0x0f) == 0;
-}
-
-int sm_cmac_ready(void){
-    return sm_cmac_state == CMAC_IDLE;
+static int sm_cmac_ready(void){
+    return sm_cmac_active == 0;
 }
 
 // generic cmac calculation
-void sm_cmac_general_start(const sm_key_t key, uint16_t message_len, uint8_t (*get_byte_callback)(uint16_t offset), void (*done_callback)(uint8_t hash[8])){
-    // Generalized CMAC
-    memcpy(sm_cmac_k, key, 16);
-    memset(sm_cmac_x, 0, 16);
-    sm_cmac_block_current = 0;
-    sm_cmac_message_len  = message_len;
-    sm_cmac_done_handler = done_callback;
-    sm_cmac_get_byte     = get_byte_callback;
-
-    // step 2: n := ceil(len/const_Bsize);
-    sm_cmac_block_count = (sm_cmac_message_len + 15) / 16;
-
-    // step 3: ..
-    if (sm_cmac_block_count==0){
-        sm_cmac_block_count = 1;
-    }
-    log_info("sm_cmac_general_start: len %u, block count %u", sm_cmac_message_len, sm_cmac_block_count);
-
-    // first, we need to compute l for k1, k2, and m_last
-    sm_cmac_state = CMAC_CALC_SUBKEYS;
-
-    // let's go
-    sm_run();
+static void sm_cmac_general_start(const sm_key_t key, uint16_t message_len, uint8_t (*get_byte_callback)(uint16_t offset), void (*done_callback)(uint8_t * hash)){
+    sm_cmac_active = 1;
+    sm_cmac_done_callback = done_callback;
+    sm_cmac_message_len = message_len;
+    btstack_crypto_aes128_cmac_generator(&sm_cmac_request, key, message_len, get_byte_callback, sm_cmac_hash, sm_cmac_done_trampoline, NULL);
 }
 #endif
 
@@ -955,128 +848,6 @@ void sm_cmac_signed_write_start(const sm_key_t k, uint8_t opcode, hci_con_handle
     uint16_t total_message_len = 3 + message_len + 4;  // incl. virtually prepended att opcode, handle and appended sign_counter in LE
     sm_cmac_message = message;
     sm_cmac_general_start(k, total_message_len, &sm_cmac_signed_write_message_get_byte, done_handler);
-}
-#endif
-
-#ifdef ENABLE_CMAC_ENGINE
-
-// pre: sm_aes128_state != SM_AES128_ACTIVE, hci_can_send_command == 1
-// context is made availabe to aes128 result handler by this
-static void sm_aes128_start(sm_key_t key, sm_key_t plaintext){
-    memcpy(sm_aes128_key, key, 16);
-    memcpy(sm_aes128_plaintext, plaintext, 16);
-    sm_aes128_state = SM_AES128_ACTIVE;
-    btstack_crypto_aes128_encrypt(&sm_crypto_aes128_request, sm_aes128_key, sm_aes128_plaintext, sm_aes128_ciphertext, sm_handle_encryption_result_cmac, NULL);
-}
-
-static void sm_cmac_handle_aes_engine_ready(void){
-    switch (sm_cmac_state){
-        case CMAC_CALC_SUBKEYS: {
-            sm_key_t const_zero;
-            memset(const_zero, 0, 16);
-            sm_cmac_next_state();
-            sm_aes128_start(sm_cmac_k, const_zero);
-            break;
-        }
-        case CMAC_CALC_MI: {
-            int j;
-            sm_key_t y;
-            for (j=0;j<16;j++){
-                y[j] = sm_cmac_x[j] ^ sm_cmac_get_byte(sm_cmac_block_current*16 + j);
-            }
-            sm_cmac_block_current++;
-            sm_cmac_next_state();
-            sm_aes128_start(sm_cmac_k, y);
-            break;
-        }
-        case CMAC_CALC_MLAST: {
-            int i;
-            sm_key_t y;
-            for (i=0;i<16;i++){
-                y[i] = sm_cmac_x[i] ^ sm_cmac_m_last[i];
-            }
-            sm_cmac_block_current++;
-            sm_cmac_next_state();
-            sm_aes128_start(sm_cmac_k, y);
-            break;
-        }
-        default:
-            log_info("sm_cmac_handle_aes_engine_ready called in state %u", sm_cmac_state);
-            break;
-    }
-}
-
-// CMAC Implementation using AES128 engine
-static void sm_shift_left_by_one_bit_inplace(int len, uint8_t * data){
-    int i;
-    int carry = 0;
-    for (i=len-1; i >= 0 ; i--){
-        int new_carry = data[i] >> 7;
-        data[i] = data[i] << 1 | carry;
-        carry = new_carry;
-    }
-}
-
-static void sm_cmac_handle_encryption_result(sm_key_t data){
-    switch (sm_cmac_state){
-        case CMAC_W4_SUBKEYS: {
-            sm_key_t k1;
-            memcpy(k1, data, 16);
-            sm_shift_left_by_one_bit_inplace(16, k1);
-            if (data[0] & 0x80){
-                k1[15] ^= 0x87;
-            }
-            sm_key_t k2;
-            memcpy(k2, k1, 16);
-            sm_shift_left_by_one_bit_inplace(16, k2);
-            if (k1[0] & 0x80){
-                k2[15] ^= 0x87;
-            }
-
-            log_info_key("k", sm_cmac_k);
-            log_info_key("k1", k1);
-            log_info_key("k2", k2);
-
-            // step 4: set m_last
-            int i;
-            if (sm_cmac_last_block_complete()){
-                for (i=0;i<16;i++){
-                    sm_cmac_m_last[i] = sm_cmac_get_byte(sm_cmac_message_len - 16 + i) ^ k1[i];
-                }
-            } else {
-                int valid_octets_in_last_block = sm_cmac_message_len & 0x0f;
-                for (i=0;i<16;i++){
-                    if (i < valid_octets_in_last_block){
-                        sm_cmac_m_last[i] = sm_cmac_get_byte((sm_cmac_message_len & 0xfff0) + i) ^ k2[i];
-                        continue;
-                    }
-                    if (i == valid_octets_in_last_block){
-                        sm_cmac_m_last[i] = 0x80 ^ k2[i];
-                        continue;
-                    }
-                    sm_cmac_m_last[i] = k2[i];
-                }
-            }
-
-            // next
-            sm_cmac_state = sm_cmac_block_current < sm_cmac_block_count - 1 ? CMAC_CALC_MI : CMAC_CALC_MLAST;
-            break;
-        }
-        case CMAC_W4_MI:
-            memcpy(sm_cmac_x, data, 16);
-            sm_cmac_state = sm_cmac_block_current < sm_cmac_block_count - 1 ? CMAC_CALC_MI : CMAC_CALC_MLAST;
-            break;
-        case CMAC_W4_MLAST:
-            // done
-            log_info("Setting CMAC Engine to IDLE");
-            sm_cmac_state = CMAC_IDLE;
-            log_info_key("CMAC", data);
-            sm_cmac_done_handler(data);
-            break;
-        default:
-            log_info("sm_cmac_handle_encryption_result called in state %u", sm_cmac_state);
-            break;
-    }
 }
 #endif
 
@@ -1950,21 +1721,6 @@ static void sm_run(void){
             break;
     }
 
-#ifdef ENABLE_CMAC_ENGINE
-    // CMAC
-    switch (sm_cmac_state){
-        case CMAC_CALC_SUBKEYS:
-        case CMAC_CALC_MI:
-        case CMAC_CALC_MLAST:
-            // already busy?
-            if (sm_aes128_state == SM_AES128_ACTIVE) break;
-            sm_cmac_handle_aes_engine_ready();
-            return;
-        default:
-            break;
-    }
-#endif
-
     // CSRK Lookup
     // -- if csrk lookup ready, find connection that require csrk lookup
     if (sm_address_resolution_idle()){
@@ -2802,15 +2558,6 @@ static void sm_handle_encryption_result_rau(void *arg){
     rau_state = RAU_SET_ADDRESS;
     sm_run();
 }
-
-#ifdef ENABLE_CMAC_ENGINE
-static void sm_handle_encryption_result_cmac(void *arg){
-    UNUSED(arg);
-    sm_aes128_state = SM_AES128_IDLE;
-    sm_cmac_handle_encryption_result(sm_aes128_ciphertext);
-    sm_run();
-}
-#endif
 
 #ifdef ENABLE_LE_SECURE_CONNECTIONS
 
@@ -3834,7 +3581,7 @@ void sm_init(void){
     sm_reconstruct_ltk_without_le_device_db_entry = 1;
 
 #ifdef ENABLE_CMAC_ENGINE
-    sm_cmac_state  = CMAC_IDLE;
+    sm_cmac_active  = 0;
 #endif
     dkg_state = DKG_W4_WORKING;
     rau_state = RAU_W4_WORKING;

@@ -236,23 +236,6 @@ void sm_authorization_decline(hci_con_handle_t con_handle);
  */
 void sm_authorization_grant(hci_con_handle_t con_handle);
 
-
-/**
- * @brief Check if CMAC AES engine is ready
- * @return ready
- */
- int sm_cmac_ready(void);
-
-/*
- * @brief Generic CMAC AES
- * @param key
- * @param message_len
- * @param get_byte_callback
- * @param done_callback
- * @note hash is 16 bytes in big endian
- */
-void sm_cmac_general_start(const sm_key_t key, uint16_t message_len, uint8_t (*get_byte_callback)(uint16_t offset), void (*done_callback)(uint8_t * hash));
-
 /**
  * @brief Support for signed writes, used by att_server.
  * @note Message is in little endian to allows passing in ATT PDU without flipping. 
