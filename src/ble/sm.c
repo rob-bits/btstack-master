@@ -404,7 +404,6 @@ static void sm_done_for_handle(hci_con_handle_t con_handle);
 static sm_connection_t * sm_get_connection_for_handle(hci_con_handle_t con_handle);
 static inline int sm_calc_actual_encryption_key_size(int other);
 static int sm_validate_stk_generation_method(void);
-static void sm_handle_encryption_result(uint8_t * data);
 static void sm_handle_encryption_result_address_resolution(void *arg);
 static void sm_handle_encryption_result_cmac(void *arg);
 static void sm_handle_encryption_result_dkg_dhk(void *arg);
