@@ -58,6 +58,8 @@ typedef enum {
 	BTSTACK_CRYPTO_AES128,
 	BTSTACK_CRYPTO_CMAC_GENERATOR,
 	BTSTACK_CRYPTO_CMAC_MESSAGE,
+	BTSTACK_CRYPTO_EC_P192_GENERATE_KEY,
+	BTSTACK_CRYPTO_EC_P192_CALCULATE_DHKEY,
 } btstack_crypto_operation_t;
 
 typedef struct {
@@ -88,6 +90,12 @@ typedef struct {
 	};
 	uint8_t  * hash;
 } btstack_crypto_aes128_cmac_t;
+
+typedef struct {
+	btstack_crypto_t btstack_crypto;
+	uint8_t * public_key;
+    uint8_t * dhkey;
+} btstack_crypto_ec_p192_t;
 
 /** 
  * Initialize crypto functions
@@ -139,6 +147,27 @@ void btstack_crypto_aes128_cmac_generator(btstack_crypto_aes128_cmac_t * request
  * @param callback_arg
  */
 void btstack_crypto_aes128_cmac_message(btstack_crypto_aes128_cmac_t * request, const uint8_t * key, uint16_t len, const uint8_t * message,  uint8_t * hash, void (* callback)(void * arg), void * callback_arg);
+
+/**
+ * Generate Elliptic Curve Public/Private Key Pair (FIPS P-256)
+ * @note BTstack uses a single ECC key pair per reset. 
+ * @note If LE Controller is used for ECC, private key cannot be read or managed
+ * @param request
+ * @param public_key (64 bytes)
+ * @param callback
+ * @param callback_arg
+ */
+void btstack_crypto_ec_p192_generate_key(btstack_crypto_ec_p192_t * request, uint8_t * public_key, void (* callback)(void * arg), void * callback_arg);
+
+/**
+ * Calculate Diffie-Hellman Key based on local private key and remote public key
+ * @param request
+ * @param public_key (64 bytes)
+ * @param dhkey (32 bytes)
+ * @param callback
+ * @param callback_arg
+ */
+void btstack_crypto_ec_p192_calculate_dhkey(btstack_crypto_ec_p192_t * request, const uint8_t * public_key, uint8_t * dhkey, void (* callback)(void * arg), void * callback_arg);
 
 #if defined __cplusplus
 }

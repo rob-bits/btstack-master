@@ -56,6 +56,13 @@ typedef enum {
     CMAC_W4_MLAST
 } btstack_crypto_cmac_state_t;
 
+typedef enum {
+    EC_KEY_GENERATION_IDLE,
+    EC_KEY_GENERATION_ACTIVE,
+    EC_KEY_GENERATION_W4_KEY,
+    EC_KEY_GENERATION_DONE,
+} btstack_crypto_ec_key_generation_state_t;
+
 static void btstack_crypto_run(void);
 
 static uint8_t btstack_crypto_initialized;
@@ -70,6 +77,10 @@ static sm_key_t     sm_cmac_x;
 static sm_key_t     sm_cmac_m_last;
 static uint8_t      sm_cmac_block_current;
 static uint8_t      sm_cmac_block_count;
+
+// state for ECC-P192
+static uint8_t                                  btstack_crypto_ec_p192_public_key[64];
+static btstack_crypto_ec_key_generation_state_t btstack_crypto_ec_p192_key_generation_state;
 
 static inline void btstack_crypto_cmac_next_state(void){
     sm_cmac_state = (btstack_crypto_cmac_state_t) (((int)sm_cmac_state) + 1);
@@ -390,4 +401,19 @@ void btstack_crypto_aes128_cmac_message(btstack_crypto_aes128_cmac_t * request, 
 	btstack_crypto_run();
 }
 
+void btstack_crypto_ec_p192_generate_key(btstack_crypto_ec_p192_t * request, uint8_t * public_key, void (* callback)(void * arg), void * callback_arg){
+    request->btstack_crypto.context_callback.callback  = callback;
+    request->btstack_crypto.context_callback.context   = callback_arg;
+    request->btstack_crypto.operation                  = BTSTACK_CRYPTO_EC_P192_GENERATE_KEY;
+    request->public_key                                = public_key;
+    btstack_crypto_run();
+}
 
+void btstack_crypto_ec_p192_calculate_dhkey(btstack_crypto_ec_p192_t * request, const uint8_t * public_key, uint8_t * dhkey, void (* callback)(void * arg), void * callback_arg){
+    request->btstack_crypto.context_callback.callback  = callback;
+    request->btstack_crypto.context_callback.context   = callback_arg;
+    request->btstack_crypto.operation                  = BTSTACK_CRYPTO_EC_P192_CALCULATE_DHKEY;
+    request->public_key                                = (uint8_t *) public_key;
+    request->dhkey                                     = dhkey;
+    btstack_crypto_run();
+}
