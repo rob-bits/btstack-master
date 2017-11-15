@@ -222,7 +222,6 @@ static random_address_update_t rau_state;
 static bd_addr_t sm_random_address;
 
 // CMAC Calculation: General
-static uint16_t     sm_cmac_message_len;
 static btstack_crypto_aes128_cmac_t sm_cmac_request;
 static void (*sm_cmac_done_callback)(uint8_t hash[8]);
 static uint8_t sm_cmac_active;
@@ -230,9 +229,10 @@ static uint8_t sm_cmac_hash[16];
 
 // CMAC for ATT Signed Writes
 #ifdef ENABLE_LE_SIGNED_WRITE
-static uint8_t      sm_cmac_header[3];
-static const uint8_t * sm_cmac_message;
-static uint8_t      sm_cmac_sign_counter[4];
+static uint16_t        sm_cmac_signed_write_message_len;
+static uint8_t         sm_cmac_signed_write_header[3];
+static const uint8_t * sm_cmac_signed_write_message;
+static uint8_t         sm_cmac_signed_write_sign_counter[4];
 #endif
 
 // CMAC for Secure Connection functions
@@ -394,7 +394,7 @@ static const stk_generation_method_t stk_generation_method_with_secure_connectio
 #endif
 
 static void sm_run(void);
-static void sm_cmac_general_start(const sm_key_t key, uint16_t message_len, uint8_t (*get_byte_callback)(uint16_t offset), void (*done_callback)(uint8_t * hash));
+static void sm_cmac_message_start(const sm_key_t key, uint16_t message_len, const uint8_t * message, void (*done_callback)(uint8_t * hash));
 static void sm_done_for_handle(hci_con_handle_t con_handle);
 static sm_connection_t * sm_get_connection_for_handle(hci_con_handle_t con_handle);
 static inline int sm_calc_actual_encryption_key_size(int other);
@@ -811,43 +811,50 @@ static int sm_cmac_ready(void){
 }
 
 // generic cmac calculation
-static void sm_cmac_general_start(const sm_key_t key, uint16_t message_len, uint8_t (*get_byte_callback)(uint16_t offset), void (*done_callback)(uint8_t * hash)){
+static void sm_cmac_message_start(const sm_key_t key, uint16_t message_len, const uint8_t * message, void (*done_callback)(uint8_t * hash)){
     sm_cmac_active = 1;
     sm_cmac_done_callback = done_callback;
-    sm_cmac_message_len = message_len;
-    btstack_crypto_aes128_cmac_generator(&sm_cmac_request, key, message_len, get_byte_callback, sm_cmac_hash, sm_cmac_done_trampoline, NULL);
+    btstack_crypto_aes128_cmac_message(&sm_cmac_request, key, message_len, message, sm_cmac_hash, sm_cmac_done_trampoline, NULL);
 }
 #endif
 
 // cmac for ATT Message signing
 #ifdef ENABLE_LE_SIGNED_WRITE
+
+static void sm_cmac_generator_start(const sm_key_t key, uint16_t message_len, uint8_t (*get_byte_callback)(uint16_t offset), void (*done_callback)(uint8_t * hash)){
+    sm_cmac_active = 1;
+    sm_cmac_done_callback = done_callback;
+    btstack_crypto_aes128_cmac_generator(&sm_cmac_request, key, message_len, get_byte_callback, sm_cmac_hash, sm_cmac_done_trampoline, NULL);
+}
+
 static uint8_t sm_cmac_signed_write_message_get_byte(uint16_t offset){
-    if (offset >= sm_cmac_message_len) {
-        log_error("sm_cmac_signed_write_message_get_byte. out of bounds, access %u, len %u", offset, sm_cmac_message_len);
+    if (offset >= sm_cmac_signed_write_message_len) {
+        log_error("sm_cmac_signed_write_message_get_byte. out of bounds, access %u, len %u", offset, sm_cmac_signed_write_message_len);
         return 0;
     }
 
-    offset = sm_cmac_message_len - 1 - offset;
+    offset = sm_cmac_signed_write_message_len - 1 - offset;
 
-    // sm_cmac_header[3] | message[] | sm_cmac_sign_counter[4]
+    // sm_cmac_signed_write_header[3] | message[] | sm_cmac_signed_write_sign_counter[4]
     if (offset < 3){
-        return sm_cmac_header[offset];
+        return sm_cmac_signed_write_header[offset];
     }
-    int actual_message_len_incl_header = sm_cmac_message_len - 4;
+    int actual_message_len_incl_header = sm_cmac_signed_write_message_len - 4;
     if (offset <  actual_message_len_incl_header){
-        return sm_cmac_message[offset - 3];
+        return sm_cmac_signed_write_message[offset - 3];
     }
-    return sm_cmac_sign_counter[offset - actual_message_len_incl_header];
+    return sm_cmac_signed_write_sign_counter[offset - actual_message_len_incl_header];
 }
 
 void sm_cmac_signed_write_start(const sm_key_t k, uint8_t opcode, hci_con_handle_t con_handle, uint16_t message_len, const uint8_t * message, uint32_t sign_counter, void (*done_handler)(uint8_t * hash)){
     // ATT Message Signing
-    sm_cmac_header[0] = opcode;
-    little_endian_store_16(sm_cmac_header, 1, con_handle);
-    little_endian_store_32(sm_cmac_sign_counter, 0, sign_counter);
+    sm_cmac_signed_write_header[0] = opcode;
+    little_endian_store_16(sm_cmac_signed_write_header, 1, con_handle);
+    little_endian_store_32(sm_cmac_signed_write_sign_counter, 0, sign_counter);
     uint16_t total_message_len = 3 + message_len + 4;  // incl. virtually prepended att opcode, handle and appended sign_counter in LE
-    sm_cmac_message = message;
-    sm_cmac_general_start(k, total_message_len, &sm_cmac_signed_write_message_get_byte, done_handler);
+    sm_cmac_signed_write_message     = message;
+    sm_cmac_signed_write_message_len = total_message_len;
+    sm_cmac_generator_start(k, total_message_len, &sm_cmac_signed_write_message_get_byte, done_handler);
 }
 #endif
 
@@ -1222,10 +1229,6 @@ static void sm_sc_state_after_receiving_random(sm_connection_t * sm_conn){
     }
 }
 
-static uint8_t sm_sc_cmac_get_byte(uint16_t offset){
-    return sm_cmac_sc_buffer[offset];
-}
-
 static void sm_sc_cmac_done(uint8_t * hash){
     log_info("sm_sc_cmac_done: ");
     log_info_hexdump(hash, 16);
@@ -1340,7 +1343,7 @@ static void f4_engine(sm_connection_t * sm_conn, const sm_key256_t u, const sm_k
     log_info_hexdump(x, 16);
     log_info("f4 message");
     log_info_hexdump(sm_cmac_sc_buffer, message_len);
-    sm_cmac_general_start(x, message_len, &sm_sc_cmac_get_byte, &sm_sc_cmac_done);
+    sm_cmac_message_start(x, message_len, sm_cmac_sc_buffer, &sm_sc_cmac_done);
 }
 
 static const sm_key_t f5_salt = { 0x6C ,0x88, 0x83, 0x91, 0xAA, 0xF5, 0xA5, 0x38, 0x60, 0x37, 0x0B, 0xDB, 0x5A, 0x60, 0x83, 0xBE};
@@ -1391,7 +1394,7 @@ static void f5_calculate_salt(sm_connection_t * sm_conn){
     const uint16_t message_len = 32;
     sm_cmac_connection = sm_conn;
     memcpy(sm_cmac_sc_buffer, setup->sm_dhkey, message_len);
-    sm_cmac_general_start(f5_salt, message_len, &sm_sc_cmac_get_byte, &sm_sc_cmac_done);
+    sm_cmac_message_start(f5_salt, message_len, sm_cmac_sc_buffer, &sm_sc_cmac_done);
 }
 
 static inline void f5_mackkey(sm_connection_t * sm_conn, sm_key_t t, const sm_key_t n1, const sm_key_t n2, const sm_key56_t a1, const sm_key56_t a2){
@@ -1410,7 +1413,7 @@ static inline void f5_mackkey(sm_connection_t * sm_conn, sm_key_t t, const sm_ke
     log_info_hexdump(t, 16);
     log_info("f5 message for MacKey");
     log_info_hexdump(sm_cmac_sc_buffer, message_len);
-    sm_cmac_general_start(t, message_len, &sm_sc_cmac_get_byte, &sm_sc_cmac_done);
+    sm_cmac_message_start(t, message_len, sm_cmac_sc_buffer, &sm_sc_cmac_done);
 }
 
 static void f5_calculate_mackey(sm_connection_t * sm_conn){
@@ -1438,7 +1441,7 @@ static inline void f5_ltk(sm_connection_t * sm_conn, sm_key_t t){
     log_info_hexdump(t, 16);
     log_info("f5 message for LTK");
     log_info_hexdump(sm_cmac_sc_buffer, message_len);
-    sm_cmac_general_start(t, message_len, &sm_sc_cmac_get_byte, &sm_sc_cmac_done);
+    sm_cmac_message_start(t, message_len, sm_cmac_sc_buffer, &sm_sc_cmac_done);
 }
 
 static void f5_calculate_ltk(sm_connection_t * sm_conn){
@@ -1458,7 +1461,7 @@ static void f6_engine(sm_connection_t * sm_conn, const sm_key_t w, const sm_key_
     log_info_hexdump(w, 16);
     log_info("f6 message");
     log_info_hexdump(sm_cmac_sc_buffer, message_len);
-    sm_cmac_general_start(w, 65, &sm_sc_cmac_get_byte, &sm_sc_cmac_done);
+    sm_cmac_message_start(w, 65, sm_cmac_sc_buffer, &sm_sc_cmac_done);
 }
 
 // g2(U, V, X, Y) = AES-CMACX(U || V || Y) mod 2^32
@@ -1476,7 +1479,7 @@ static void g2_engine(sm_connection_t * sm_conn, const sm_key256_t u, const sm_k
     log_info_hexdump(x, 16);
     log_info("g2 message");
     log_info_hexdump(sm_cmac_sc_buffer, message_len);
-    sm_cmac_general_start(x, message_len, &sm_sc_cmac_get_byte, &sm_sc_cmac_done);
+    sm_cmac_message_start(x, message_len, sm_cmac_sc_buffer, &sm_sc_cmac_done);
 }
 
 static void g2_calculate(sm_connection_t * sm_conn) {
@@ -1593,7 +1596,7 @@ static void h6_engine(sm_connection_t * sm_conn, const sm_key_t w, const uint32_
     log_info_hexdump(w, 16);
     log_info("h6 message");
     log_info_hexdump(sm_cmac_sc_buffer, message_len);
-    sm_cmac_general_start(w, message_len, &sm_sc_cmac_get_byte, &sm_sc_cmac_done);
+    sm_cmac_message_start(w, message_len, sm_cmac_sc_buffer, &sm_sc_cmac_done);
 }
 
 // For SC, setup->sm_local_ltk holds full LTK (sm_ltk is already truncated)
