@@ -70,7 +70,6 @@ static sm_key_t     sm_cmac_x;
 static sm_key_t     sm_cmac_m_last;
 static uint8_t      sm_cmac_block_current;
 static uint8_t      sm_cmac_block_count;
-static void         (*sm_cmac_done_handler)(uint8_t * hash);
 
 static inline void btstack_crypto_cmac_next_state(void){
     sm_cmac_state = (btstack_crypto_cmac_state_t) (((int)sm_cmac_state) + 1);
@@ -234,10 +233,7 @@ static void btstack_crypo_cmac_start(btstack_crypto_aes128_cmac_t * btstack_cryp
 
 static void btstack_crypto_run(void){
 
-    uint8_t key_flipped[16];
-    uint8_t plaintext_flipped[16];
-
-    btstack_crypto_aes128_t * btstack_crypto_aes128;
+    btstack_crypto_aes128_t        * btstack_crypto_aes128;
     btstack_crypto_aes128_cmac_t   * btstack_crypto_cmac;
 
 	// already active?
