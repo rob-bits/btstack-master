@@ -169,6 +169,13 @@ void btstack_crypto_ec_p192_generate_key(btstack_crypto_ec_p192_t * request, uin
  */
 void btstack_crypto_ec_p192_calculate_dhkey(btstack_crypto_ec_p192_t * request, const uint8_t * public_key, uint8_t * dhkey, void (* callback)(void * arg), void * callback_arg);
 
+/*
+ * Validate public key (not implemented for LE Controller ECC)
+ * @param public_key (64 bytes)
+ * @result 0 == valid
+ */
+int btstack_crypto_ec_p192_validate_public_key(const uint8_t * public_key);
+
 #if defined __cplusplus
 }
 #endif

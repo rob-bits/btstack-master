@@ -346,6 +346,43 @@ static void btstack_crypto_ec_p192_generate_key_software(void){
     mbedtls_mpi_free(&d);
 #endif  /* USE_MBEDTLS_FOR_ECDH */
 }
+
+static void btstack_crypto_ec_p192_calculate_dhkey_software(btstack_crypto_ec_p192_t * btstack_crypto_ec_p192){
+    memset(btstack_crypto_ec_p192->dhkey, 0, 32);
+
+#ifdef USE_MICRO_ECC_FOR_ECDH
+#if uECC_SUPPORTS_secp256r1
+    // standard version
+    uECC_shared_secret(btstack_crypto_ec_p192->public_key, ec_d, btstack_crypto_ec_p192->dhkey, uECC_secp256r1());
+#else
+    // static version
+    uECC_shared_secret(btstack_crypto_ec_p192->public_key, ec_d, btstack_crypto_ec_p192->dhkey);
+#endif
+#endif
+
+#ifdef USE_MBEDTLS_FOR_ECDH
+    // da * Pb
+    mbedtls_mpi d;
+    mbedtls_ecp_point Q;
+    mbedtls_ecp_point DH;
+    mbedtls_mpi_init(&d);
+    mbedtls_ecp_point_init(&Q);
+    mbedtls_ecp_point_init(&DH);
+    mbedtls_mpi_read_binary(&d, ec_d, 32);
+    mbedtls_mpi_read_binary(&Q.X, &btstack_crypto_ec_p192->public_key[0] , 32);
+    mbedtls_mpi_read_binary(&Q.Y, &btstack_crypto_ec_p192->public_key[32], 32);
+    mbedtls_mpi_lset(&Q.Z, 1);
+    mbedtls_ecp_mul(&mbedtls_ec_group, &DH, &d, &Q, NULL, NULL);
+    mbedtls_mpi_write_binary(&DH.X, btstack_crypto_ec_p192->dhkey, 32);
+    mbedtls_ecp_point_free(&DH);
+    mbedtls_mpi_free(&d);
+    mbedtls_ecp_point_free(&Q);
+#endif
+
+    log_info("dhkey");
+    log_info_hexdump(btstack_crypto_ec_p192->dhkey, 32);
+}
+
 #endif
 
 
@@ -411,6 +448,11 @@ static void btstack_crypto_run(void){
             }
             break;
         case BTSTACK_CRYPTO_EC_P192_CALCULATE_DHKEY:
+            btstack_crypto_ec_p192 = (btstack_crypto_ec_p192_t *) btstack_crypto;
+            btstack_crypto_ec_p192_calculate_dhkey_software(btstack_crypto_ec_p192);
+            // done
+            btstack_linked_list_pop(&btstack_crypto_operations);
+            (*btstack_crypto_ec_p192->btstack_crypto.context_callback.callback)(btstack_crypto_ec_p192->btstack_crypto.context_callback.context);                    
             break;        
 #endif
 		default:
@@ -578,5 +620,35 @@ void btstack_crypto_ec_p192_calculate_dhkey(btstack_crypto_ec_p192_t * request, 
     request->dhkey                                     = dhkey;
     btstack_linked_list_add_tail(&btstack_crypto_operations, (btstack_linked_item_t*) request);
     btstack_crypto_run();
+}
+int btstack_crypto_ec_p192_validate_public_key(const uint8_t * public_key){
+
+    // validate public key using micro-ecc
+    int err = 0;
+
+#ifdef USE_MICRO_ECC_FOR_ECDH
+#if uECC_SUPPORTS_secp256r1
+    // standard version
+    err = uECC_valid_public_key(public_key, uECC_secp256r1()) == 0;
+#else
+    // static version
+    err = uECC_valid_public_key(public_key) == 0;
+#endif
+#endif
+
+#ifdef USE_MBEDTLS_FOR_ECDH
+    mbedtls_ecp_point Q;
+    mbedtls_ecp_point_init( &Q );
+    mbedtls_mpi_read_binary(&Q.X, &public_key[0], 32);
+    mbedtls_mpi_read_binary(&Q.Y, &public_key[32], 32);
+    mbedtls_mpi_lset(&Q.Z, 1);
+    err = mbedtls_ecp_check_pubkey(&mbedtls_ec_group, &Q);
+    mbedtls_ecp_point_free( & Q);
+#endif
+
+    if (err){
+        log_error("public key invalid %x", err);
+    }
+    return  err;
 }
 #endif
