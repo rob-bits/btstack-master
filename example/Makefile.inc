@@ -160,7 +160,7 @@ EXAMPLES_USING_LE =			\
 CORE_OBJ    = $(CORE:.c=.o)
 COMMON_OBJ  = $(COMMON:.c=.o)
 CLASSIC_OBJ  = $(CLASSIC:.c=.o)
-SM_OBJ = $(SM:.c=.o) $(MICROECC:.c=.o)
+SM_OBJ = $(SM:.c=.o)
 ATT_OBJ     = $(ATT:.c=.o)
 GATT_CLIENT_OBJ = $(GATT_CLIENT:.c=.o)
 GATT_SERVER_OBJ = $(GATT_SERVER:.c=.o)
