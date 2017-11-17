@@ -57,6 +57,8 @@
 #include "btstack_config.h"
 #include "btstack.h"
 
+#define AUTO_RECONNECT
+
 static uint8_t invalid_addr[6] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
 static int record_id = -1;
@@ -167,6 +169,13 @@ static char * get_string_from_data_element(uint8_t * element){
     return str; 
 }
 
+static void start_outgoing_connection(void){
+    // reconnect                            
+    printf("Start SDP BNEP query for remote PAN Network Access Point (NAP).\n");
+    bnep_l2cap_psm = 0;
+    bnep_remote_uuid = 0;
+    sdp_client_query_uuid16(&handle_sdp_client_query_result, remote_addr, BLUETOOTH_SERVICE_CLASS_NAP);
+}
 
 /* @section SDP parser callback 
  * 
@@ -178,7 +187,7 @@ static void handle_sdp_client_record_complete(void){
     printf("SDP BNEP Record complete\n");
 
     // accept first entry or if we foudn a NAP and only have a PANU yet
-    if ((bnep_remote_uuid == 0) || (sdp_bnep_remote_uuid == BLUETOOTH_SERVICE_CLASS_NAP && bnep_remote_uuid == BLUETOOTH_SERVICE_CLASS_PANU)){
+    if ((bnep_remote_uuid == 0) || (sdp_bnep_remote_uuid == BLUETOOTH_SERVICE_CLASS_NAP ||  bnep_remote_uuid == BLUETOOTH_SERVICE_CLASS_PANU)){
         bnep_l2cap_psm   = sdp_bnep_l2cap_psm;
         bnep_remote_uuid = sdp_bnep_remote_uuid;
         bnep_version     = sdp_bnep_version;
@@ -281,15 +290,25 @@ static void handle_sdp_client_query_result(uint8_t packet_type, uint16_t channel
             break;
             
         case SDP_EVENT_QUERY_COMPLETE:
+            if (sdp_event_query_complete_get_status(packet)){
+                fprintf(stderr, "SDP query failed with status 0x%02x\n", sdp_event_query_complete_get_status(packet));
+#ifdef AUTO_RECONNECT
+                start_outgoing_connection();
+#endif
+                break;
+            }
+
             handle_sdp_client_record_complete();
-            fprintf(stderr, "General query done with status %d, bnep psm %04x.\n", sdp_event_query_complete_get_status(packet), bnep_l2cap_psm);
+            fprintf(stderr, "General query done bnep psm %04x.\n", bnep_l2cap_psm);
             if (bnep_l2cap_psm){
                 /* Create BNEP connection */
                 bnep_connect(packet_handler, remote_addr, bnep_l2cap_psm, BLUETOOTH_SERVICE_CLASS_PANU, bnep_remote_uuid);
             } else {
                 fprintf(stderr, "No BNEP service found\n");
+                #ifdef AUTO_RECONNECT
+                                start_outgoing_connection();
+                #endif
             }
-
             break;
     }
 }
@@ -304,9 +323,10 @@ static void handle_sdp_client_query_result(uint8_t packet_type, uint16_t channel
 
 extern wiced_result_t wiced_ip_up( wiced_interface_t interface, wiced_network_config_t config, const wiced_ip_setting_t* ip_settings );
 
-static wiced_thread_t panu_demo_wiced_thread;
+static wiced_thread_t    panu_demo_wiced_thread;
+static wiced_semaphore_t panu_demo_wiced_semaphore;
 
-static int network_down;
+static int network_up;
 
 #define PING_TIMEOUT_MS          2000
 #define PING_INTERVAL_MS         1000
@@ -316,33 +336,38 @@ static void panu_demo_wiced(wiced_thread_arg_t arg){
 
     wiced_result_t status;
 
-    printf("PANU DEMO WICED started, start DHCP\n");
-    status = wiced_ip_up( WICED_ETHERNET_INTERFACE, WICED_USE_EXTERNAL_DHCP_SERVER, NULL );
-    printf("DHCP Done, result %u, Ping DEMO\n", status);
-    
-    uint32_t elapsed_ms;
-    wiced_ip_address_t ip_address;
-    SET_IPV4_ADDRESS(ip_address, 0x08080808);   // google dns
+    while (1){
+        printf("PANU DEMO WICED: wait for network up\n");
+        wiced_rtos_get_semaphore(&panu_demo_wiced_semaphore, WICED_NEVER_TIMEOUT);
 
-    while (!network_down){
-        status = wiced_ping( WICED_ETHERNET_INTERFACE, &ip_address, PING_TIMEOUT_MS, &elapsed_ms );
-        if ( status == WICED_SUCCESS )
-        {
-            printf("Ping Reply : %lu ms\n", (unsigned long)elapsed_ms );
+        printf("Network up, start DHCP\n");
+        status = wiced_ip_up( WICED_ETHERNET_INTERFACE, WICED_USE_EXTERNAL_DHCP_SERVER, NULL );
+        printf("DHCP Done, result %u, Ping DEMO\n", status);
+        
+        uint32_t elapsed_ms;
+        wiced_ip_address_t ip_address;
+        SET_IPV4_ADDRESS(ip_address, 0x08080808);   // google dns
+
+        while (network_up){
+            status = wiced_ping( WICED_ETHERNET_INTERFACE, &ip_address, PING_TIMEOUT_MS, &elapsed_ms );
+            if ( status == WICED_SUCCESS )
+            {
+                printf("Ping Reply : %lu ms\n", (unsigned long)elapsed_ms );
+            }
+            else if ( status == WICED_TIMEOUT )
+            {
+                printf("Ping timeout\n");
+            }
+            else
+            {
+                printf("Ping error\n");
+            }
+            wiced_rtos_delay_milliseconds(2000);
         }
-        else if ( status == WICED_TIMEOUT )
-        {
-            printf("Ping timeout\n");
-        }
-        else
-        {
-            printf("Ping error\n");
-        }
-        wiced_rtos_delay_milliseconds(5000);
+        printf("PANU DEMO WICED: network down, exit.\n");
     }
 }
 #endif
-
 
 /*
  * @section Packet Handler
@@ -375,12 +400,9 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                     if (btstack_event_state_get_state(packet) == HCI_STATE_WORKING){
                         if (!pairing_mode){
                             if (memcmp(remote_addr, invalid_addr, 6) == 0){
-                                // reconnect                            
                                 printf("No Bluetooth address stored for reconnect.\n");
                             } else {
-                                // reconnect                            
-                                printf("Start SDP BNEP query for remote PAN Network Access Point (NAP).\n");
-                                sdp_client_query_uuid16(&handle_sdp_client_query_result, remote_addr, BLUETOOTH_SERVICE_CLASS_NAP);
+                                start_outgoing_connection();
                             }
                         }
                     }
@@ -399,7 +421,6 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                     printf("SSP User Confirmation Auto accept\n");
 
                     if (pairing_mode){
-                        printf("Start SDP BNEP query for remote PAN Network Access Point (NAP).\n");
                         hci_event_user_confirmation_request_get_bd_addr(packet, remote_addr);
 #ifdef WICED_VERSION
                         // stored address in DCT after Link Key DB + LE Device DB
@@ -407,8 +428,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                         wiced_dct_write((void*)remote_addr, DCT_APP_SECTION, offset, 6);
                         printf("Stored remote address %s in DCT\n", bd_addr_to_str(remote_addr));
 #endif
-
-                        sdp_client_query_uuid16(&handle_sdp_client_query_result, remote_addr, BLUETOOTH_SERVICE_CLASS_NAP);
+                        start_outgoing_connection();
                     }
                     break;
 
@@ -426,6 +446,9 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
 				case BNEP_EVENT_CHANNEL_OPENED:
                     if (bnep_event_channel_opened_get_status(packet)) {
                         printf("BNEP channel open failed, status %02x\n", bnep_event_channel_opened_get_status(packet));
+#ifdef AUTO_RECONNECT
+                        start_outgoing_connection();
+#endif
                     } else {
                         bnep_cid    = bnep_event_channel_opened_get_bnep_cid(packet);
                         uuid_source = bnep_event_channel_opened_get_source_uuid(packet);
@@ -438,8 +461,8 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                         btstack_network_up(local_addr);
                         printf("Network Interface %s activated\n", btstack_network_get_name());
 #ifdef WICED_VERSION
-                        network_down = 0;
-                        wiced_rtos_create_thread(&panu_demo_wiced_thread, WICED_APPLICATION_PRIORITY, "panu-demo", &panu_demo_wiced, 1024, NULL);
+                        network_up = 1;
+                        wiced_rtos_set_semaphore(&panu_demo_wiced_semaphore);
 #endif                        
                     }
 					break;
@@ -457,12 +480,13 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                     printf("BNEP channel closed\n");
 #ifdef WICED_VERSION
                     printf("Signaling network demo to stop\n");
-                    network_down = 1;
-                    wiced_rtos_thread_join(panu_demo_wiced_thread);
-                    printf("Network demo stopped\n");
-                    wiced_rtos_delete_thread(panu_demo_wiced_thread);
+                    network_up = 0;
 #endif                        
                     btstack_network_down();
+
+#ifdef AUTO_RECONNECT
+                    start_outgoing_connection();
+#endif
                     break;
 
                 /* @text BNEP_EVENT_CAN_SEND_NOW indicates that a new packet can be send. This triggers the send of a 
@@ -533,6 +557,11 @@ int btstack_main(int argc, const char * argv[]){
         wiced_dct_read_unlock((void*) entry, WICED_FALSE);
         printf("Stored remote address %s\n", bd_addr_to_str(remote_addr));
     }
+
+    // start network thread
+    network_up = 0;
+    wiced_rtos_init_semaphore(&panu_demo_wiced_semaphore);
+    wiced_rtos_create_thread(&panu_demo_wiced_thread, WICED_APPLICATION_PRIORITY, "panu-demo", &panu_demo_wiced, 1024, NULL);
 #endif
 
     panu_setup();
