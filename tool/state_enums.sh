@@ -3,7 +3,7 @@ BTSTACK_ROOT=`dirname $0`'/..'
 
 # SM
 echo "Security Manager states"
-grep SM_ $BTSTACK_ROOT/src/hci.h | nl -v0
+grep SM_ $BTSTACK_ROOT/src/hci.h | grep -v "// SM_" | nl -v0
 
 echo
 
