@@ -46,6 +46,11 @@
 #include "btstack_util.h"
 #include "hci.h"
 
+// assert SM Public Key can be sent/received
+#if HCI_ACL_PAYLOAD_SIZE < 69
+#error "HCI_ACL_PAYLOAD_SIZE must be at least 69 bytes when using LE Secure Conection. Please increase HCI_ACL_PAYLOAD_SIZE or disable ENABLE_LE_SECURE_CONNECTIONS"
+#endif
+
 // configure ECC implementations
 #ifdef ENABLE_LE_SECURE_CONNECTIONS
 #if defined(ENABLE_MICRO_ECC_FOR_LE_SECURE_CONNECTIONS) && defined(HAVE_MBEDTLS_ECC_P256)
@@ -652,3 +657,104 @@ int btstack_crypto_ec_p192_validate_public_key(const uint8_t * public_key){
     return  err;
 }
 #endif
+
+#if 0
+void sm_use_fixed_ec_keypair(uint8_t * qx, uint8_t * qy, uint8_t * d){
+#ifdef ENABLE_LE_SECURE_CONNECTIONS
+    memcpy(&ec_q[0],  qx, 32);
+    memcpy(&ec_q[32], qy, 32);
+    memcpy(ec_d, d, 32);
+    sm_have_ec_keypair = 1;
+    ec_key_generation_state = EC_KEY_GENERATION_DONE;
+#else
+    UNUSED(qx);
+    UNUSED(qy);
+    UNUSED(d);
+#endif
+}
+
+#ifdef ENABLE_LE_SECURE_CONNECTIONS
+static void parse_hex(uint8_t * buffer, const char * hex_string){
+    while (*hex_string){
+        int high_nibble = nibble_for_char(*hex_string++);
+        int low_nibble  = nibble_for_char(*hex_string++);
+        *buffer++       = (high_nibble << 4) | low_nibble;
+    }
+}
+#endif
+
+void sm_test_use_fixed_ec_keypair(void){
+#ifdef ENABLE_LE_SECURE_CONNECTIONS
+    const char * ec_d_string =  "3f49f6d4a3c55f3874c9b3e3d2103f504aff607beb40b7995899b8a6cd3c1abd";
+    const char * ec_qx_string = "20b003d2f297be2c5e2c83a7e9f9a5b9eff49111acf4fddbcc0301480e359de6";
+    const char * ec_qy_string = "dc809c49652aeb6d63329abf5a52155c766345c28fed3024741c8ed01589d28b";
+    parse_hex(ec_d, ec_d_string);
+    parse_hex(&ec_q[0],  ec_qx_string);
+    parse_hex(&ec_q[32], ec_qy_string);
+    sm_have_ec_keypair = 1;
+    ec_key_generation_state = EC_KEY_GENERATION_DONE;
+#endif
+}
+#if defined(ENABLE_LE_SECURE_CONNECTIONS) && !defined(USE_SOFTWARE_ECDH_IMPLEMENTATION)
+    if (ec_key_generation_state == EC_KEY_GENERATION_ACTIVE){
+        ec_key_generation_state = EC_KEY_GENERATION_W4_KEY;
+        hci_send_cmd(&hci_le_read_local_p256_public_key);
+        return;
+    }
+
+#if defined(ENABLE_LE_SECURE_CONNECTIONS) && !defined(USE_SOFTWARE_ECDH_IMPLEMENTATION)
+                        case HCI_SUBEVENT_LE_READ_LOCAL_P256_PUBLIC_KEY_COMPLETE:
+                            if (hci_subevent_le_read_local_p256_public_key_complete_get_status(packet)){
+                                log_error("Read Local P256 Public Key failed");
+                                break;
+                            }
+
+                            hci_subevent_le_read_local_p256_public_key_complete_get_dhkey_x(packet, &ec_q[0]);
+                            hci_subevent_le_read_local_p256_public_key_complete_get_dhkey_y(packet, &ec_q[32]);
+
+                            ec_key_generation_state = EC_KEY_GENERATION_DONE;
+                            sm_log_ec_keypair();
+                            break;
+                        case HCI_SUBEVENT_LE_GENERATE_DHKEY_COMPLETE:
+                            sm_conn = sm_get_connection_for_handle(sm_active_connection_handle);
+                            if (hci_subevent_le_generate_dhkey_complete_get_status(packet)){
+                                log_error("Generate DHKEY failed -> abort");
+                                // abort pairing with 'unspecified reason'
+                                sm_pdu_received_in_wrong_state(sm_conn);
+                                break;
+                            }
+
+                            hci_subevent_le_generate_dhkey_complete_get_dhkey(packet, &setup->sm_dhkey[0]);
+                            setup->sm_state_vars |= SM_STATE_VAR_DHKEY_CALCULATED;
+                            log_info("dhkey");
+                            log_info_hexdump(&setup->sm_dhkey[0], 32);
+
+                            // trigger next step
+                            if (sm_conn->sm_engine_state == SM_SC_W4_CALCULATE_DHKEY){
+                                sm_conn->sm_engine_state = SM_SC_W2_CALCULATE_F5_SALT;
+                            }
+                            break;
+#endif
+#endif
+#ifdef USE_SOFTWARE_ECDH_IMPLEMENTATION
+    // calculate DHKEY
+    sm_sc_calculate_dhkey(setup->sm_dhkey);
+    setup->sm_state_vars |= SM_STATE_VAR_DHKEY_CALCULATED;
+#endif
+#if defined(ENABLE_LE_SECURE_CONNECTIONS) && !defined(USE_SOFTWARE_ECDH_IMPLEMENTATION)
+        if (setup->sm_state_vars & SM_STATE_VAR_DHKEY_NEEDED){
+            setup->sm_state_vars &= ~SM_STATE_VAR_DHKEY_NEEDED;
+            hci_send_cmd(&hci_le_generate_dhkey, &setup->sm_peer_q[0], &setup->sm_peer_q[32]);
+            return;
+        }
+#endif
+                    if (HCI_EVENT_IS_COMMAND_COMPLETE(packet, hci_read_local_supported_commands)){
+#if defined(ENABLE_LE_SECURE_CONNECTIONS) && !defined(USE_SOFTWARE_ECDH_IMPLEMENTATION)
+                        if ((packet[OFFSET_OF_DATA_IN_COMMAND_COMPLETE+1+34] & 0x06) != 0x06){
+                            // mbedTLS can also be used if already available (and malloc is supported)
+                            log_error("LE Secure Connections enabled, but HCI Controller doesn't support it. Please add USE_MICRO_ECC_FOR_ECDH to btstack_config.h");
+                        }
+#endif
+                    }
+#endif
+
