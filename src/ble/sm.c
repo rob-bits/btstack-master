@@ -2500,6 +2500,7 @@ static void sm_handle_random_result_sc_get_random(void * arg){
     } else {
         connection->sm_engine_state = SM_SC_W2_CMAC_FOR_CONFIRMATION;
     }
+    sm_run();
 }
 #endif
 
