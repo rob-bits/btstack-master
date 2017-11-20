@@ -998,6 +998,7 @@ static void sm_address_resolution_handle_event(address_resolution_event_t event)
                         break;
                     }
 #ifdef ENABLE_LE_CENTRAL
+                    log_info("central: bonding requested %u, prev security request %u", sm_connection->sm_bonding_requested, sm_connection->sm_security_request_received);
                     if (!sm_connection->sm_bonding_requested && !sm_connection->sm_security_request_received) break;
                     sm_connection->sm_security_request_received = 0;
                     sm_connection->sm_bonding_requested = 0;
@@ -2438,6 +2439,7 @@ static void sm_handle_encryption_result_address_resolution(void *arg){
     if (memcmp(&sm_address_resolution_address[3], hash, 3) == 0){
         log_info("LE Device Lookup: matched resolvable private address");
         sm_address_resolution_handle_event(ADDRESS_RESOLUTION_SUCEEDED);
+        sm_run();
         return;
     }
     // no match, try next
@@ -3455,6 +3457,7 @@ void sm_request_pairing(hci_con_handle_t con_handle){
         if (sm_conn->sm_engine_state == SM_INITIATOR_CONNECTED){
             switch (sm_conn->sm_irk_lookup_state){
                 case IRK_LOOKUP_FAILED:
+                    log_info("irk lookup failed, send pairing request");
                     sm_conn->sm_engine_state = SM_INITIATOR_PH1_W2_SEND_PAIRING_REQUEST;
                     break;
                 case IRK_LOOKUP_SUCCEEDED:
@@ -3467,6 +3470,7 @@ void sm_request_pairing(hci_con_handle_t con_handle){
                         }
                         break;
                 default:
+                    log_info("irk lookup pending");
                     sm_conn->sm_bonding_requested = 1;
                     break;
             }
