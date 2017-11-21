@@ -58,6 +58,7 @@
 #include "btstack.h"
 
 #define AUTO_RECONNECT
+#define AUTO_RECONNECT_DELAY_MS 5000
 
 static uint8_t invalid_addr[6] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
@@ -90,6 +91,8 @@ static int pairing_mode = 1;
 static bd_addr_t remote_addr;
 
 static btstack_packet_callback_registration_t hci_event_callback_registration;
+
+static btstack_timer_source_t reconnect_timer;
 
 // outgoing network packet
 static const uint8_t * network_buffer;
@@ -169,12 +172,21 @@ static char * get_string_from_data_element(uint8_t * element){
     return str; 
 }
 
-static void start_outgoing_connection(void){
-    // reconnect                            
+static void start_outgoing_connection(btstack_timer_source_t * ts){
+    UNUSED(ts);
+    // reconnect
     printf("Start SDP BNEP query for remote PAN Network Access Point (NAP).\n");
     bnep_l2cap_psm = 0;
     bnep_remote_uuid = 0;
     sdp_client_query_uuid16(&handle_sdp_client_query_result, remote_addr, BLUETOOTH_SERVICE_CLASS_NAP);
+}
+
+static void schedule_outgoing_connection(void){
+    printf("Outgoing connection scheduled\n");
+    // set one-shot timer
+    reconnect_timer.process = &start_outgoing_connection;
+    btstack_run_loop_set_timer(&reconnect_timer, AUTO_RECONNECT_DELAY_MS);
+    btstack_run_loop_add_timer(&reconnect_timer);
 }
 
 /* @section SDP parser callback 
@@ -293,7 +305,7 @@ static void handle_sdp_client_query_result(uint8_t packet_type, uint16_t channel
             if (sdp_event_query_complete_get_status(packet)){
                 fprintf(stderr, "SDP query failed with status 0x%02x\n", sdp_event_query_complete_get_status(packet));
 #ifdef AUTO_RECONNECT
-                start_outgoing_connection();
+                schedule_outgoing_connection();
 #endif
                 break;
             }
@@ -306,7 +318,7 @@ static void handle_sdp_client_query_result(uint8_t packet_type, uint16_t channel
             } else {
                 fprintf(stderr, "No BNEP service found\n");
                 #ifdef AUTO_RECONNECT
-                                start_outgoing_connection();
+                                schedule_outgoing_connection();
                 #endif
             }
             break;
@@ -402,7 +414,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                             if (memcmp(remote_addr, invalid_addr, 6) == 0){
                                 printf("No Bluetooth address stored for reconnect.\n");
                             } else {
-                                start_outgoing_connection();
+                                schedule_outgoing_connection();
                             }
                         }
                     }
@@ -428,7 +440,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                         wiced_dct_write((void*)remote_addr, DCT_APP_SECTION, offset, 6);
                         printf("Stored remote address %s in DCT\n", bd_addr_to_str(remote_addr));
 #endif
-                        start_outgoing_connection();
+                        schedule_outgoing_connection();
                     }
                     break;
 
@@ -447,7 +459,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                     if (bnep_event_channel_opened_get_status(packet)) {
                         printf("BNEP channel open failed, status %02x\n", bnep_event_channel_opened_get_status(packet));
 #ifdef AUTO_RECONNECT
-                        start_outgoing_connection();
+                        schedule_outgoing_connection();
 #endif
                     } else {
                         bnep_cid    = bnep_event_channel_opened_get_bnep_cid(packet);
@@ -459,7 +471,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                         /* Setup network interface */
                         gap_local_bd_addr(local_addr);
                         btstack_network_up(local_addr);
-                        printf("Network Interface %s activated\n", btstack_network_get_name());
+                        printf("Network Interface '%s' activated\n", btstack_network_get_name());
 #ifdef WICED_VERSION
                         network_up = 1;
                         wiced_rtos_set_semaphore(&panu_demo_wiced_semaphore);
@@ -485,7 +497,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                     btstack_network_down();
 
 #ifdef AUTO_RECONNECT
-                    start_outgoing_connection();
+                    schedule_outgoing_connection();
 #endif
                     break;
 
