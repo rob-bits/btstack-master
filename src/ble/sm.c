@@ -59,6 +59,13 @@
 #error "LE Security Manager used, but neither ENABLE_LE_PERIPHERAL nor ENABLE_LE_CENTRAL defined. Please add at least one to btstack_config.h."
 #endif
 
+// assert SM Public Key can be sent/received
+#ifdef ENABLE_LE_SECURE_CONNECTIONS
+#if HCI_ACL_PAYLOAD_SIZE < 69
+#error "HCI_ACL_PAYLOAD_SIZE must be at least 69 bytes when using LE Secure Conection. Please increase HCI_ACL_PAYLOAD_SIZE or disable ENABLE_LE_SECURE_CONNECTIONS"
+#endif
+#endif
+
 #if defined(ENABLE_LE_PERIPHERAL) && defined(ENABLE_LE_CENTRAL)
 #define IS_RESPONDER(role) (role)
 #else
@@ -72,7 +79,7 @@
 #endif
 
 #if defined(ENABLE_LE_SIGNED_WRITE) || defined(ENABLE_LE_SECURE_CONNECTIONS)
-#define ENABLE_CMAC_ENGINE
+#define USE_CMAC_ENGINE
 #endif
 
 //
@@ -754,7 +761,7 @@ int sm_address_resolution_lookup(uint8_t address_type, bd_addr_t address){
 }
 
 // CMAC calculation using AES Engineq
-#ifdef ENABLE_CMAC_ENGINE
+#ifdef USE_CMAC_ENGINE
 
 static void sm_cmac_done_trampoline(void * arg){
     UNUSED(arg);
@@ -3344,7 +3351,7 @@ void sm_init(void){
     sm_fixed_passkey_in_display_role = 0xffffffff;
     sm_reconstruct_ltk_without_le_device_db_entry = 1;
 
-#ifdef ENABLE_CMAC_ENGINE
+#ifdef USE_CMAC_ENGINE
     sm_cmac_active  = 0;
 #endif
     dkg_state = DKG_W4_WORKING;

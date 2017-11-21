@@ -18,7 +18,7 @@
 #define ENABLE_LOG_INFO
 //#define ENABLE_LOG_DEBUG
 #define ENABLE_LE_SECURE_CONNECTIONS
-#define ENABLE_MICRO_ECC_FOR_LE_SECURE_CONNECTIONS
+#define ENABLE_MICRO_ECC_P256
 
 // BTstack configuration. buffers, sizes, ...
 #define HCI_ACL_PAYLOAD_SIZE 1021

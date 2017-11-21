@@ -73,7 +73,7 @@ extern "C" {
 // Max HCI Command LE payload size:
 // 64 from LE Generate DHKey command
 // 32 from LE Encrypt command
-#if defined(ENABLE_LE_SECURE_CONNECTIONS) && !defined(ENABLE_MICRO_ECC_FOR_LE_SECURE_CONNECTIONS)
+#if defined(ENABLE_LE_SECURE_CONNECTIONS) && (!defined(ENABLE_MICRO_ECC_P256) || !defined(HAVE_MBEDTLS_ECC_P256))
 #define HCI_CMD_PAYLOAD_SIZE_LE 64
 #else
 #define HCI_CMD_PAYLOAD_SIZE_LE 32
