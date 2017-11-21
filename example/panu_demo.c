@@ -96,7 +96,7 @@ static btstack_timer_source_t reconnect_timer;
 
 // outgoing network packet
 static const uint8_t * network_buffer;
-static uint16_t network_buffer_len;
+static uint16_t        network_buffer_len;
 
 /* @section Main application configuration
  *
@@ -174,6 +174,7 @@ static char * get_string_from_data_element(uint8_t * element){
 
 static void start_outgoing_connection(btstack_timer_source_t * ts){
     UNUSED(ts);
+
     // reconnect
     printf("Start SDP BNEP query for remote PAN Network Access Point (NAP).\n");
     bnep_l2cap_psm = 0;
@@ -335,10 +336,11 @@ static void handle_sdp_client_query_result(uint8_t packet_type, uint16_t channel
 
 extern wiced_result_t wiced_ip_up( wiced_interface_t interface, wiced_network_config_t config, const wiced_ip_setting_t* ip_settings );
 
-static wiced_thread_t    panu_demo_wiced_thread;
-static wiced_semaphore_t panu_demo_wiced_semaphore;
+static int network_up;        // used to signal wiced task to start
 
-static int network_up;
+static wiced_thread_t    panu_demo_wiced_thread;
+static wiced_semaphore_t panu_demo_wiced_task_up;
+static wiced_semaphore_t panu_demo_wiced_task_complete;
 
 #define PING_TIMEOUT_MS          2000
 #define PING_INTERVAL_MS         1000
@@ -350,7 +352,7 @@ static void panu_demo_wiced(wiced_thread_arg_t arg){
 
     while (1){
         printf("PANU DEMO WICED: wait for network up\n");
-        wiced_rtos_get_semaphore(&panu_demo_wiced_semaphore, WICED_NEVER_TIMEOUT);
+        wiced_rtos_get_semaphore(&panu_demo_wiced_task_up, WICED_NEVER_TIMEOUT);
 
         printf("Network up, start DHCP\n");
         status = wiced_ip_up( WICED_ETHERNET_INTERFACE, WICED_USE_EXTERNAL_DHCP_SERVER, NULL );
@@ -375,11 +377,25 @@ static void panu_demo_wiced(wiced_thread_arg_t arg){
                 printf("Ping error\n");
             }
             wiced_rtos_delay_milliseconds(2000);
-        }
-        printf("PANU DEMO WICED: network down, exit.\n");
+        }            
+        wiced_rtos_set_semaphore(&panu_demo_wiced_task_up);
+        printf("PANU DEMO WICED: network down, task notified.\n");
     }
 }
 #endif
+
+static void pairing_complete(bd_addr_t addr){
+    if (pairing_mode){
+#ifdef WICED_VERSION
+        // stored address in DCT after Link Key DB + LE Device DB
+        uint32_t offset = btstack_link_key_db_wiced_dct_get_storage_size() + le_device_db_wiced_dct_get_storage_size();
+        wiced_dct_write((void*)addr, DCT_APP_SECTION, offset, 6);
+        printf("Stored remote address %s in DCT\n", bd_addr_to_str(addr));
+#endif
+        memcpy(remote_addr, addr, 6);
+        start_outgoing_connection(NULL);
+    }
+}
 
 /*
  * @section Packet Handler
@@ -414,7 +430,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                             if (memcmp(remote_addr, invalid_addr, 6) == 0){
                                 printf("No Bluetooth address stored for reconnect.\n");
                             } else {
-                                schedule_outgoing_connection();
+                                start_outgoing_connection(NULL);
                             }
                         }
                     }
@@ -426,22 +442,14 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                     printf("Pin code request - using '0000'\n");
                     hci_event_pin_code_request_get_bd_addr(packet, event_addr);
                     gap_pin_code_response(event_addr, "0000");
+                    pairing_complete(event_addr);
 					break;
 
                 case HCI_EVENT_USER_CONFIRMATION_REQUEST:
                     // inform about user confirmation request
                     printf("SSP User Confirmation Auto accept\n");
-
-                    if (pairing_mode){
-                        hci_event_user_confirmation_request_get_bd_addr(packet, remote_addr);
-#ifdef WICED_VERSION
-                        // stored address in DCT after Link Key DB + LE Device DB
-                        uint32_t offset = btstack_link_key_db_wiced_dct_get_storage_size() + le_device_db_wiced_dct_get_storage_size();
-                        wiced_dct_write((void*)remote_addr, DCT_APP_SECTION, offset, 6);
-                        printf("Stored remote address %s in DCT\n", bd_addr_to_str(remote_addr));
-#endif
-                        schedule_outgoing_connection();
-                    }
+                    hci_event_user_confirmation_request_get_bd_addr(packet, event_addr);
+                    pairing_complete(event_addr);
                     break;
 
                 /* LISTING_RESUME */
@@ -474,7 +482,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                         printf("Network Interface '%s' activated\n", btstack_network_get_name());
 #ifdef WICED_VERSION
                         network_up = 1;
-                        wiced_rtos_set_semaphore(&panu_demo_wiced_semaphore);
+                        wiced_rtos_set_semaphore(&panu_demo_wiced_task_up);
 #endif                        
                     }
 					break;
@@ -490,9 +498,19 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                  */
                 case BNEP_EVENT_CHANNEL_CLOSED:
                     printf("BNEP channel closed\n");
+                    bnep_cid = 0;
+
+                    // discard outgoing packet
+                    if (network_buffer_len){
+                        network_buffer_len = 0;
+                        btstack_network_packet_sent();
+                    }
+
 #ifdef WICED_VERSION
                     printf("Signaling network demo to stop\n");
                     network_up = 0;
+                    printf("Wait for network task complete\n");
+                    wiced_rtos_get_semaphore(&panu_demo_wiced_task_up, WICED_NEVER_TIMEOUT);
 #endif                        
                     btstack_network_down();
 
@@ -539,9 +557,13 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
 
 /* LISTING_START(networkPacketHandler): Network Packet Handler */
 static void network_send_packet_callback(const uint8_t * packet, uint16_t size){
-    network_buffer = packet;
-    network_buffer_len = size;
-    bnep_request_can_send_now_event(bnep_cid);
+    if (bnep_cid){
+        network_buffer = packet;
+        network_buffer_len = size;
+        bnep_request_can_send_now_event(bnep_cid);
+    } else {
+        btstack_network_packet_sent();
+    }
 }
 /* LISTING_END */
 
@@ -572,7 +594,8 @@ int btstack_main(int argc, const char * argv[]){
 
     // start network thread
     network_up = 0;
-    wiced_rtos_init_semaphore(&panu_demo_wiced_semaphore);
+    wiced_rtos_init_semaphore(&panu_demo_wiced_task_up);
+    wiced_rtos_init_semaphore(&panu_demo_wiced_task_complete);
     wiced_rtos_create_thread(&panu_demo_wiced_thread, WICED_APPLICATION_PRIORITY, "panu-demo", &panu_demo_wiced, 1024, NULL);
 #endif
 
