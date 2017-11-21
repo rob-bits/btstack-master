@@ -17,6 +17,7 @@ CORE += \
 	main.c \
 	wav_util.c 					\
 	btstack_stdin_posix.c \
+	uECC.c \
 
 # TI-WL183x requires TIInit_11.8.32.c
 

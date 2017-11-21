@@ -10,6 +10,7 @@ CORE += \
 	main.c \
 	btstack_stdin_posix.c \
 	btstack_chipset_zephyr.c \
+	uECC.c \
 
 # examples
 include ${BTSTACK_ROOT}/example/Makefile.inc

@@ -17,6 +17,7 @@ CORE += \
 	main.c \
 	btstack_stdin_posix.c \
 	wav_util.c 					\
+	uECC.c \
 	# bluetooth_init_cc2564_2.14.c \
 	# bluetooth_init_cc2564C_1.0.c \
 

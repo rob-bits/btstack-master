@@ -13,6 +13,7 @@ CORE += \
 	main.c \
 	wav_util.c 					\
 	btstack_stdin_posix.c \
+	uECC.c \
 
 # examples
 include ${BTSTACK_ROOT}/example/Makefile.inc

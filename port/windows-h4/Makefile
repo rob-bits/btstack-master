@@ -17,6 +17,7 @@ COMMON  += \
 			btstack_chipset_tc3566x.c \
 			btstack_chipset_bcm.c \
 			wav_util.c 					\
+			uECC.c \
 
 # examples
 include ${BTSTACK_ROOT}/example/Makefile.inc

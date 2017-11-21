@@ -11,6 +11,7 @@ CORE += \
 	le_device_db_fs.c \
 	main.c \
 	wav_util.c 					\
+	uECC.c \
 	btstack_stdin_posix.c \
 
 # examples
