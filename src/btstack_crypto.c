@@ -291,6 +291,13 @@ static void btstack_crypo_cmac_start(btstack_crypto_aes128_cmac_t * btstack_cryp
 
 #ifdef ENABLE_LE_SECURE_CONNECTIONS
 
+static void btstack_crypto_log_ec_publickey(const uint8_t * ec_q){
+    log_info("Elliptic curve: X");
+    log_info_hexdump(&ec_q[0],32);
+    log_info("Elliptic curve: Y");
+    log_info_hexdump(&ec_q[32],32);
+}
+
 #if (defined(USE_MICRO_ECC_FOR_ECDH) && !defined(WICED_VERSION)) || defined(USE_MBEDTLS_FOR_ECDH)
 // @return OK
 static int sm_generate_f_rng(unsigned char * buffer, unsigned size){
@@ -352,6 +359,7 @@ static void btstack_crypto_ec_p192_generate_key_software(void){
 #endif  /* USE_MBEDTLS_FOR_ECDH */
 }
 
+#ifdef USE_SOFTWARE_ECDH_IMPLEMENTATION
 static void btstack_crypto_ec_p192_calculate_dhkey_software(btstack_crypto_ec_p192_t * btstack_crypto_ec_p192){
     memset(btstack_crypto_ec_p192->dhkey, 0, 32);
 
@@ -387,6 +395,7 @@ static void btstack_crypto_ec_p192_calculate_dhkey_software(btstack_crypto_ec_p1
     log_info("dhkey");
     log_info_hexdump(btstack_crypto_ec_p192->dhkey, 32);
 }
+#endif
 
 #endif
 
@@ -396,6 +405,9 @@ static void btstack_crypto_run(void){
     btstack_crypto_aes128_t        * btstack_crypto_aes128;
     btstack_crypto_aes128_cmac_t   * btstack_crypto_cmac;
     btstack_crypto_ec_p192_t       * btstack_crypto_ec_p192;
+
+    // stack up and running?
+    if (hci_get_state() != HCI_STATE_WORKING) return;
 
 	// already active?
 	if (btstack_crypto_wait_for_hci_result) return;
@@ -432,34 +444,48 @@ static void btstack_crypto_run(void){
             switch (btstack_crypto_ec_p192_key_generation_state){
                 case EC_KEY_GENERATION_DONE:
                     // done
+                    btstack_crypto_log_ec_publickey(btstack_crypto_ec_p192_public_key);
                     memcpy(btstack_crypto_ec_p192->public_key, btstack_crypto_ec_p192_public_key, 64);
                     btstack_linked_list_pop(&btstack_crypto_operations);
                     (*btstack_crypto_ec_p192->btstack_crypto.context_callback.callback)(btstack_crypto_ec_p192->btstack_crypto.context_callback.context);                    
                     break;
                 case EC_KEY_GENERATION_IDLE:
+#ifdef USE_SOFTWARE_ECDH_IMPLEMENTATION                
                     log_info("start ecc random");
                     btstack_crypto_ec_p192_key_generation_state = EC_KEY_GENERATION_GENERATING_RANDOM;
                     btstack_crypto_ec_p192_random_offset = 0;
                     btstack_crypto_wait_for_hci_result = 1;
                     hci_send_cmd(&hci_le_rand);
+#else
+                    btstack_crypto_ec_p192_key_generation_state = EC_KEY_GENERATION_W4_KEY;
+                    btstack_crypto_wait_for_hci_result = 1;
+                    hci_send_cmd(&hci_le_read_local_p256_public_key);
+#endif
                     break;
+#ifdef USE_SOFTWARE_ECDH_IMPLEMENTATION                
                 case EC_KEY_GENERATION_GENERATING_RANDOM:
                     log_info("more ecc random");
                     btstack_crypto_wait_for_hci_result = 1;
                     hci_send_cmd(&hci_le_rand);
                     break;
+#endif
                 default:
                     break;
             }
             break;
         case BTSTACK_CRYPTO_EC_P192_CALCULATE_DHKEY:
             btstack_crypto_ec_p192 = (btstack_crypto_ec_p192_t *) btstack_crypto;
+#ifdef USE_SOFTWARE_ECDH_IMPLEMENTATION
             btstack_crypto_ec_p192_calculate_dhkey_software(btstack_crypto_ec_p192);
             // done
             btstack_linked_list_pop(&btstack_crypto_operations);
             (*btstack_crypto_ec_p192->btstack_crypto.context_callback.callback)(btstack_crypto_ec_p192->btstack_crypto.context_callback.context);                    
-            break;        
+#else
+            btstack_crypto_wait_for_hci_result = 1;
+            hci_send_cmd(&hci_le_generate_dhkey, &btstack_crypto_ec_p192->public_key[0], &btstack_crypto_ec_p192->public_key[32]);
 #endif
+#endif
+            break;        
 		default:
 			break;
 	}
@@ -467,9 +493,7 @@ static void btstack_crypto_run(void){
 
 static void btstack_crypto_handle_random_data(const uint8_t * data, uint16_t len){
     btstack_crypto_random_t * btstack_crypto_random;
-
-    btstack_crypto_wait_for_hci_result = 0;
-    btstack_crypto_t        * btstack_crypto = (btstack_crypto_t*) btstack_linked_list_get_first_item(&btstack_crypto_operations);
+    btstack_crypto_t * btstack_crypto = (btstack_crypto_t*) btstack_linked_list_get_first_item(&btstack_crypto_operations);
 	if (!btstack_crypto) return;
     switch (btstack_crypto->operation){
         case BTSTACK_CRYPTO_RANDOM:
@@ -492,10 +516,6 @@ static void btstack_crypto_handle_random_data(const uint8_t * data, uint16_t len
             if (btstack_crypto_ec_p192_random_len >= 64) {
                 btstack_crypto_ec_p192_key_generation_state = EC_KEY_GENERATION_ACTIVE;
                 btstack_crypto_ec_p192_generate_key_software();
-                log_info("Elliptic curve: X");
-                log_info_hexdump(&btstack_crypto_ec_p192_public_key[0],32);
-                log_info("Elliptic curve: Y");
-                log_info_hexdump(&btstack_crypto_ec_p192_public_key[32],32);
                 btstack_crypto_ec_p192_key_generation_state = EC_KEY_GENERATION_DONE;
             }
             break;
@@ -508,8 +528,7 @@ static void btstack_crypto_handle_random_data(const uint8_t * data, uint16_t len
 }
 
 static void btstack_crypto_handle_encryption_result(const uint8_t * data){
-	btstack_crypto_wait_for_hci_result = 0;
-	btstack_crypto_aes128_t * btstack_crypto_aes128;
+	btstack_crypto_aes128_t      * btstack_crypto_aes128;
 	btstack_crypto_aes128_cmac_t * btstack_crypto_cmac;
 	uint8_t result[16];
     btstack_crypto_t * btstack_crypto = (btstack_crypto_t*) btstack_linked_list_get_first_item(&btstack_crypto_operations);
@@ -534,20 +553,77 @@ static void btstack_crypto_handle_encryption_result(const uint8_t * data){
 }
 
 static void btstack_crypto_event_handler(uint8_t packet_type, uint16_t cid, uint8_t *packet, uint16_t size){
-    UNUSED(packet_type); // ok: registered with hci_event_callback_registration
     UNUSED(cid);         // ok: there is no channel
     UNUSED(size);        // ok: fixed format events read from HCI buffer
 
-    if (packet_type   			          != HCI_EVENT_PACKET) return;
-    if (hci_get_state() 			      != HCI_STATE_WORKING) return;
+#ifndef USE_SOFTWARE_ECDH_IMPLEMENTATION
+    btstack_crypto_ec_p192_t * btstack_crypto_ec_p192;
+#endif
 
-    if (hci_event_packet_get_type(packet) == HCI_EVENT_COMMAND_COMPLETE){
-	    if (HCI_EVENT_IS_COMMAND_COMPLETE(packet, hci_le_encrypt)){
-	        btstack_crypto_handle_encryption_result(&packet[6]);
-	    }
-	    if (HCI_EVENT_IS_COMMAND_COMPLETE(packet, hci_le_rand)){
-	        btstack_crypto_handle_random_data(&packet[6], 8);
-	    }
+    if (packet_type != HCI_EVENT_PACKET)  return;
+
+    switch (hci_event_packet_get_type(packet)){
+        case HCI_EVENT_COMMAND_COMPLETE:
+    	    if (HCI_EVENT_IS_COMMAND_COMPLETE(packet, hci_le_encrypt)){
+                if (hci_get_state() != HCI_STATE_WORKING) return;
+                if (!btstack_crypto_wait_for_hci_result) return;
+                btstack_crypto_wait_for_hci_result = 0;
+    	        btstack_crypto_handle_encryption_result(&packet[6]);
+    	    }
+    	    if (HCI_EVENT_IS_COMMAND_COMPLETE(packet, hci_le_rand)){
+                if (hci_get_state() != HCI_STATE_WORKING) return;
+                if (!btstack_crypto_wait_for_hci_result) return;
+                btstack_crypto_wait_for_hci_result = 0;
+    	        btstack_crypto_handle_random_data(&packet[6], 8);
+    	    }
+            if (HCI_EVENT_IS_COMMAND_COMPLETE(packet, hci_read_local_supported_commands)){
+                int ecdh_operations_supported = (packet[OFFSET_OF_DATA_IN_COMMAND_COMPLETE+1+34] & 0x06) == 0x06;
+                log_info("controller supports ECDH operation: %u", ecdh_operations_supported);
+#ifndef USE_SOFTWARE_ECDH_IMPLEMENTATION
+                if (!ecdh_operations_supported){
+                    // mbedTLS can also be used if already available (and malloc is supported)
+                    log_error("LE Secure Connections enabled, but HCI Controller doesn't support it. Please add USE_MICRO_ECC_FOR_ECDH to btstack_config.h");
+                }
+#endif
+            }
+            break;
+
+#ifndef USE_SOFTWARE_ECDH_IMPLEMENTATION
+        case HCI_EVENT_LE_META:
+            btstack_crypto_ec_p192 = (btstack_crypto_ec_p192_t*) btstack_linked_list_get_first_item(&btstack_crypto_operations);
+            if (!btstack_crypto_ec_p192) break;
+            switch (hci_event_le_meta_get_subevent_code(packet)){
+                case HCI_SUBEVENT_LE_READ_LOCAL_P256_PUBLIC_KEY_COMPLETE:
+                    if (btstack_crypto_ec_p192->btstack_crypto.operation != BTSTACK_CRYPTO_EC_P192_GENERATE_KEY) break;
+                    if (!btstack_crypto_wait_for_hci_result) return;
+                    btstack_crypto_wait_for_hci_result = 0;
+                    if (hci_subevent_le_read_local_p256_public_key_complete_get_status(packet)){
+                        log_error("Read Local P256 Public Key failed");
+                    }
+                    hci_subevent_le_read_local_p256_public_key_complete_get_dhkey_x(packet, &btstack_crypto_ec_p192_public_key[0]);
+                    hci_subevent_le_read_local_p256_public_key_complete_get_dhkey_y(packet, &btstack_crypto_ec_p192_public_key[32]);
+                    btstack_crypto_ec_p192_key_generation_state = EC_KEY_GENERATION_DONE;
+                    break;
+                case HCI_SUBEVENT_LE_GENERATE_DHKEY_COMPLETE:
+                    if (btstack_crypto_ec_p192->btstack_crypto.operation != BTSTACK_CRYPTO_EC_P192_CALCULATE_DHKEY) break;
+                    if (!btstack_crypto_wait_for_hci_result) return;
+                    btstack_crypto_wait_for_hci_result = 0;
+                    if (hci_subevent_le_generate_dhkey_complete_get_status(packet)){
+                        log_error("Generate DHKEY failed -> abort");
+                    }
+                    hci_subevent_le_generate_dhkey_complete_get_dhkey(packet, btstack_crypto_ec_p192->dhkey);
+                    // done
+                    btstack_linked_list_pop(&btstack_crypto_operations);
+                    (*btstack_crypto_ec_p192->btstack_crypto.context_callback.callback)(btstack_crypto_ec_p192->btstack_crypto.context_callback.context);                    
+                    break;
+                default:
+                    break;                
+            }
+            break;
+#endif
+
+        default:
+            break;
     }
 
     // try processing
@@ -657,69 +733,3 @@ int btstack_crypto_ec_p192_validate_public_key(const uint8_t * public_key){
     return  err;
 }
 #endif
-
-#if 0
-
-#if defined(ENABLE_LE_SECURE_CONNECTIONS) && !defined(USE_SOFTWARE_ECDH_IMPLEMENTATION)
-    if (ec_key_generation_state == EC_KEY_GENERATION_ACTIVE){
-        ec_key_generation_state = EC_KEY_GENERATION_W4_KEY;
-        hci_send_cmd(&hci_le_read_local_p256_public_key);
-        return;
-    }
-
-#if defined(ENABLE_LE_SECURE_CONNECTIONS) && !defined(USE_SOFTWARE_ECDH_IMPLEMENTATION)
-                        case HCI_SUBEVENT_LE_READ_LOCAL_P256_PUBLIC_KEY_COMPLETE:
-                            if (hci_subevent_le_read_local_p256_public_key_complete_get_status(packet)){
-                                log_error("Read Local P256 Public Key failed");
-                                break;
-                            }
-
-                            hci_subevent_le_read_local_p256_public_key_complete_get_dhkey_x(packet, &ec_q[0]);
-                            hci_subevent_le_read_local_p256_public_key_complete_get_dhkey_y(packet, &ec_q[32]);
-
-                            ec_key_generation_state = EC_KEY_GENERATION_DONE;
-                            sm_log_ec_keypair();
-                            break;
-                        case HCI_SUBEVENT_LE_GENERATE_DHKEY_COMPLETE:
-                            sm_conn = sm_get_connection_for_handle(sm_active_connection_handle);
-                            if (hci_subevent_le_generate_dhkey_complete_get_status(packet)){
-                                log_error("Generate DHKEY failed -> abort");
-                                // abort pairing with 'unspecified reason'
-                                sm_pdu_received_in_wrong_state(sm_conn);
-                                break;
-                            }
-
-                            hci_subevent_le_generate_dhkey_complete_get_dhkey(packet, &setup->sm_dhkey[0]);
-                            setup->sm_state_vars |= SM_STATE_VAR_DHKEY_CALCULATED;
-                            log_info("dhkey");
-                            log_info_hexdump(&setup->sm_dhkey[0], 32);
-
-                            // trigger next step
-                            if (sm_conn->sm_engine_state == SM_SC_W4_CALCULATE_DHKEY){
-                                sm_conn->sm_engine_state = SM_SC_W2_CALCULATE_F5_SALT;
-                            }
-                            break;
-#endif
-#endif
-#ifdef USE_SOFTWARE_ECDH_IMPLEMENTATION
-    // calculate DHKEY
-    sm_sc_calculate_dhkey(setup->sm_dhkey);
-    setup->sm_state_vars |= SM_STATE_VAR_DHKEY_CALCULATED;
-#endif
-#if defined(ENABLE_LE_SECURE_CONNECTIONS) && !defined(USE_SOFTWARE_ECDH_IMPLEMENTATION)
-        if (setup->sm_state_vars & SM_STATE_VAR_DHKEY_NEEDED){
-            setup->sm_state_vars &= ~SM_STATE_VAR_DHKEY_NEEDED;
-            hci_send_cmd(&hci_le_generate_dhkey, &setup->sm_peer_q[0], &setup->sm_peer_q[32]);
-            return;
-        }
-#endif
-                    if (HCI_EVENT_IS_COMMAND_COMPLETE(packet, hci_read_local_supported_commands)){
-#if defined(ENABLE_LE_SECURE_CONNECTIONS) && !defined(USE_SOFTWARE_ECDH_IMPLEMENTATION)
-                        if ((packet[OFFSET_OF_DATA_IN_COMMAND_COMPLETE+1+34] & 0x06) != 0x06){
-                            // mbedTLS can also be used if already available (and malloc is supported)
-                            log_error("LE Secure Connections enabled, but HCI Controller doesn't support it. Please add USE_MICRO_ECC_FOR_ECDH to btstack_config.h");
-                        }
-#endif
-                    }
-#endif
-

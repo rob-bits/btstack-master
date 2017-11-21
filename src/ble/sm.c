@@ -1141,13 +1141,6 @@ static void sm_sc_prepare_dhkey_check(sm_connection_t * sm_conn);
 static int sm_passkey_used(stk_generation_method_t method);
 static int sm_just_works_or_numeric_comparison(stk_generation_method_t method);
 
-static void sm_log_ec_keypair(void){
-    log_info("Elliptic curve: X");
-    log_info_hexdump(&ec_q[0],32);
-    log_info("Elliptic curve: Y");
-    log_info_hexdump(&ec_q[32],32);
-}
-
 static void sm_sc_start_calculating_local_confirm(sm_connection_t * sm_conn){
     if (sm_passkey_used(setup->sm_stk_generation_method)){
         // sm_conn->sm_engine_state = SM_SC_W2_GET_RANDOM_A;
@@ -3326,7 +3319,6 @@ void sm_test_use_fixed_local_csrk(void){
 static void sm_ec_generated(void * arg){
     UNUSED(arg);
     ec_key_generation_state = EC_KEY_GENERATION_DONE;
-    sm_log_ec_keypair();
 }
 
 void sm_init(void){
