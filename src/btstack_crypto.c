@@ -78,6 +78,12 @@
 #define ENABLE_ECC_P256
 #endif
 
+// Software AES128
+#ifdef HAVE_AES128
+#define USE_BTSTACK_AES128
+void btstack_aes128_calc(const uint8_t * key, const uint8_t * plaintext, uint8_t * result);
+#endif
+
 typedef enum {
     CMAC_IDLE,
     CMAC_CALC_SUBKEYS,
@@ -421,8 +427,15 @@ static void btstack_crypto_run(void){
 		    hci_send_cmd(&hci_le_rand);
 		    break;
 		case BTSTACK_CRYPTO_AES128:
-			btstack_crypto_aes128 = (btstack_crypto_aes128_t *) btstack_crypto;
-			btstack_crypto_aes128_start(btstack_crypto_aes128->key, btstack_crypto_aes128->plaintext);
+            btstack_crypto_aes128 = (btstack_crypto_aes128_t *) btstack_crypto;
+#ifdef USE_BTSTACK_AES128
+            btstack_aes128_calc(btstack_crypto_aes128->key, btstack_crypto_aes128->plaintext, btstack_crypto_aes128->ciphertext);
+            // done
+            btstack_linked_list_pop(&btstack_crypto_operations);
+            (*btstack_crypto_aes128->btstack_crypto.context_callback.callback)(btstack_crypto_aes128->btstack_crypto.context_callback.context);
+#else
+            btstack_crypto_aes128_start(btstack_crypto_aes128->key, btstack_crypto_aes128->plaintext);
+#endif
 		    break;
 		case BTSTACK_CRYPTO_CMAC_MESSAGE:
 		case BTSTACK_CRYPTO_CMAC_GENERATOR:
