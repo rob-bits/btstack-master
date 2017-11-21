@@ -659,42 +659,7 @@ int btstack_crypto_ec_p192_validate_public_key(const uint8_t * public_key){
 #endif
 
 #if 0
-void sm_use_fixed_ec_keypair(uint8_t * qx, uint8_t * qy, uint8_t * d){
-#ifdef ENABLE_LE_SECURE_CONNECTIONS
-    memcpy(&ec_q[0],  qx, 32);
-    memcpy(&ec_q[32], qy, 32);
-    memcpy(ec_d, d, 32);
-    sm_have_ec_keypair = 1;
-    ec_key_generation_state = EC_KEY_GENERATION_DONE;
-#else
-    UNUSED(qx);
-    UNUSED(qy);
-    UNUSED(d);
-#endif
-}
 
-#ifdef ENABLE_LE_SECURE_CONNECTIONS
-static void parse_hex(uint8_t * buffer, const char * hex_string){
-    while (*hex_string){
-        int high_nibble = nibble_for_char(*hex_string++);
-        int low_nibble  = nibble_for_char(*hex_string++);
-        *buffer++       = (high_nibble << 4) | low_nibble;
-    }
-}
-#endif
-
-void sm_test_use_fixed_ec_keypair(void){
-#ifdef ENABLE_LE_SECURE_CONNECTIONS
-    const char * ec_d_string =  "3f49f6d4a3c55f3874c9b3e3d2103f504aff607beb40b7995899b8a6cd3c1abd";
-    const char * ec_qx_string = "20b003d2f297be2c5e2c83a7e9f9a5b9eff49111acf4fddbcc0301480e359de6";
-    const char * ec_qy_string = "dc809c49652aeb6d63329abf5a52155c766345c28fed3024741c8ed01589d28b";
-    parse_hex(ec_d, ec_d_string);
-    parse_hex(&ec_q[0],  ec_qx_string);
-    parse_hex(&ec_q[32], ec_qy_string);
-    sm_have_ec_keypair = 1;
-    ec_key_generation_state = EC_KEY_GENERATION_DONE;
-#endif
-}
 #if defined(ENABLE_LE_SECURE_CONNECTIONS) && !defined(USE_SOFTWARE_ECDH_IMPLEMENTATION)
     if (ec_key_generation_state == EC_KEY_GENERATION_ACTIVE){
         ec_key_generation_state = EC_KEY_GENERATION_W4_KEY;

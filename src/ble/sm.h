@@ -265,15 +265,6 @@ int sm_address_resolution_lookup(uint8_t addr_type, bd_addr_t addr);
 int sm_le_device_index(hci_con_handle_t con_handle );
 
 /**
- * @brief Set Elliptic Key Public/Private Keypair
- * @note Using the same key for more than one device is not recommended. 
- * @param qx 32 bytes
- * @param qy 32 bytes
- * @param d  32 bytes
- */
-void sm_use_fixed_ec_keypair(uint8_t * qx, uint8_t * qy, uint8_t * d);
-
-/**
  * @brief Use fixec passkey for Legacy and SC instead of generating a random number
  * @note Can be used to improve security over Just Works if no keyboard or displary are present and 
  *       individual random passkey can be printed on the device during production
@@ -296,7 +287,6 @@ void sm_allow_ltk_reconstruction_without_le_device_db_entry(int allow);
 // PTS testing
 void sm_test_set_irk(sm_key_t irk);
 void sm_test_use_fixed_local_csrk(void);
-void sm_test_use_fixed_ec_keypair(void);
 
 #if defined __cplusplus
 }
