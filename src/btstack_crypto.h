@@ -58,8 +58,8 @@ typedef enum {
 	BTSTACK_CRYPTO_AES128,
 	BTSTACK_CRYPTO_CMAC_GENERATOR,
 	BTSTACK_CRYPTO_CMAC_MESSAGE,
-	BTSTACK_CRYPTO_EC_P192_GENERATE_KEY,
-	BTSTACK_CRYPTO_EC_P192_CALCULATE_DHKEY,
+	BTSTACK_CRYPTO_ECC_P256_GENERATE_KEY,
+	BTSTACK_CRYPTO_ECC_P256_CALCULATE_DHKEY,
 } btstack_crypto_operation_t;
 
 typedef struct {
@@ -95,7 +95,7 @@ typedef struct {
 	btstack_crypto_t btstack_crypto;
 	uint8_t * public_key;
     uint8_t * dhkey;
-} btstack_crypto_ec_p192_t;
+} btstack_crypto_ecc_p256_t;
 
 /** 
  * Initialize crypto functions
@@ -157,7 +157,7 @@ void btstack_crypto_aes128_cmac_message(btstack_crypto_aes128_cmac_t * request, 
  * @param callback
  * @param callback_arg
  */
-void btstack_crypto_ec_p192_generate_key(btstack_crypto_ec_p192_t * request, uint8_t * public_key, void (* callback)(void * arg), void * callback_arg);
+void btstack_crypto_ecc_p256_generate_key(btstack_crypto_ecc_p256_t * request, uint8_t * public_key, void (* callback)(void * arg), void * callback_arg);
 
 /**
  * Calculate Diffie-Hellman Key based on local private key and remote public key
@@ -167,14 +167,14 @@ void btstack_crypto_ec_p192_generate_key(btstack_crypto_ec_p192_t * request, uin
  * @param callback
  * @param callback_arg
  */
-void btstack_crypto_ec_p192_calculate_dhkey(btstack_crypto_ec_p192_t * request, const uint8_t * public_key, uint8_t * dhkey, void (* callback)(void * arg), void * callback_arg);
+void btstack_crypto_ecc_p256_calculate_dhkey(btstack_crypto_ecc_p256_t * request, const uint8_t * public_key, uint8_t * dhkey, void (* callback)(void * arg), void * callback_arg);
 
 /*
  * Validate public key (not implemented for LE Controller ECC)
  * @param public_key (64 bytes)
  * @result 0 == valid
  */
-int btstack_crypto_ec_p192_validate_public_key(const uint8_t * public_key);
+int btstack_crypto_ecc_p256_validate_public_key(const uint8_t * public_key);
 
 #if defined __cplusplus
 }

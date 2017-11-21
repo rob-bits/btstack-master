@@ -117,12 +117,12 @@ static uint8_t      sm_cmac_block_current;
 static uint8_t      sm_cmac_block_count;
 
 #ifdef ENABLE_LE_SECURE_CONNECTIONS
-// state for ECC-P192
-static uint8_t                                  btstack_crypto_ec_p192_public_key[64];
-static uint8_t                                  btstack_crypto_ec_p192_random[64];
-static uint8_t                                  btstack_crypto_ec_p192_random_len;
-static uint8_t                                  btstack_crypto_ec_p192_random_offset;
-static btstack_crypto_ec_key_generation_state_t btstack_crypto_ec_p192_key_generation_state;
+// state for ECC-P256
+static uint8_t                                  btstack_crypto_ecc_p256_public_key[64];
+static uint8_t                                  btstack_crypto_ecc_p256_random[64];
+static uint8_t                                  btstack_crypto_ecc_p256_random_len;
+static uint8_t                                  btstack_crypto_ecc_p256_random_offset;
+static btstack_crypto_ec_key_generation_state_t btstack_crypto_ecc_p256_key_generation_state;
 
 #ifdef USE_SOFTWARE_ECDH_IMPLEMENTATION
 static uint8_t ec_d[32];
@@ -301,10 +301,10 @@ static void btstack_crypto_log_ec_publickey(const uint8_t * ec_q){
 #if (defined(USE_MICRO_ECC_FOR_ECDH) && !defined(WICED_VERSION)) || defined(USE_MBEDTLS_FOR_ECDH)
 // @return OK
 static int sm_generate_f_rng(unsigned char * buffer, unsigned size){
-    if (btstack_crypto_ec_p192_key_generation_state != EC_KEY_GENERATION_ACTIVE) return 0;
-    log_info("sm_generate_f_rng: size %u - offset %u", (int) size, btstack_crypto_ec_p192_random_offset);
+    if (btstack_crypto_ecc_p256_key_generation_state != EC_KEY_GENERATION_ACTIVE) return 0;
+    log_info("sm_generate_f_rng: size %u - offset %u", (int) size, btstack_crypto_ecc_p256_random_offset);
     while (size) {
-        *buffer++ = btstack_crypto_ec_p192_random[btstack_crypto_ec_p192_random_offset++];
+        *buffer++ = btstack_crypto_ecc_p256_random[btstack_crypto_ecc_p256_random_offset++];
         size--;
     }
     return 1;
@@ -318,9 +318,9 @@ static int sm_generate_f_rng_mbedtls(void * context, unsigned char * buffer, siz
 }
 #endif /* USE_MBEDTLS_FOR_ECDH */
 
-static void btstack_crypto_ec_p192_generate_key_software(void){
+static void btstack_crypto_ecc_p256_generate_key_software(void){
 
-    btstack_crypto_ec_p192_random_offset = 0;
+    btstack_crypto_ecc_p256_random_offset = 0;
     
     // generate EC key
 #ifdef USE_MICRO_ECC_FOR_ECDH
@@ -333,14 +333,14 @@ static void btstack_crypto_ec_p192_generate_key_software(void){
 
 #if uECC_SUPPORTS_secp256r1
     // standard version
-    uECC_make_key(btstack_crypto_ec_p192_public_key, ec_d, uECC_secp256r1());
+    uECC_make_key(btstack_crypto_ecc_p256_public_key, ec_d, uECC_secp256r1());
 
     // disable RNG again, as returning no randmon data lets shared key generation fail
     log_info("disable uECC RNG in standard version after key generation");
     uECC_set_rng(NULL);
 #else
     // static version
-    uECC_make_key(btstack_crypto_ec_p192_public_key, ec_d);
+    uECC_make_key(btstack_crypto_ecc_p256_public_key, ec_d);
 #endif
 #endif /* USE_MICRO_ECC_FOR_ECDH */
 
@@ -351,8 +351,8 @@ static void btstack_crypto_ec_p192_generate_key_software(void){
     mbedtls_ecp_point_init(&P);
     int res = mbedtls_ecp_gen_keypair(&mbedtls_ec_group, &d, &P, &sm_generate_f_rng_mbedtls, NULL);
     log_info("gen keypair %x", res);
-    mbedtls_mpi_write_binary(&P.X, &btstack_crypto_ec_p192_public_key[0],  32);
-    mbedtls_mpi_write_binary(&P.Y, &btstack_crypto_ec_p192_public_key[32], 32);
+    mbedtls_mpi_write_binary(&P.X, &btstack_crypto_ecc_p256_public_key[0],  32);
+    mbedtls_mpi_write_binary(&P.Y, &btstack_crypto_ecc_p256_public_key[32], 32);
     mbedtls_mpi_write_binary(&d, ec_d, 32);
     mbedtls_ecp_point_free(&P);
     mbedtls_mpi_free(&d);
@@ -360,7 +360,7 @@ static void btstack_crypto_ec_p192_generate_key_software(void){
 }
 
 #ifdef USE_SOFTWARE_ECDH_IMPLEMENTATION
-static void btstack_crypto_ec_p192_calculate_dhkey_software(btstack_crypto_ec_p192_t * btstack_crypto_ec_p192){
+static void btstack_crypto_ecc_p256_calculate_dhkey_software(btstack_crypto_ecc_p256_t * btstack_crypto_ec_p192){
     memset(btstack_crypto_ec_p192->dhkey, 0, 32);
 
 #ifdef USE_MICRO_ECC_FOR_ECDH
@@ -404,7 +404,7 @@ static void btstack_crypto_run(void){
 
     btstack_crypto_aes128_t        * btstack_crypto_aes128;
     btstack_crypto_aes128_cmac_t   * btstack_crypto_cmac;
-    btstack_crypto_ec_p192_t       * btstack_crypto_ec_p192;
+    btstack_crypto_ecc_p256_t       * btstack_crypto_ec_p192;
 
     // stack up and running?
     if (hci_get_state() != HCI_STATE_WORKING) return;
@@ -439,25 +439,25 @@ static void btstack_crypto_run(void){
 			}
 			break;
 #ifdef ENABLE_LE_SECURE_CONNECTIONS
-        case BTSTACK_CRYPTO_EC_P192_GENERATE_KEY:
-            btstack_crypto_ec_p192 = (btstack_crypto_ec_p192_t *) btstack_crypto;
-            switch (btstack_crypto_ec_p192_key_generation_state){
+        case BTSTACK_CRYPTO_ECC_P256_GENERATE_KEY:
+            btstack_crypto_ec_p192 = (btstack_crypto_ecc_p256_t *) btstack_crypto;
+            switch (btstack_crypto_ecc_p256_key_generation_state){
                 case EC_KEY_GENERATION_DONE:
                     // done
-                    btstack_crypto_log_ec_publickey(btstack_crypto_ec_p192_public_key);
-                    memcpy(btstack_crypto_ec_p192->public_key, btstack_crypto_ec_p192_public_key, 64);
+                    btstack_crypto_log_ec_publickey(btstack_crypto_ecc_p256_public_key);
+                    memcpy(btstack_crypto_ec_p192->public_key, btstack_crypto_ecc_p256_public_key, 64);
                     btstack_linked_list_pop(&btstack_crypto_operations);
                     (*btstack_crypto_ec_p192->btstack_crypto.context_callback.callback)(btstack_crypto_ec_p192->btstack_crypto.context_callback.context);                    
                     break;
                 case EC_KEY_GENERATION_IDLE:
 #ifdef USE_SOFTWARE_ECDH_IMPLEMENTATION                
                     log_info("start ecc random");
-                    btstack_crypto_ec_p192_key_generation_state = EC_KEY_GENERATION_GENERATING_RANDOM;
-                    btstack_crypto_ec_p192_random_offset = 0;
+                    btstack_crypto_ecc_p256_key_generation_state = EC_KEY_GENERATION_GENERATING_RANDOM;
+                    btstack_crypto_ecc_p256_random_offset = 0;
                     btstack_crypto_wait_for_hci_result = 1;
                     hci_send_cmd(&hci_le_rand);
 #else
-                    btstack_crypto_ec_p192_key_generation_state = EC_KEY_GENERATION_W4_KEY;
+                    btstack_crypto_ecc_p256_key_generation_state = EC_KEY_GENERATION_W4_KEY;
                     btstack_crypto_wait_for_hci_result = 1;
                     hci_send_cmd(&hci_le_read_local_p256_public_key);
 #endif
@@ -473,10 +473,10 @@ static void btstack_crypto_run(void){
                     break;
             }
             break;
-        case BTSTACK_CRYPTO_EC_P192_CALCULATE_DHKEY:
-            btstack_crypto_ec_p192 = (btstack_crypto_ec_p192_t *) btstack_crypto;
+        case BTSTACK_CRYPTO_ECC_P256_CALCULATE_DHKEY:
+            btstack_crypto_ec_p192 = (btstack_crypto_ecc_p256_t *) btstack_crypto;
 #ifdef USE_SOFTWARE_ECDH_IMPLEMENTATION
-            btstack_crypto_ec_p192_calculate_dhkey_software(btstack_crypto_ec_p192);
+            btstack_crypto_ecc_p256_calculate_dhkey_software(btstack_crypto_ec_p192);
             // done
             btstack_linked_list_pop(&btstack_crypto_operations);
             (*btstack_crypto_ec_p192->btstack_crypto.context_callback.callback)(btstack_crypto_ec_p192->btstack_crypto.context_callback.context);                    
@@ -510,13 +510,13 @@ static void btstack_crypto_handle_random_data(const uint8_t * data, uint16_t len
             }
             break;
 #ifdef ENABLE_LE_SECURE_CONNECTIONS
-        case BTSTACK_CRYPTO_EC_P192_GENERATE_KEY:
-            memcpy(&btstack_crypto_ec_p192_random[btstack_crypto_ec_p192_random_len], data, 8);
-            btstack_crypto_ec_p192_random_len += 8;
-            if (btstack_crypto_ec_p192_random_len >= 64) {
-                btstack_crypto_ec_p192_key_generation_state = EC_KEY_GENERATION_ACTIVE;
-                btstack_crypto_ec_p192_generate_key_software();
-                btstack_crypto_ec_p192_key_generation_state = EC_KEY_GENERATION_DONE;
+        case BTSTACK_CRYPTO_ECC_P256_GENERATE_KEY:
+            memcpy(&btstack_crypto_ecc_p256_random[btstack_crypto_ecc_p256_random_len], data, 8);
+            btstack_crypto_ecc_p256_random_len += 8;
+            if (btstack_crypto_ecc_p256_random_len >= 64) {
+                btstack_crypto_ecc_p256_key_generation_state = EC_KEY_GENERATION_ACTIVE;
+                btstack_crypto_ecc_p256_generate_key_software();
+                btstack_crypto_ecc_p256_key_generation_state = EC_KEY_GENERATION_DONE;
             }
             break;
 #endif
@@ -557,7 +557,7 @@ static void btstack_crypto_event_handler(uint8_t packet_type, uint16_t cid, uint
     UNUSED(size);        // ok: fixed format events read from HCI buffer
 
 #ifndef USE_SOFTWARE_ECDH_IMPLEMENTATION
-    btstack_crypto_ec_p192_t * btstack_crypto_ec_p192;
+    btstack_crypto_ecc_p256_t * btstack_crypto_ec_p192;
 #endif
 
     if (packet_type != HCI_EVENT_PACKET)  return;
@@ -590,22 +590,22 @@ static void btstack_crypto_event_handler(uint8_t packet_type, uint16_t cid, uint
 
 #ifndef USE_SOFTWARE_ECDH_IMPLEMENTATION
         case HCI_EVENT_LE_META:
-            btstack_crypto_ec_p192 = (btstack_crypto_ec_p192_t*) btstack_linked_list_get_first_item(&btstack_crypto_operations);
+            btstack_crypto_ec_p192 = (btstack_crypto_ecc_p256_t*) btstack_linked_list_get_first_item(&btstack_crypto_operations);
             if (!btstack_crypto_ec_p192) break;
             switch (hci_event_le_meta_get_subevent_code(packet)){
                 case HCI_SUBEVENT_LE_READ_LOCAL_P256_PUBLIC_KEY_COMPLETE:
-                    if (btstack_crypto_ec_p192->btstack_crypto.operation != BTSTACK_CRYPTO_EC_P192_GENERATE_KEY) break;
+                    if (btstack_crypto_ec_p192->btstack_crypto.operation != BTSTACK_CRYPTO_ECC_P256_GENERATE_KEY) break;
                     if (!btstack_crypto_wait_for_hci_result) return;
                     btstack_crypto_wait_for_hci_result = 0;
                     if (hci_subevent_le_read_local_p256_public_key_complete_get_status(packet)){
                         log_error("Read Local P256 Public Key failed");
                     }
-                    hci_subevent_le_read_local_p256_public_key_complete_get_dhkey_x(packet, &btstack_crypto_ec_p192_public_key[0]);
-                    hci_subevent_le_read_local_p256_public_key_complete_get_dhkey_y(packet, &btstack_crypto_ec_p192_public_key[32]);
-                    btstack_crypto_ec_p192_key_generation_state = EC_KEY_GENERATION_DONE;
+                    hci_subevent_le_read_local_p256_public_key_complete_get_dhkey_x(packet, &btstack_crypto_ecc_p256_public_key[0]);
+                    hci_subevent_le_read_local_p256_public_key_complete_get_dhkey_y(packet, &btstack_crypto_ecc_p256_public_key[32]);
+                    btstack_crypto_ecc_p256_key_generation_state = EC_KEY_GENERATION_DONE;
                     break;
                 case HCI_SUBEVENT_LE_GENERATE_DHKEY_COMPLETE:
-                    if (btstack_crypto_ec_p192->btstack_crypto.operation != BTSTACK_CRYPTO_EC_P192_CALCULATE_DHKEY) break;
+                    if (btstack_crypto_ec_p192->btstack_crypto.operation != BTSTACK_CRYPTO_ECC_P256_CALCULATE_DHKEY) break;
                     if (!btstack_crypto_wait_for_hci_result) return;
                     btstack_crypto_wait_for_hci_result = 0;
                     if (hci_subevent_le_generate_dhkey_complete_get_status(packet)){
@@ -684,25 +684,25 @@ void btstack_crypto_aes128_cmac_message(btstack_crypto_aes128_cmac_t * request, 
 }
 
 #ifdef ENABLE_LE_SECURE_CONNECTIONS
-void btstack_crypto_ec_p192_generate_key(btstack_crypto_ec_p192_t * request, uint8_t * public_key, void (* callback)(void * arg), void * callback_arg){
+void btstack_crypto_ecc_p256_generate_key(btstack_crypto_ecc_p256_t * request, uint8_t * public_key, void (* callback)(void * arg), void * callback_arg){
     request->btstack_crypto.context_callback.callback  = callback;
     request->btstack_crypto.context_callback.context   = callback_arg;
-    request->btstack_crypto.operation                  = BTSTACK_CRYPTO_EC_P192_GENERATE_KEY;
+    request->btstack_crypto.operation                  = BTSTACK_CRYPTO_ECC_P256_GENERATE_KEY;
     request->public_key                                = public_key;
     btstack_linked_list_add_tail(&btstack_crypto_operations, (btstack_linked_item_t*) request);
     btstack_crypto_run();
 }
 
-void btstack_crypto_ec_p192_calculate_dhkey(btstack_crypto_ec_p192_t * request, const uint8_t * public_key, uint8_t * dhkey, void (* callback)(void * arg), void * callback_arg){
+void btstack_crypto_ecc_p256_calculate_dhkey(btstack_crypto_ecc_p256_t * request, const uint8_t * public_key, uint8_t * dhkey, void (* callback)(void * arg), void * callback_arg){
     request->btstack_crypto.context_callback.callback  = callback;
     request->btstack_crypto.context_callback.context   = callback_arg;
-    request->btstack_crypto.operation                  = BTSTACK_CRYPTO_EC_P192_CALCULATE_DHKEY;
+    request->btstack_crypto.operation                  = BTSTACK_CRYPTO_ECC_P256_CALCULATE_DHKEY;
     request->public_key                                = (uint8_t *) public_key;
     request->dhkey                                     = dhkey;
     btstack_linked_list_add_tail(&btstack_crypto_operations, (btstack_linked_item_t*) request);
     btstack_crypto_run();
 }
-int btstack_crypto_ec_p192_validate_public_key(const uint8_t * public_key){
+int btstack_crypto_ecc_p256_validate_public_key(const uint8_t * public_key){
 
     // validate public key using micro-ecc
     int err = 0;

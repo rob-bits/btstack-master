@@ -215,9 +215,9 @@ static btstack_linked_list_t sm_address_resolution_general_queue;
 static sm_aes128_state_t  sm_aes128_state;
 
 // crypto 
-static btstack_crypto_random_t  sm_crypto_random_request;
-static btstack_crypto_aes128_t  sm_crypto_aes128_request;
-static btstack_crypto_ec_p192_t sm_crypto_ec_p192_request;
+static btstack_crypto_random_t   sm_crypto_random_request;
+static btstack_crypto_aes128_t   sm_crypto_aes128_request;
+static btstack_crypto_ecc_p256_t sm_crypto_ecc_p256_request;
 
 // temp storage for random data
 static uint8_t sm_random_data[8];
@@ -3037,7 +3037,7 @@ static void sm_pdu_handler(uint8_t packet_type, hci_con_handle_t con_handle, uin
             reverse_256(&packet[33], &setup->sm_peer_q[32]);
 
             // validate public key
-            err = btstack_crypto_ec_p192_validate_public_key(setup->sm_peer_q);
+            err = btstack_crypto_ecc_p256_validate_public_key(setup->sm_peer_q);
             if (err){
                 log_error("sm: peer public key invalid %x", err);
                 // uses "unspecified reason", there is no "public key invalid" error code
@@ -3046,7 +3046,7 @@ static void sm_pdu_handler(uint8_t packet_type, hci_con_handle_t con_handle, uin
             }
 
             // start calculating dhkey
-            btstack_crypto_ec_p192_calculate_dhkey(&sm_crypto_ec_p192_request, setup->sm_peer_q, setup->sm_dhkey, sm_sc_dhkey_calculated, sm_conn);
+            btstack_crypto_ecc_p256_calculate_dhkey(&sm_crypto_ecc_p256_request, setup->sm_peer_q, setup->sm_dhkey, sm_sc_dhkey_calculated, sm_conn);
 
             if (IS_RESPONDER(sm_conn->sm_role)){
                 // responder
@@ -3372,7 +3372,7 @@ void sm_init(void){
 
 #ifdef ENABLE_LE_SECURE_CONNECTIONS
     ec_key_generation_state = EC_KEY_GENERATION_ACTIVE;
-    btstack_crypto_ec_p192_generate_key(&sm_crypto_ec_p192_request, ec_q, &sm_ec_generated, NULL);
+    btstack_crypto_ecc_p256_generate_key(&sm_crypto_ecc_p256_request, ec_q, &sm_ec_generated, NULL);
 #endif
 }
 
