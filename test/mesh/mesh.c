@@ -309,8 +309,11 @@ static void provisioning_handle_public_key(uint8_t *packet, uint16_t size){
 
 // ConfirmationDevice
 static uint8_t confirmation_device[16];
+// ClaculationSalt
+static uint8_t confirmation_salt[16];
 
 static void provisioning_handle_confirmation_device_calculated(void * arg){
+
     UNUSED(arg);
 
     printf("ConfirmationDevice: ");
@@ -324,19 +327,15 @@ static void provisioning_handle_confirmation_device_calculated(void * arg){
     pb_adv_send_pdu(prov_buffer_out, 17);
 }
 
-static void provisioning_handle_confirmation(uint8_t *packet, uint16_t size){
+static void provisioning_handle_confirmation_s1_calculated(void * arg){
 
-    UNUSED(size);
-    UNUSED(packet);
+    UNUSED(arg);
 
-    // CalculationInputs
-    uint8_t confirmation_salt[16];
-    printf("CalculationInputs: ");
-    printf_hexdump(prov_confirmation_inputs, sizeof(prov_confirmation_inputs));
     // ClaculationSalt
     s1(confirmation_salt, prov_confirmation_inputs, sizeof(prov_confirmation_inputs));
     printf("CalculationSalt: ");
     printf_hexdump(confirmation_salt, sizeof(confirmation_salt));
+
     // ConfirmationKey
     uint8_t confirmation_key[16];
     k1(confirmation_key, dhkey, sizeof(dhkey), confirmation_salt, (uint8_t*) "prck", 4);
@@ -352,6 +351,17 @@ static void provisioning_handle_confirmation(uint8_t *packet, uint16_t size){
     memcpy(&prov_confirmation_inputs[16], auth_value, 16);
 
     btstack_crypto_aes128_cmac_message(&prov_cmac_request, confirmation_key, 32, prov_confirmation_inputs, confirmation_device, &provisioning_handle_confirmation_device_calculated, NULL);
+}
+
+static void provisioning_handle_confirmation(uint8_t *packet, uint16_t size){
+
+    UNUSED(size);
+    UNUSED(packet);
+
+    // CalculationInputs
+    printf("CalculationInputs: ");
+    printf_hexdump(prov_confirmation_inputs, sizeof(prov_confirmation_inputs));
+    btstack_crypto_aes128_cmac_zero(&prov_cmac_request, sizeof(prov_confirmation_inputs), prov_confirmation_inputs, confirmation_salt, &provisioning_handle_confirmation_s1_calculated, NULL);
 }
 
 static void provisioning_handle_random(uint8_t *packet, uint16_t size){
