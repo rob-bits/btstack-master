@@ -189,11 +189,13 @@ static derived_key_generation_t dkg_state;
 static random_address_update_t rau_state;
 static bd_addr_t sm_random_address;
 
+#ifdef USE_CMAC_ENGINE
 // CMAC Calculation: General
 static btstack_crypto_aes128_cmac_t sm_cmac_request;
 static void (*sm_cmac_done_callback)(uint8_t hash[8]);
 static uint8_t sm_cmac_active;
 static uint8_t sm_cmac_hash[16];
+#endif
 
 // CMAC for ATT Signed Writes
 #ifdef ENABLE_LE_SIGNED_WRITE
@@ -224,7 +226,9 @@ static sm_aes128_state_t  sm_aes128_state;
 // crypto 
 static btstack_crypto_random_t   sm_crypto_random_request;
 static btstack_crypto_aes128_t   sm_crypto_aes128_request;
+#ifdef ENABLE_LE_SECURE_CONNECTIONS
 static btstack_crypto_ecc_p256_t sm_crypto_ecc_p256_request;
+#endif
 
 // temp storage for random data
 static uint8_t sm_random_data[8];
@@ -358,13 +362,14 @@ static const stk_generation_method_t stk_generation_method_with_secure_connectio
 #endif
 
 static void sm_run(void);
+#ifdef USE_CMAC_ENGINE
 static void sm_cmac_message_start(const sm_key_t key, uint16_t message_len, const uint8_t * message, void (*done_callback)(uint8_t * hash));
+#endif
 static void sm_done_for_handle(hci_con_handle_t con_handle);
 static sm_connection_t * sm_get_connection_for_handle(hci_con_handle_t con_handle);
 static inline int sm_calc_actual_encryption_key_size(int other);
 static int sm_validate_stk_generation_method(void);
 static void sm_handle_encryption_result_address_resolution(void *arg);
-// static void sm_handle_encryption_result_cmac(void *arg);
 static void sm_handle_encryption_result_dkg_dhk(void *arg);
 static void sm_handle_encryption_result_dkg_irk(void *arg);
 static void sm_handle_encryption_result_enc_a(void *arg);
@@ -380,7 +385,9 @@ static void sm_handle_encryption_result_enc_stk(void *arg);
 static void sm_handle_encryption_result_rau(void *arg);
 static void sm_handle_random_result_ph2_tk(void * arg);
 static void sm_handle_random_result_rau(void * arg);
+#ifdef ENABLE_LE_SECURE_CONNECTIONS
 static void sm_handle_random_result_sc_get_random(void * arg);
+#endif
 
 static void log_info_hex16(const char * name, uint16_t value){
     log_info("%-6s 0x%04x", name, value);

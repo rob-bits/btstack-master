@@ -406,7 +406,9 @@ static void btstack_crypto_run(void){
 
     btstack_crypto_aes128_t        * btstack_crypto_aes128;
     btstack_crypto_aes128_cmac_t   * btstack_crypto_cmac;
-    btstack_crypto_ecc_p256_t       * btstack_crypto_ec_p192;
+#ifdef ENABLE_ECC_P256
+    btstack_crypto_ecc_p256_t      * btstack_crypto_ec_p192;
+#endif
 
     // stack up and running?
     if (hci_get_state() != HCI_STATE_WORKING) return;
@@ -566,10 +568,12 @@ static void btstack_crypto_event_handler(uint8_t packet_type, uint16_t cid, uint
     UNUSED(cid);         // ok: there is no channel
     UNUSED(size);        // ok: fixed format events read from HCI buffer
 
+#ifdef ENABLE_ECC_P256
 #ifndef USE_SOFTWARE_ECC_P256_IMPLEMENTATION
     btstack_crypto_ecc_p256_t * btstack_crypto_ec_p192;
 #endif
-
+#endif
+    
     if (packet_type != HCI_EVENT_PACKET)  return;
 
     switch (hci_event_packet_get_type(packet)){
