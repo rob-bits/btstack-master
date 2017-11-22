@@ -47,7 +47,6 @@
 #include "classic/rfcomm.h" // for crc8
 #include "btstack.h"
 #include "uECC.h"
-#include "crypto.h"
 
 static btstack_packet_callback_registration_t hci_event_callback_registration;
 
@@ -290,7 +289,7 @@ static void provisioning_handle_invite(uint8_t *packet, uint16_t size){
     /* Input OOB Action */
     big_endian_store_16(prov_buffer_out, 10, MESH_INPUT_OOB_STRING | MESH_OUTPUT_OOB_NUMBER);
 
-    // append invite
+    // store for confirmation inputs: len 11
     memcpy(&prov_confirmation_inputs[1], &prov_buffer_out[1], 11);
 
     // send
@@ -326,7 +325,7 @@ static void provisioning_handle_public_key(uint8_t *packet, uint16_t size){
     prov_buffer_out[0] = MESH_PROV_PUB_KEY;
     memcpy(&prov_buffer_out[1], ec_q, 64);
 
-    // append public key
+    // store for confirmation inputs: len 64
     memcpy(&prov_confirmation_inputs[81], &prov_buffer_out[1], 64);
 
     // send
@@ -356,17 +355,18 @@ static void provisioning_handle_confirmation_device_calculated(void * arg){
 }
 
 static void provisioning_handle_confirmation_k1_calculated(void * arg){
-    printf("ConfirmationKey: ");
+    printf("ConfirmationKey:   ");
     printf_hexdump(confirmation_key, sizeof(confirmation_key));
 
     uint8_t auth_value[16];
     memset(auth_value, 0, sizeof(auth_value));
     auth_value[15] = prov_authentication_action;
 
-    // TODO: use random
+    // re-use prov_confirmation_inputs buffer
     memset(&prov_confirmation_inputs[ 0], 0, 16);
     memcpy(&prov_confirmation_inputs[16], auth_value, 16);
 
+    // calc confirmation device
     btstack_crypto_aes128_cmac_message(&prov_cmac_request, confirmation_key, 32, prov_confirmation_inputs, confirmation_device, &provisioning_handle_confirmation_device_calculated, NULL);
 }
 
@@ -375,7 +375,7 @@ static void provisioning_handle_confirmation_s1_calculated(void * arg){
     UNUSED(arg);
 
     // ClaculationSalt
-    printf("ConfirmationSalt: ");
+    printf("ConfirmationSalt:   ");
     printf_hexdump(confirmation_salt, sizeof(confirmation_salt));
 
     // ConfirmationKey
@@ -388,7 +388,7 @@ static void provisioning_handle_confirmation(uint8_t *packet, uint16_t size){
     UNUSED(packet);
 
     // CalculationInputs
-    printf("CalculationInputs: ");
+    printf("ConfirmationInputs: ");
     printf_hexdump(prov_confirmation_inputs, sizeof(prov_confirmation_inputs));
     btstack_crypto_aes128_cmac_zero(&prov_cmac_request, sizeof(prov_confirmation_inputs), prov_confirmation_inputs, confirmation_salt, &provisioning_handle_confirmation_s1_calculated, NULL);
 }
@@ -417,27 +417,27 @@ static void provisioning_handle_pdu(uint8_t packet_type, uint16_t channel, uint8
             // dispatch msg
             switch (packet[0]){
                 case MESH_PROV_INVITE:
-                    printf("MESH_PROV_INVITE\n");
+                    printf("MESH_PROV_INVITE: ");
                     printf_hexdump(packet, size);
                     provisioning_handle_invite(&packet[1], size-1);
                     break;
                 case MESH_PROV_START:
-                    printf("MESH_PROV_START\n");
+                    printf("MESH_PROV_START:  ");
                     printf_hexdump(&packet[1], size-1);
                     provisioning_handle_start(&packet[1], size-1);
                     break;
                 case MESH_PROV_PUB_KEY:
-                    printf("MESH_PROV_PUB_KEY\n");
+                    printf("MESH_PROV_PUB_KEY: ");
                     printf_hexdump(&packet[1], size-1);
                     provisioning_handle_public_key(&packet[1], size-1);
                     break;
                 case MESH_PROV_CONFIRM:
-                    printf("MESH_PROV_CONFIRM\n");
+                    printf("MESH_PROV_CONFIRM: ");
                     printf_hexdump(&packet[1], size-1);
                     provisioning_handle_confirmation(&packet[1], size-1);
                     break;
                 case MESH_PROV_RANDOM:
-                    printf("MESH_PROV_RANDOM\n");
+                    printf("MESH_PROV_RANDOM:  ");
                     printf_hexdump(&packet[1], size-1);
                     provisioning_handle_random(&packet[1], size-1);
                     break;
@@ -477,6 +477,9 @@ int btstack_main(void)
 
     // console
     btstack_stdin_setup(stdin_process);
+
+    // crypto
+    btstack_crypto_init();
 
     // mesh
     adv_bearer_init();
