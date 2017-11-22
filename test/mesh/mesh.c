@@ -223,6 +223,8 @@ static uint8_t  prov_buffer_out[100];   // TODO: how large are prov messages?
 static uint8_t  prov_confirmation_inputs[1 + 11 + 5 + 64 + 64];
 static uint8_t  prov_authentication_action;
 
+static btstack_crypto_aes128_cmac_t prov_cmac_request;
+
 static void provisioning_handle_invite(uint8_t *packet, uint16_t size){
 
     if (size != 1) return;
@@ -305,13 +307,27 @@ static void provisioning_handle_public_key(uint8_t *packet, uint16_t size){
     pb_adv_send_pdu(prov_buffer_out, 65);
 }
 
+// ConfirmationDevice
+static uint8_t confirmation_device[16];
+
+static void provisioning_handle_confirmation_device_calculated(void * arg){
+    UNUSED(arg);
+
+    printf("ConfirmationDevice: ");
+    printf_hexdump(confirmation_device, sizeof(confirmation_device));
+
+    // setup response 
+    prov_buffer_out[0] = MESH_PROV_CONFIRM;
+    memcpy(&prov_buffer_out[1], confirmation_device, 16);
+
+    // send
+    pb_adv_send_pdu(prov_buffer_out, 17);
+}
+
 static void provisioning_handle_confirmation(uint8_t *packet, uint16_t size){
 
     UNUSED(size);
     UNUSED(packet);
-
-    // setup response 
-    prov_buffer_out[0] = MESH_PROV_CONFIRM;
 
     // CalculationInputs
     uint8_t confirmation_salt[16];
@@ -326,8 +342,6 @@ static void provisioning_handle_confirmation(uint8_t *packet, uint16_t size){
     k1(confirmation_key, dhkey, sizeof(dhkey), confirmation_salt, (uint8_t*) "prck", 4);
     printf("ConfirmationKey: ");
     printf_hexdump(confirmation_key, sizeof(confirmation_key));
-    // ConfirmationDevice
-    uint8_t confirmation_device[16];
 
     uint8_t auth_value[16];
     memset(auth_value, 0, sizeof(auth_value));
@@ -336,13 +350,8 @@ static void provisioning_handle_confirmation(uint8_t *packet, uint16_t size){
     // TODO: use random
     memset(&prov_confirmation_inputs[ 0], 0, 16);
     memcpy(&prov_confirmation_inputs[16], auth_value, 16);
-    aes_cmac(confirmation_device, confirmation_key, prov_confirmation_inputs, 32);
-    printf("ConfirmationDevice: ");
-    printf_hexdump(confirmation_key, sizeof(confirmation_key));
-    memcpy(&prov_buffer_out[1], confirmation_device, 16);
 
-    // send
-    pb_adv_send_pdu(prov_buffer_out, 17);
+    btstack_crypto_aes128_cmac_message(&prov_cmac_request, confirmation_key, 32, prov_confirmation_inputs, confirmation_device, &provisioning_handle_confirmation_device_calculated, NULL);
 }
 
 static void provisioning_handle_random(uint8_t *packet, uint16_t size){
