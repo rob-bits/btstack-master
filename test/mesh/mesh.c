@@ -338,6 +338,8 @@ static uint8_t confirmation_device[16];
 static uint8_t confirmation_salt[16];
 // ConfirmationKey
 static uint8_t confirmation_key[16];
+// AuthValue
+static uint8_t auth_value[16];
 
 static void provisioning_handle_confirmation_device_calculated(void * arg){
 
@@ -358,7 +360,6 @@ static void provisioning_handle_confirmation_k1_calculated(void * arg){
     printf("ConfirmationKey:   ");
     printf_hexdump(confirmation_key, sizeof(confirmation_key));
 
-    uint8_t auth_value[16];
     memset(auth_value, 0, sizeof(auth_value));
     auth_value[15] = prov_authentication_action;
 
@@ -406,6 +407,18 @@ static void provisioning_handle_random(uint8_t *packet, uint16_t size){
     pb_adv_send_pdu(prov_buffer_out, 17);
 }
 
+static void provisioning_handle_data(uint8_t *packet, uint16_t size){
+
+    UNUSED(size);
+    UNUSED(packet);
+
+    // setup response 
+    prov_buffer_out[0] = MESH_PROV_COMPLETE;
+
+    // send
+    pb_adv_send_pdu(prov_buffer_out, 1);
+}
+
 static void provisioning_handle_pdu(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
 
     if (size < 1) return;
@@ -440,6 +453,11 @@ static void provisioning_handle_pdu(uint8_t packet_type, uint16_t channel, uint8
                     printf("MESH_PROV_RANDOM:  ");
                     printf_hexdump(&packet[1], size-1);
                     provisioning_handle_random(&packet[1], size-1);
+                    break;
+                case MESH_PROV_DATA:
+                    printf("MESH_PROV_DATA:  ");
+                    printf_hexdump(&packet[1], size-1);
+                    provisioning_handle_data(&packet[1], size-1);
                     break;
                 default:
                     printf("TODO: handle provisioning msg type %x\n", packet[0]);
