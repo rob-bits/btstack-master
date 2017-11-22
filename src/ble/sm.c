@@ -3323,10 +3323,12 @@ void sm_test_use_fixed_local_csrk(void){
     test_use_fixed_local_csrk = 1;
 }
 
+#ifdef ENABLE_LE_SECURE_CONNECTIONS
 static void sm_ec_generated(void * arg){
     UNUSED(arg);
     ec_key_generation_state = EC_KEY_GENERATION_DONE;
 }
+#endif
 
 void sm_init(void){
     // set some (BTstack default) ER and IR

@@ -503,11 +503,12 @@ static void btstack_crypto_run(void){
 static void btstack_crypto_handle_random_data(const uint8_t * data, uint16_t len){
     btstack_crypto_random_t * btstack_crypto_random;
     btstack_crypto_t * btstack_crypto = (btstack_crypto_t*) btstack_linked_list_get_first_item(&btstack_crypto_operations);
+    uint16_t bytes_to_copy;
 	if (!btstack_crypto) return;
     switch (btstack_crypto->operation){
         case BTSTACK_CRYPTO_RANDOM:
             btstack_crypto_random = (btstack_crypto_random_t*) btstack_crypto;
-            uint16_t bytes_to_copy = btstack_min(btstack_crypto_random->size, len);
+            bytes_to_copy = btstack_min(btstack_crypto_random->size, len);
             memcpy(btstack_crypto_random->buffer, data, bytes_to_copy);
             btstack_crypto_random->buffer += bytes_to_copy;
             btstack_crypto_random->size   -= bytes_to_copy;
@@ -588,15 +589,18 @@ static void btstack_crypto_event_handler(uint8_t packet_type, uint16_t cid, uint
             if (HCI_EVENT_IS_COMMAND_COMPLETE(packet, hci_read_local_supported_commands)){
                 int ecdh_operations_supported = (packet[OFFSET_OF_DATA_IN_COMMAND_COMPLETE+1+34] & 0x06) == 0x06;
                 log_info("controller supports ECDH operation: %u", ecdh_operations_supported);
+#ifdef ENABLE_ECC_P256
 #ifndef USE_SOFTWARE_ECC_P256_IMPLEMENTATION
                 if (!ecdh_operations_supported){
                     // mbedTLS can also be used if already available (and malloc is supported)
-                    log_error("LE Secure Connections enabled, but HCI Controller doesn't support it. Please add USE_MICRO_ECC_P256 to btstack_config.h");
+                    log_error("ECC-P256 support enabled, but HCI Controller doesn't support it. Please add USE_MICRO_ECC_P256 to btstack_config.h");
                 }
+#endif
 #endif
             }
             break;
 
+#ifdef ENABLE_ECC_P256
 #ifndef USE_SOFTWARE_ECC_P256_IMPLEMENTATION
         case HCI_EVENT_LE_META:
             btstack_crypto_ec_p192 = (btstack_crypto_ecc_p256_t*) btstack_linked_list_get_first_item(&btstack_crypto_operations);
@@ -630,7 +634,7 @@ static void btstack_crypto_event_handler(uint8_t packet_type, uint16_t cid, uint
             }
             break;
 #endif
-
+#endif
         default:
             break;
     }
