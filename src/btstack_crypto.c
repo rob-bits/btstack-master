@@ -104,6 +104,8 @@ typedef enum {
 
 static void btstack_crypto_run(void);
 
+const static uint8_t zero[16] = { 0 };
+
 static uint8_t btstack_crypto_initialized;
 static btstack_linked_list_t btstack_crypto_operations;
 static btstack_packet_callback_registration_t hci_event_callback_registration;
@@ -700,6 +702,18 @@ void btstack_crypto_aes128_cmac_message(btstack_crypto_aes128_cmac_t * request, 
 	btstack_crypto_run();
 }
 
+void btstack_crypto_aes128_cmac_zero(btstack_crypto_aes128_cmac_t * request, uint16_t len, const uint8_t * message,  uint8_t * hash, void (* callback)(void * arg), void * callback_arg){
+    request->btstack_crypto.context_callback.callback  = callback;
+    request->btstack_crypto.context_callback.context   = callback_arg;
+    request->btstack_crypto.operation                  = BTSTACK_CRYPTO_CMAC_MESSAGE;
+    request->key                                       = zero;
+    request->size                                      = size;
+    request->message                                   = message;
+    request->hash                                      = hash;
+    btstack_linked_list_add_tail(&btstack_crypto_operations, (btstack_linked_item_t*) request);
+    btstack_crypto_run();
+}
+
 #ifdef ENABLE_ECC_P256
 void btstack_crypto_ecc_p256_generate_key(btstack_crypto_ecc_p256_t * request, uint8_t * public_key, void (* callback)(void * arg), void * callback_arg){
     request->btstack_crypto.context_callback.callback  = callback;
@@ -719,6 +733,7 @@ void btstack_crypto_ecc_p256_calculate_dhkey(btstack_crypto_ecc_p256_t * request
     btstack_linked_list_add_tail(&btstack_crypto_operations, (btstack_linked_item_t*) request);
     btstack_crypto_run();
 }
+
 int btstack_crypto_ecc_p256_validate_public_key(const uint8_t * public_key){
 
     // validate public key using micro-ecc
