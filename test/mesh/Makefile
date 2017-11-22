@@ -25,13 +25,14 @@ CFLAGS  += -g -Wall -Werror \
 	-I$(BTSTACK_ROOT)/platform/embedded \
 	-I$(BTSTACK_ROOT)/platform/posix \
 	-I$(BTSTACK_ROOT)/test/security_manager \
+	-I$(BTSTACK_ROOT)/3rd-party/rijndael \
 
+VPATH += ${BTSTACK_ROOT}/3rd-party/rijndael
 VPATH += ${BTSTACK_ROOT}/src/ble/mesh
 VPATH += ${BTSTACK_ROOT}/src/classic
 VPATH += ${BTSTACK_ROOT}/platform/posix
 VPATH += ${BTSTACK_ROOT}/platform/embedded
 VPATH += ${BTSTACK_ROOT}/platform/libusb
-VPATH += ${BTSTACK_ROOT}/test/security_manager
 
 # libusb
 CFLAGS  += $(shell pkg-config libusb-1.0 --cflags)
