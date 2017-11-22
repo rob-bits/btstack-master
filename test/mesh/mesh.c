@@ -249,6 +249,7 @@ static uint8_t  prov_confirmation_inputs[1 + 11 + 5 + 64 + 64];
 static uint8_t  prov_authentication_action;
 
 static btstack_crypto_aes128_cmac_t prov_cmac_request;
+static btstack_crypto_random_t      prov_random_request;
 
 static void provisioning_handle_invite(uint8_t *packet, uint16_t size){
 
@@ -356,19 +357,24 @@ static void provisioning_handle_confirmation_device_calculated(void * arg){
     pb_adv_send_pdu(prov_buffer_out, 17);
 }
 
-static void provisioning_handle_confirmation_k1_calculated(void * arg){
-    printf("ConfirmationKey:   ");
-    printf_hexdump(confirmation_key, sizeof(confirmation_key));
+static void provisioning_handle_confirmation_random(void * arg){
 
     memset(auth_value, 0, sizeof(auth_value));
     auth_value[15] = prov_authentication_action;
 
-    // re-use prov_confirmation_inputs buffer
-    memset(&prov_confirmation_inputs[ 0], 0, 16);
+    // re-use prov_confirmation_inputs buffer: 0-15: RandomDevice
     memcpy(&prov_confirmation_inputs[16], auth_value, 16);
 
     // calc confirmation device
     btstack_crypto_aes128_cmac_message(&prov_cmac_request, confirmation_key, 32, prov_confirmation_inputs, confirmation_device, &provisioning_handle_confirmation_device_calculated, NULL);
+}
+
+static void provisioning_handle_confirmation_k1_calculated(void * arg){
+    printf("ConfirmationKey:   ");
+    printf_hexdump(confirmation_key, sizeof(confirmation_key));
+
+    // generate random data
+    btstack_crypto_random_generate(&prov_random_request, &prov_confirmation_inputs[0], 16, &provisioning_handle_confirmation_random, NULL);
 }
 
 static void provisioning_handle_confirmation_s1_calculated(void * arg){
@@ -401,7 +407,7 @@ static void provisioning_handle_random(uint8_t *packet, uint16_t size){
 
     // setup response 
     prov_buffer_out[0] = MESH_PROV_RANDOM;
-    memset(&prov_buffer_out[1], 0, 16);
+    memcpy(&prov_buffer_out[1],  &prov_confirmation_inputs[0], 16);
 
     // send
     pb_adv_send_pdu(prov_buffer_out, 17);
