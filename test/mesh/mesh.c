@@ -46,7 +46,6 @@
 #include "ble/mesh/beacon.h"
 #include "classic/rfcomm.h" // for crc8
 #include "btstack.h"
-#include "uECC.h"
 
 static btstack_packet_callback_registration_t hci_event_callback_registration;
 
@@ -63,10 +62,6 @@ const uint8_t adv_data[] = {
 const uint8_t adv_data_len = sizeof(adv_data);
 
 const static uint8_t device_uuid[] = { 0x00, 0x1B, 0xDC, 0x08, 0x10, 0x21, 0x0B, 0x0E, 0x0A, 0x0C, 0x00, 0x0B, 0x0E, 0x0A, 0x0C, 0x00 };
-
-// micro-ecc
-static uint8_t ec_d[32];
-static uint8_t ec_q[64];
 
 // remote ecc
 static uint8_t remote_ec_q[64];
@@ -96,41 +91,7 @@ static void mesh_k1(btstack_crypto_aes128_cmac_t * request, const uint8_t * n, u
     btstack_crypto_aes128_cmac_message(request, salt, n_len, n, mesh_k1_temp, mesh_k1_temp_calculated, request);
 }
 
-//
 
-static void parse_hex(uint8_t * buffer, const char * hex_string){
-    while (*hex_string){
-        int high_nibble = nibble_for_char(*hex_string++);
-        int low_nibble  = nibble_for_char(*hex_string++);
-        *buffer++       = (high_nibble << 4) | low_nibble;
-    }
-}
-
-static void use_fixed_ec_keypair(void){
-    const char * ec_d_string =  "3f49f6d4a3c55f3874c9b3e3d2103f504aff607beb40b7995899b8a6cd3c1abd";
-    const char * ec_qx_string = "20b003d2f297be2c5e2c83a7e9f9a5b9eff49111acf4fddbcc0301480e359de6";
-    const char * ec_qy_string = "dc809c49652aeb6d63329abf5a52155c766345c28fed3024741c8ed01589d28b";
-    parse_hex(ec_d, ec_d_string);
-    parse_hex(&ec_q[0],  ec_qx_string);
-    parse_hex(&ec_q[32], ec_qy_string);
-}
-
-
-static void provisioning_calculate_dhkey(void){
-#if uECC_SUPPORTS_secp256r1
-    // standard version
-    uECC_shared_secret(remote_ec_q, ec_d, dhkey, uECC_secp256r1());
-#else
-    // static version
-    uECC_shared_secret(remote_ec_q, ec_d, dhkey);
-#endif
-    printf("DHKEY: ");
-    printf_hexdump(dhkey, sizeof(dhkey));
-}
-
-//
-
-/* LISTING_START(packetHandler): Packet Handler */
 static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     UNUSED(channel);
     UNUSED(size);
@@ -235,21 +196,16 @@ static void mesh_unprovisioned_beacon_handler(uint8_t packet_type, uint16_t chan
 #define MESH_INPUT_OOB_STRING       0x08
 
 
-#if 0
-typedef enum {
-    PROV_STATE_W4_INVITE,
-    PROV_STATE_W2_SEND_CAPABILITIES,
-} prov_state_t;
-static prov_state_t prov_state;
-#endif
-
 static uint8_t  prov_buffer_out[100];   // TODO: how large are prov messages?
 // ConfirmationInputs = ProvisioningInvitePDUValue || ProvisioningCapabilitiesPDUValue || ProvisioningStartPDUValue || PublicKeyProvisioner || PublicKeyDevice
 static uint8_t  prov_confirmation_inputs[1 + 11 + 5 + 64 + 64];
 static uint8_t  prov_authentication_action;
 
+static uint8_t  prov_ec_q[64];
+
 static btstack_crypto_aes128_cmac_t prov_cmac_request;
 static btstack_crypto_random_t      prov_random_request;
+static btstack_crypto_ecc_p256_t    prov_ecc_p256_request;
 
 static void provisioning_handle_invite(uint8_t *packet, uint16_t size){
 
@@ -309,6 +265,23 @@ static void provisioning_handle_start(uint8_t * packet, uint16_t size){
     printf("Authentication Action: %02x\n", prov_authentication_action);
 }
 
+static void provisioning_handle_public_key_dhkey(void * arg){
+    UNUSED(arg);
+
+    printf("DHKEY: ");
+    printf_hexdump(dhkey, sizeof(dhkey));
+
+    // setup response 
+    prov_buffer_out[0] = MESH_PROV_PUB_KEY;
+    memcpy(&prov_buffer_out[1], prov_ec_q, 64);
+
+    // store for confirmation inputs: len 64
+    memcpy(&prov_confirmation_inputs[81], &prov_buffer_out[1], 64);
+
+    // send
+    pb_adv_send_pdu(prov_buffer_out, 65);
+}
+
 static void provisioning_handle_public_key(uint8_t *packet, uint16_t size){
 
     if (size != sizeof(remote_ec_q)) return;
@@ -320,17 +293,7 @@ static void provisioning_handle_public_key(uint8_t *packet, uint16_t size){
     memcpy(remote_ec_q, packet, sizeof(remote_ec_q));
 
     // calculate DHKey
-    provisioning_calculate_dhkey();
-
-    // setup response 
-    prov_buffer_out[0] = MESH_PROV_PUB_KEY;
-    memcpy(&prov_buffer_out[1], ec_q, 64);
-
-    // store for confirmation inputs: len 64
-    memcpy(&prov_confirmation_inputs[81], &prov_buffer_out[1], 64);
-
-    // send
-    pb_adv_send_pdu(prov_buffer_out, 65);
+    btstack_crypto_ecc_p256_calculate_dhkey(&prov_ecc_p256_request, remote_ec_q, dhkey, provisioning_handle_public_key_dhkey, NULL);
 }
 
 // ConfirmationDevice
@@ -492,6 +455,12 @@ static void stdin_process(char cmd){
     }
 }
 
+static void prov_key_generated(void * arg){
+    UNUSED(arg);
+    printf("ECC-P256: ");
+    printf_hexdump(prov_ec_q, sizeof(prov_ec_q));
+}
+
 int btstack_main(void);
 int btstack_main(void)
 {
@@ -505,6 +474,9 @@ int btstack_main(void)
     // crypto
     btstack_crypto_init();
 
+    // 
+    sm_init();
+
     // mesh
     adv_bearer_init();
     adv_bearer_register_for_mesh_message(&mesh_message_handler);
@@ -514,7 +486,8 @@ int btstack_main(void)
     
     provisioning_init();
 
-    use_fixed_ec_keypair();
+    // generaete public key
+    btstack_crypto_ecc_p256_generate_key(&prov_ecc_p256_request, prov_ec_q, &prov_key_generated, NULL);
 
     // turn on!
 	hci_power_control(HCI_POWER_ON);
