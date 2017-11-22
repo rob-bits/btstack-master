@@ -73,6 +73,32 @@ static uint8_t ec_q[64];
 static uint8_t remote_ec_q[64];
 static uint8_t dhkey[32];
 
+
+// mesh k1 - might get moved to btstack_crypto and all vars go into btstack_crypto_mesh_k1_t struct
+static uint8_t         mesh_k1_temp[16];
+static void (*         mesh_k1_callback)(void * arg);
+static void *          mesh_k1_arg;
+static const uint8_t * mesh_k1_p;
+static uint16_t        mesh_k1_p_len;
+static uint8_t *       mesh_k1_result;
+
+static void mesh_k1_temp_calculated(void * arg){
+    btstack_crypto_aes128_cmac_t * request = (btstack_crypto_aes128_cmac_t*) arg;
+    btstack_crypto_aes128_cmac_message(request, mesh_k1_temp, mesh_k1_p_len, mesh_k1_p, mesh_k1_result, mesh_k1_callback, mesh_k1_arg);
+}
+
+static void mesh_k1(btstack_crypto_aes128_cmac_t * request, const uint8_t * n, uint16_t n_len, const uint8_t * salt,
+    const uint8_t * p, const uint16_t p_len, uint8_t * result, void (* callback)(void * arg), void * callback_arg){
+    mesh_k1_callback = callback;
+    mesh_k1_arg      = callback_arg;
+    mesh_k1_p        = p;
+    mesh_k1_p_len    = p_len;
+    mesh_k1_result   = result;
+    btstack_crypto_aes128_cmac_message(request, salt, n_len, n, mesh_k1_temp, mesh_k1_temp_calculated, request);
+}
+
+//
+
 static void parse_hex(uint8_t * buffer, const char * hex_string){
     while (*hex_string){
         int high_nibble = nibble_for_char(*hex_string++);
@@ -309,8 +335,10 @@ static void provisioning_handle_public_key(uint8_t *packet, uint16_t size){
 
 // ConfirmationDevice
 static uint8_t confirmation_device[16];
-// ClaculationSalt
+// ConfirmationSalt
 static uint8_t confirmation_salt[16];
+// ConfirmationKey
+static uint8_t confirmation_key[16];
 
 static void provisioning_handle_confirmation_device_calculated(void * arg){
 
@@ -327,18 +355,7 @@ static void provisioning_handle_confirmation_device_calculated(void * arg){
     pb_adv_send_pdu(prov_buffer_out, 17);
 }
 
-static void provisioning_handle_confirmation_s1_calculated(void * arg){
-
-    UNUSED(arg);
-
-    // ClaculationSalt
-    s1(confirmation_salt, prov_confirmation_inputs, sizeof(prov_confirmation_inputs));
-    printf("CalculationSalt: ");
-    printf_hexdump(confirmation_salt, sizeof(confirmation_salt));
-
-    // ConfirmationKey
-    uint8_t confirmation_key[16];
-    k1(confirmation_key, dhkey, sizeof(dhkey), confirmation_salt, (uint8_t*) "prck", 4);
+static void provisioning_handle_confirmation_k1_calculated(void * arg){
     printf("ConfirmationKey: ");
     printf_hexdump(confirmation_key, sizeof(confirmation_key));
 
@@ -351,6 +368,18 @@ static void provisioning_handle_confirmation_s1_calculated(void * arg){
     memcpy(&prov_confirmation_inputs[16], auth_value, 16);
 
     btstack_crypto_aes128_cmac_message(&prov_cmac_request, confirmation_key, 32, prov_confirmation_inputs, confirmation_device, &provisioning_handle_confirmation_device_calculated, NULL);
+}
+
+static void provisioning_handle_confirmation_s1_calculated(void * arg){
+
+    UNUSED(arg);
+
+    // ClaculationSalt
+    printf("ConfirmationSalt: ");
+    printf_hexdump(confirmation_salt, sizeof(confirmation_salt));
+
+    // ConfirmationKey
+    mesh_k1(&prov_cmac_request, dhkey, sizeof(dhkey), confirmation_salt, (const uint8_t*) "prck", 4, confirmation_key, provisioning_handle_confirmation_k1_calculated, NULL);
 }
 
 static void provisioning_handle_confirmation(uint8_t *packet, uint16_t size){

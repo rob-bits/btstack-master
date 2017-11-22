@@ -15,7 +15,6 @@ CORE += \
 	pb_adv.c \
 	uECC.c \
 	rijndael.c \
-	crypto.c \
 	main.c \
 
 # examples
