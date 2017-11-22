@@ -707,7 +707,7 @@ void btstack_crypto_aes128_cmac_zero(btstack_crypto_aes128_cmac_t * request, uin
     request->btstack_crypto.context_callback.context   = callback_arg;
     request->btstack_crypto.operation                  = BTSTACK_CRYPTO_CMAC_MESSAGE;
     request->key                                       = zero;
-    request->size                                      = size;
+    request->size                                      = len;
     request->message                                   = message;
     request->hash                                      = hash;
     btstack_linked_list_add_tail(&btstack_crypto_operations, (btstack_linked_item_t*) request);
