@@ -302,8 +302,16 @@ static uint8_t confirmation_device[16];
 static uint8_t confirmation_salt[16];
 // ConfirmationKey
 static uint8_t confirmation_key[16];
+// RandomDevice
+static uint8_t random_device[16];
+// ProvisioningSalt
+static uint8_t provisioning_salt[16];
 // AuthValue
 static uint8_t auth_value[16];
+// SessionKey
+static uint8_t session_key[16];
+// SessionNonce
+static uint8_t session_nonce[16];
 
 static void provisioning_handle_confirmation_device_calculated(void * arg){
 
@@ -325,7 +333,8 @@ static void provisioning_handle_confirmation_random(void * arg){
     memset(auth_value, 0, sizeof(auth_value));
     auth_value[15] = prov_authentication_action;
 
-    // re-use prov_confirmation_inputs buffer: 0-15: RandomDevice
+    // re-use prov_confirmation_inputs buffer
+    memcpy(&prov_confirmation_inputs[0],  random_device, 16);
     memcpy(&prov_confirmation_inputs[16], auth_value, 16);
 
     // calc confirmation device
@@ -337,19 +346,19 @@ static void provisioning_handle_confirmation_k1_calculated(void * arg){
     printf_hexdump(confirmation_key, sizeof(confirmation_key));
 
     // generate random data
-    btstack_crypto_random_generate(&prov_random_request, &prov_confirmation_inputs[0], 16, &provisioning_handle_confirmation_random, NULL);
+    btstack_crypto_random_generate(&prov_random_request, random_device, 16, &provisioning_handle_confirmation_random, NULL);
 }
 
 static void provisioning_handle_confirmation_s1_calculated(void * arg){
 
     UNUSED(arg);
 
-    // ClaculationSalt
+    // ConfirmationSalt
     printf("ConfirmationSalt:   ");
     printf_hexdump(confirmation_salt, sizeof(confirmation_salt));
 
     // ConfirmationKey
-    mesh_k1(&prov_cmac_request, dhkey, sizeof(dhkey), confirmation_salt, (const uint8_t*) "prck", 4, confirmation_key, provisioning_handle_confirmation_k1_calculated, NULL);
+    mesh_k1(&prov_cmac_request, dhkey, sizeof(dhkey), confirmation_salt, (const uint8_t*) "prck", 4, confirmation_key, &provisioning_handle_confirmation_k1_calculated, NULL);
 }
 
 static void provisioning_handle_confirmation(uint8_t *packet, uint16_t size){
@@ -363,17 +372,65 @@ static void provisioning_handle_confirmation(uint8_t *packet, uint16_t size){
     btstack_crypto_aes128_cmac_zero(&prov_cmac_request, sizeof(prov_confirmation_inputs), prov_confirmation_inputs, confirmation_salt, &provisioning_handle_confirmation_s1_calculated, NULL);
 }
 
+static void provisioning_send_random(void  *arg){
+
+    UNUSED(arg);
+
+    // setup response 
+    prov_buffer_out[0] = MESH_PROV_RANDOM;
+    memcpy(&prov_buffer_out[1],  random_device, 16);
+    pb_adv_send_pdu(prov_buffer_out, 17);
+}
+
+static void provisioning_handle_random_session_nonce_calculated(void * arg){
+    UNUSED(arg);
+
+    // The nonce shall be the 13 least significant octets == zero most significant octets
+    memset(session_nonce, 0, 3);
+
+    // SessionNonce
+    printf("SessionNonce:   ");
+    printf_hexdump(session_nonce, sizeof(session_nonce));
+
+    // finally respond with our random
+    provisioning_send_random(NULL);
+}
+
+static void provisioning_handle_random_session_key_calculated(void * arg){
+    UNUSED(arg);
+
+    // SessionKey
+    printf("SessionKey:   ");
+    printf_hexdump(session_key, sizeof(session_key));
+
+    // SessionNonce
+    mesh_k1(&prov_cmac_request, dhkey, sizeof(dhkey), provisioning_salt, (const uint8_t*) "prsn", 4, session_nonce, &provisioning_handle_random_session_nonce_calculated, NULL);
+}
+
+static void provisioning_handle_random_s1_calculated(void * arg){
+
+    UNUSED(arg);
+    
+    // ProvisioningSalt
+    printf("ProvisioningSalt:   ");
+    printf_hexdump(provisioning_salt, sizeof(provisioning_salt));
+
+    // SessionKey
+    mesh_k1(&prov_cmac_request, dhkey, sizeof(dhkey), provisioning_salt, (const uint8_t*) "prsk", 4, session_key, &provisioning_handle_random_session_key_calculated, NULL);
+}
+
 static void provisioning_handle_random(uint8_t *packet, uint16_t size){
 
     UNUSED(size);
     UNUSED(packet);
 
-    // setup response 
-    prov_buffer_out[0] = MESH_PROV_RANDOM;
-    memcpy(&prov_buffer_out[1],  &prov_confirmation_inputs[0], 16);
+    // TODO: validate Confirmation
 
-    // send
-    pb_adv_send_pdu(prov_buffer_out, 17);
+    // calc ProvisioningSalt = s1(ConfirmationSalt || RandomProvisioner || RandomDevice)
+    memcpy(prov_confirmation_inputs, confirmation_salt, 16);
+    memcpy(prov_confirmation_inputs, packet, 16);
+    memcpy(prov_confirmation_inputs, random_device, 16);
+    btstack_crypto_aes128_cmac_zero(&prov_cmac_request, sizeof(prov_confirmation_inputs), prov_confirmation_inputs, provisioning_salt, &provisioning_handle_random_s1_calculated, NULL);
 }
 
 static void provisioning_handle_data(uint8_t *packet, uint16_t size){
