@@ -104,6 +104,8 @@ typedef enum {
     CCM_W4_X1,
     CCM_CALCULATE_XN,
     CCM_W4_XN,
+    CCM_CALCULATE_S0,
+    CCM_W4_S0,
     CCM_CALCULATE_SN,
     CCM_W4_SN,
 } btstack_crypto_ccm_state_t;

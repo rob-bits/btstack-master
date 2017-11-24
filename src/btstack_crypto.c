@@ -320,10 +320,12 @@ static void btstack_crypto_cmac_start(btstack_crypto_aes128_cmac_t * btstack_cry
   2 ... 0      L'
 */
 
-static void btstack_crypto_ccm_setup_a_i(btstack_crypto_ccm_t * btstack_crypto_ccm){
+static void btstack_crypto_ccm_setup_a_i(btstack_crypto_ccm_t * btstack_crypto_ccm, uint16_t counter){
     btstack_crypto_ccm_s[0] = 1;  // L' = L - 1
     memcpy(&btstack_crypto_ccm_s[1], btstack_crypto_ccm->nonce, 13);
-    big_endian_store_16(btstack_crypto_ccm_s, 14, btstack_crypto_ccm->counter);
+    big_endian_store_16(btstack_crypto_ccm_s, 14, counter);
+    printf("Setup A%u: ", counter);
+    printf_hexdump(btstack_crypto_ccm_s, 16);
 }
 
 /*
@@ -354,6 +356,8 @@ static void btstack_crypto_ccm_setup_b_0(btstack_crypto_ccm_t * btstack_crypto_c
     b0[0] = (3 << 3) | 1 ;  // Adata = 0, M' = (M-2)/2, L' = L - 1
     memcpy(&b0[1], btstack_crypto_ccm->nonce, 13);
     big_endian_store_16(b0, 14, btstack_crypto_ccm->message_len);
+    printf("Setup B0: ");
+    printf_hexdump(b0, 16);
 }
 
 #ifdef ENABLE_ECC_P256
@@ -481,6 +485,7 @@ static void btstack_crypto_run(void){
 #endif
     int i;
     int bytes_to_decrypt;
+    int bytes_to_encrypt;
     uint8_t btstack_crypto_ccm_buffer[16];
 
     // stack up and running?
@@ -521,6 +526,47 @@ static void btstack_crypto_run(void){
 			}
 			break;
 
+        case BTSTACK_CRYPTO_CCM_ENCRYPT_BLOCK:
+#ifdef USE_BTSTACK_AES128
+            log_error("ccm not implemented for software aes128 yet");
+#else
+            btstack_crypto_ccm = (btstack_crypto_ccm_t *) btstack_crypto;
+            switch (btstack_crypto_ccm->state){
+                case CCM_CALCULATE_X1:
+                    printf("Set up B_0, calculate X_1\n");
+                    btstack_crypto_ccm->state = CCM_W4_X1;
+                    btstack_crypto_ccm_setup_b_0(btstack_crypto_ccm, btstack_crypto_ccm_buffer);
+                    btstack_crypto_aes128_start(btstack_crypto_ccm->key, btstack_crypto_ccm_buffer);
+                    break;
+                case CCM_CALCULATE_XN:
+                    printf("Calculate X_%u\n", btstack_crypto_ccm->counter+1);
+                    btstack_crypto_ccm->state = CCM_W4_XN;
+                    bytes_to_encrypt = btstack_min(btstack_crypto_ccm->block_len, 16);
+                    i = 0;
+                    while (i < bytes_to_encrypt){
+                        btstack_crypto_ccm_buffer[i] =  btstack_crypto_ccm->x_i[i] ^ btstack_crypto_ccm->input[i];
+                        i++;
+                    }
+                    memcpy(&btstack_crypto_ccm_buffer[i], &btstack_crypto_ccm->x_i[i], 16 - bytes_to_encrypt);
+                    btstack_crypto_aes128_start(btstack_crypto_ccm->key, btstack_crypto_ccm_buffer);
+                    break;
+                case CCM_CALCULATE_S0:
+                    printf("Set up A_0, calculate S_0\n");
+                    btstack_crypto_ccm_setup_a_i(btstack_crypto_ccm, 0);
+                    btstack_crypto_ccm->state = CCM_W4_S0;
+                    btstack_crypto_aes128_start(btstack_crypto_ccm->key, btstack_crypto_ccm_s);
+                    break;
+                case CCM_CALCULATE_SN:
+                    printf("Set up A_%u, calculate S_%u\n", btstack_crypto_ccm->counter, btstack_crypto_ccm->counter);
+                    btstack_crypto_ccm->state = CCM_W4_SN;
+                    btstack_crypto_ccm_setup_a_i(btstack_crypto_ccm, btstack_crypto_ccm->counter);
+                    btstack_crypto_aes128_start(btstack_crypto_ccm->key, btstack_crypto_ccm_s);
+                    break;
+                default:
+                    break;
+            }
+#endif
+            break;
         case BTSTACK_CRYPTO_CCM_DECRYPT_BLOCK:
 #ifdef USE_BTSTACK_AES128
             log_error("ccm not implemented for software aes128 yet");
@@ -532,6 +578,12 @@ static void btstack_crypto_run(void){
                     btstack_crypto_ccm->state = CCM_W4_X1;
                     btstack_crypto_ccm_setup_b_0(btstack_crypto_ccm, btstack_crypto_ccm_buffer);
                     btstack_crypto_aes128_start(btstack_crypto_ccm->key, btstack_crypto_ccm_buffer);
+                    break;
+                case CCM_CALCULATE_S0:
+                    printf("Set up A_0, calculate S_0\n");
+                    btstack_crypto_ccm_setup_a_i(btstack_crypto_ccm, 0);
+                    btstack_crypto_ccm->state = CCM_W4_S0;
+                    btstack_crypto_aes128_start(btstack_crypto_ccm->key, btstack_crypto_ccm_s);
                     break;
                 case CCM_CALCULATE_XN:
                     printf("Decoded B_%u, calculate X_%u\n", btstack_crypto_ccm->counter, btstack_crypto_ccm->counter+1);
@@ -548,14 +600,13 @@ static void btstack_crypto_run(void){
                 case CCM_CALCULATE_SN:
                     printf("Set up A_%u, calculate S_%u\n", btstack_crypto_ccm->counter, btstack_crypto_ccm->counter);
                     btstack_crypto_ccm->state = CCM_W4_SN;
-                    btstack_crypto_ccm_setup_a_i(btstack_crypto_ccm);
+                    btstack_crypto_ccm_setup_a_i(btstack_crypto_ccm, btstack_crypto_ccm->counter);
                     btstack_crypto_aes128_start(btstack_crypto_ccm->key, btstack_crypto_ccm_s);
                     break;
                 default:
                     break;
             }
 #endif
-            break;
 #ifdef ENABLE_ECC_P256
         case BTSTACK_CRYPTO_ECC_P256_GENERATE_KEY:
             btstack_crypto_ec_p192 = (btstack_crypto_ecc_p256_t *) btstack_crypto;
@@ -653,6 +704,7 @@ static void btstack_crypto_handle_encryption_result(const uint8_t * data){
 	uint8_t result[16];
     uint16_t i;
     uint16_t bytes_to_decrypt;
+    uint16_t bytes_to_encrypt;
 
     btstack_crypto_t * btstack_crypto = (btstack_crypto_t*) btstack_linked_list_get_first_item(&btstack_crypto_operations);
 	if (!btstack_crypto) return;
@@ -668,16 +720,80 @@ static void btstack_crypto_handle_encryption_result(const uint8_t * data){
 		    reverse_128(data, result);
 		    btstack_crypto_cmac_handle_encryption_result(btstack_crypto_cmac, result);
 			break;
+        case BTSTACK_CRYPTO_CCM_ENCRYPT_BLOCK:
+            btstack_crypto_ccm = (btstack_crypto_ccm_t*) btstack_linked_list_get_first_item(&btstack_crypto_operations);
+            switch (btstack_crypto_ccm->state){
+                case CCM_W4_X1:
+                    reverse_128(data, btstack_crypto_ccm->x_i);
+                    printf("Calculated X_1: "); printf_hexdump(btstack_crypto_ccm->x_i, 16);
+                    printf("Start hashing message\n");
+                    btstack_crypto_ccm->state = CCM_CALCULATE_XN;
+                    break;           
+                case CCM_W4_XN:
+                    reverse_128(data, btstack_crypto_ccm->x_i);
+                    printf("Calculated X_%u: ", btstack_crypto_ccm->counter + 1);
+                    printf_hexdump(btstack_crypto_ccm->x_i, 16);
+                    btstack_crypto_ccm->state = CCM_CALCULATE_SN;
+                    break;
+                case CCM_W4_S0:
+                    printf("Calculated S0\n");
+                    reverse_128(data, result);
+                    for (i=0;i<16;i++){
+                        btstack_crypto_ccm->x_i[i] = btstack_crypto_ccm->x_i[i] ^ result[i];
+                    }
+                    printf("U: ");
+                    printf_hexdump(btstack_crypto_ccm->x_i, 16);
+                    btstack_crypto_done(btstack_crypto);
+                    break;
+                case CCM_W4_SN:
+                    printf("Calculated S_%u\n", btstack_crypto_ccm->counter);
+                    reverse_128(data, result);
+                    printf("Encode C_%u = S_%u XOR B_%u\n", btstack_crypto_ccm->counter, btstack_crypto_ccm->counter, btstack_crypto_ccm->counter);
+                    bytes_to_encrypt = btstack_min(btstack_crypto_ccm->block_len, 16);
+                    for (i=0;i<bytes_to_encrypt;i++){
+                        btstack_crypto_ccm->output[i] = btstack_crypto_ccm->input[i] ^ result[i];
+                    }
+                    printf("Next block\n");
+                    // 
+                    btstack_crypto_ccm->counter++;
+                    btstack_crypto_ccm->input      += bytes_to_encrypt;
+                    btstack_crypto_ccm->output     += bytes_to_encrypt;
+                    btstack_crypto_ccm->block_len  -= bytes_to_encrypt;
+                    if (btstack_crypto_ccm->block_len == 0){
+                        printf("T: ");
+                        printf_hexdump(btstack_crypto_ccm->x_i, 16);
+                        btstack_crypto_ccm->state = CCM_CALCULATE_S0;
+                    }
+                    else {
+                        btstack_crypto_ccm->state = CCM_CALCULATE_XN;
+                    }
+                    break;
+                default:
+                    break;
+            }  
+            break;      
         case BTSTACK_CRYPTO_CCM_DECRYPT_BLOCK:
             btstack_crypto_ccm = (btstack_crypto_ccm_t*) btstack_linked_list_get_first_item(&btstack_crypto_operations);
             switch (btstack_crypto_ccm->state){
                 case CCM_W4_X1:
-                    printf("Calculated X_1, start decrypting message\n");
+                    printf("Calculated X_1\n");
+                    printf("Start decrypting message\n");
                     btstack_crypto_ccm->state = CCM_CALCULATE_SN;
                     reverse_128(data, btstack_crypto_ccm->x_i);
                     break;           
+                case CCM_W4_S0:
+                    printf("Calculated S0\n");
+                    reverse_128(data, result);
+                    for (i=0;i<16;i++){
+                        btstack_crypto_ccm->x_i[i] = btstack_crypto_ccm->x_i[i] ^ result[i];
+                    }
+                    printf("U: ");
+                    printf_hexdump(btstack_crypto_ccm->x_i, 16);
+                    btstack_crypto_done(btstack_crypto);
+                    break;
                 case CCM_W4_SN:
-                    printf("Calculated S_%u, decode B_%u\n", btstack_crypto_ccm->counter, btstack_crypto_ccm->counter);
+                    printf("Calculated S_%u\n", btstack_crypto_ccm->counter);
+                    printf("Decode B_%u = S_%u XOR C_%u\n", btstack_crypto_ccm->counter, btstack_crypto_ccm->counter, btstack_crypto_ccm->counter);
                     reverse_128(data, result);
                     bytes_to_decrypt = btstack_min(btstack_crypto_ccm->block_len, 16);
                     for (i=0;i<bytes_to_decrypt;i++){
@@ -687,7 +803,8 @@ static void btstack_crypto_handle_encryption_result(const uint8_t * data){
                     break;
                 case CCM_W4_XN:
                     reverse_128(data, btstack_crypto_ccm->x_i);
-                    printf("Calculated X_%u,", btstack_crypto_ccm->counter + 1);
+                    printf("Calculated X_%u\n", btstack_crypto_ccm->counter + 1);
+                    printf("\nNext block\n");
                     btstack_crypto_ccm->counter++;
                     bytes_to_decrypt = btstack_min(btstack_crypto_ccm->block_len, 16);
                     btstack_crypto_ccm->input      += bytes_to_decrypt;
@@ -696,7 +813,7 @@ static void btstack_crypto_handle_encryption_result(const uint8_t * data){
                     if (btstack_crypto_ccm->block_len == 0){
                         printf("T: ");
                         printf_hexdump(btstack_crypto_ccm->x_i, 16);
-                        btstack_crypto_done(btstack_crypto);
+                        btstack_crypto_ccm->state = CCM_CALCULATE_S0;
                     }
                     else {
                         btstack_crypto_ccm->state = CCM_CALCULATE_SN;
