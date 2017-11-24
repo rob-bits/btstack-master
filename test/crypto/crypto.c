@@ -124,6 +124,8 @@ TEST(Crypto, AES_CCM_DECRYPT){
     uint8_t ciphertext[25];
     uint8_t key[16];
     uint8_t nonce[16];
+    uint8_t auth_value_expected[8];
+    uint8_t auth_value_calculated[8];
 
     parse_hex(ciphertext, "d0bd7f4a89a2ff6222af59a90a60ad58acfe3123356f5cec29");
     parse_hex(key,      "c80253af86b33dfa450bbdb2a191fea3");  // session key
@@ -131,9 +133,11 @@ TEST(Crypto, AES_CCM_DECRYPT){
     btstack_crypo_ccm_init(&crypto_ccm_request, key, nonce, 25);
     btstack_crypto_ccm_decrypt_block(&crypto_ccm_request, 25, ciphertext, calculated_plaintext, &crypto_done_callback, NULL);
     perform_crypto_operation();
-    printf_hexdump(calculated_plaintext, 25);
     parse_hex(expected_plaintext, "efb2255e6422d330088e09bb015ed707056700010203040b0c");
     CHECK_EQUAL_ARRAY(expected_plaintext, calculated_plaintext, 25);
+    parse_hex(auth_value_expected, "73e0ec50783b10c7");
+    btstack_crypo_ccm_get_authentication_value(&crypto_ccm_request, auth_value_calculated);
+    CHECK_EQUAL_ARRAY(auth_value_expected, auth_value_calculated, 8);
 }
 
 TEST(Crypto, AES_CCM_ENCRYPT){
@@ -143,6 +147,8 @@ TEST(Crypto, AES_CCM_ENCRYPT){
     uint8_t plaintext[25];
     uint8_t key[16];
     uint8_t nonce[16];
+    uint8_t auth_value_expected[8];
+    uint8_t auth_value_calculated[8];
 
     parse_hex(plaintext, "efb2255e6422d330088e09bb015ed707056700010203040b0c");
     parse_hex(key,      "c80253af86b33dfa450bbdb2a191fea3");  // session key
@@ -150,9 +156,11 @@ TEST(Crypto, AES_CCM_ENCRYPT){
     btstack_crypo_ccm_init(&crypto_ccm_request, key, nonce, 25);
     btstack_crypto_ccm_encrypt_block(&crypto_ccm_request, 25, plaintext, calculated_ciphertext, &crypto_done_callback, NULL);
     perform_crypto_operation();
-    printf_hexdump(calculated_ciphertext, 25);
     parse_hex(expected_ciphertext, "d0bd7f4a89a2ff6222af59a90a60ad58acfe3123356f5cec29");
     CHECK_EQUAL_ARRAY(expected_ciphertext, calculated_ciphertext, 25);
+    parse_hex(auth_value_expected, "73e0ec50783b10c7");
+    btstack_crypo_ccm_get_authentication_value(&crypto_ccm_request, auth_value_calculated);
+    CHECK_EQUAL_ARRAY(auth_value_expected, auth_value_calculated, 8);
 }
 
 int main (int argc, const char * argv[]){

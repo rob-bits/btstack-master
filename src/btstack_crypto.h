@@ -222,6 +222,13 @@ int btstack_crypto_ecc_p256_validate_public_key(const uint8_t * public_key);
  */
 void btstack_crypo_ccm_init(btstack_crypto_ccm_t * request, const uint8_t * key, const uint8_t * nonce, uint16_t message_len);
 
+/** 
+ * Get authentication value (M=8) after encrypt or decrypt operation
+ * @param request
+ * @param authentication_value
+ */
+void btstack_crypo_ccm_get_authentication_value(btstack_crypto_ccm_t * request, uint8_t * authentication_value);
+
 /**
  * Encrypt block - can be called multiple times. len must be a multiply of 16 for all but the last call
  * @param request
