@@ -81,11 +81,12 @@ static void validate_message(const char * name, const char * message_string, con
 
 static uint8_t zero[16] = { 0 };
 static btstack_crypto_aes128_t crypto_aes128_request;
+static btstack_crypto_ccm_t    crypto_ccm_request;
 static uint8_t ciphertext[16];
+static uint8_t plaintext[32];
 
 static int crypto_done;
 static void crypto_done_callback(void * arg){
-    printf_hexdump(ciphertext, 16);
     crypto_done = 1;
 }
 static void perform_crypto_operation(void){
@@ -109,11 +110,30 @@ TEST_GROUP(Crypto){
 
 TEST(Crypto, AES128){
     mock_init();
-    btstack_crypto_aes128_encrypt(&crypto_aes128_request, zero, zero, ciphertext, crypto_done_callback, NULL);
+    btstack_crypto_aes128_encrypt(&crypto_aes128_request, zero, zero, ciphertext, &crypto_done_callback, NULL);
     perform_crypto_operation();
+    // printf_hexdump(ciphertext, 16);
     uint8_t expected[16];
     parse_hex(expected, "66e94bd4ef8a2c3b884cfa59ca342b2e");
     CHECK_EQUAL_ARRAY(expected, ciphertext, 16);
+}
+
+TEST(Crypto, AES_CCM){
+    mock_init();
+    uint8_t expected_plaintext[25];
+    uint8_t key[16];
+    uint8_t nonce[16];
+    uint8_t enc_data[25];
+
+    parse_hex(enc_data, "d0bd7f4a89a2ff6222af59a90a60ad58acfe3123356f5cec29");
+    parse_hex(key,      "c80253af86b33dfa450bbdb2a191fea3");  // session key
+    parse_hex(nonce,    "da7ddbe78b5f62b81d6847487e");        // session nonce
+    btstack_crypo_ccm_init(&crypto_ccm_request, key, nonce);
+    btstack_crypto_ccm_decrypt_block(&crypto_ccm_request, 25, enc_data, plaintext, &crypto_done_callback, NULL);
+    perform_crypto_operation();
+    // printf_hexdump(plaintext, 25);
+    parse_hex(expected_plaintext, "efb2255e6422d330088e09bb015ed707056700010203040b0c");
+    CHECK_EQUAL_ARRAY(expected_plaintext, plaintext, 25);
 }
 
 int main (int argc, const char * argv[]){

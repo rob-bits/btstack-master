@@ -60,6 +60,8 @@ typedef enum {
 	BTSTACK_CRYPTO_CMAC_MESSAGE,
 	BTSTACK_CRYPTO_ECC_P256_GENERATE_KEY,
 	BTSTACK_CRYPTO_ECC_P256_CALCULATE_DHKEY,
+	BTSTACK_CRYPTO_CCM_ENCRYPT_BLOCK,
+	BTSTACK_CRYPTO_CCM_DECRYPT_BLOCK,
 } btstack_crypto_operation_t;
 
 typedef struct {
@@ -96,6 +98,16 @@ typedef struct {
 	uint8_t * public_key;
     uint8_t * dhkey;
 } btstack_crypto_ecc_p256_t;
+
+typedef struct {
+	btstack_crypto_t btstack_crypto;
+	const uint8_t * key;
+	const uint8_t * nonce;
+	const uint8_t * input;
+	uint8_t       * output;
+	uint16_t        len;
+	uint16_t        counter;
+} btstack_crypto_ccm_t;
 
 /** 
  * Initialize crypto functions
@@ -186,6 +198,36 @@ void btstack_crypto_ecc_p256_calculate_dhkey(btstack_crypto_ecc_p256_t * request
  * @result 0 == valid
  */
 int btstack_crypto_ecc_p256_validate_public_key(const uint8_t * public_key);
+
+/** 
+ * Initialize Counter with CBC-MAC for Bluetooth Mesh (L=2,M=8)
+ * @param request
+ * @param nonce
+ * @param key
+ */
+void btstack_crypo_ccm_init(btstack_crypto_ccm_t * request, const uint8_t * key, const uint8_t * nonce);
+
+/**
+ * Encrypt block - can be called multiple times. len must be a multiply of 16 for all but the last call
+ * @param request
+ * @param len (16 bytes for all but the last block)
+ * @param plaintext  (16 bytes)
+ * @param ciphertext (16 bytes)
+ * @param callback
+ * @param callback_arg
+ */
+void btstack_crypto_ccm_encrypt_block(btstack_crypto_ccm_t * request, uint16_t len, const uint8_t * plaintext, uint8_t * ciphertext, void (* callback)(void * arg), void * callback_arg);
+
+/**
+ * Decrypt block - can be called multiple times. len must be a multiply of 16 for all but the last call
+ * @param request
+ * @param len (16 for all but last block)
+ * @param ciphertext (16 bytes)
+ * @param plaintext  (16 bytes)
+ * @param callback
+ * @param callback_arg
+ */
+void btstack_crypto_ccm_decrypt_block(btstack_crypto_ccm_t * request, uint16_t len, const uint8_t * ciphertext, uint8_t * plaintext, void (* callback)(void * arg), void * callback_arg);
 
 #if defined __cplusplus
 }

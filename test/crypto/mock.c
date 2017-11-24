@@ -17,6 +17,9 @@ static uint16_t packet_buffer_len = 0;
 
 static uint8_t aes128_cyphertext[16];
 
+// #define ENABLE_PACKET_LOGGER
+// #define ENABLE_AES128_LOGGER
+
 void mock_init(void){
 }
 
@@ -30,7 +33,7 @@ void mock_clear_packet_buffer(void){
 }
 
 static void dump_packet(int packet_type, uint8_t * buffer, uint16_t size){
-#if 1
+#if ENABLE_PACKET_LOGGER
 	static int packet_counter = 1;
 	char var_name[80];
 	sprintf(var_name, "test_%s_packet_%02u", packet_type == HCI_COMMAND_DATA_PACKET ? "command" : "acl", packet_counter);
@@ -97,6 +100,12 @@ int hci_send_cmd(const hci_cmd_t *cmd, ...){
 	    uint8_t plaintext[16];
  		reverse_128(plaintext_flipped, plaintext);
 	    aes128_calc_cyphertext(key, plaintext, aes128_cyphertext);
+#ifdef ENABLE_AES128_LOGGER
+	    printf("AES128 Operation\n");
+	    printf("Key:    "); printf_hexdump(key, 16);
+	    printf("Plain:  "); printf_hexdump(plaintext, 16);
+	    printf("Cipher: "); printf_hexdump(aes128_cyphertext, 16);
+#endif
 	}
 	return 0;
 }
