@@ -99,13 +99,25 @@ typedef struct {
     uint8_t * dhkey;
 } btstack_crypto_ecc_p256_t;
 
+typedef enum {
+    CCM_CALCULATE_X1,
+    CCM_W4_X1,
+    CCM_CALCULATE_XN,
+    CCM_W4_XN,
+    CCM_CALCULATE_SN,
+    CCM_W4_SN,
+} btstack_crypto_ccm_state_t;
+
 typedef struct {
 	btstack_crypto_t btstack_crypto;
+	btstack_crypto_ccm_state_t state;
 	const uint8_t * key;
 	const uint8_t * nonce;
 	const uint8_t * input;
 	uint8_t       * output;
-	uint16_t        len;
+	uint8_t         x_i[16];
+	uint16_t        message_len;
+	uint16_t        block_len;
 	uint16_t        counter;
 } btstack_crypto_ccm_t;
 
@@ -204,8 +216,9 @@ int btstack_crypto_ecc_p256_validate_public_key(const uint8_t * public_key);
  * @param request
  * @param nonce
  * @param key
+ * @param message_len
  */
-void btstack_crypo_ccm_init(btstack_crypto_ccm_t * request, const uint8_t * key, const uint8_t * nonce);
+void btstack_crypo_ccm_init(btstack_crypto_ccm_t * request, const uint8_t * key, const uint8_t * nonce, uint16_t message_len);
 
 /**
  * Encrypt block - can be called multiple times. len must be a multiply of 16 for all but the last call

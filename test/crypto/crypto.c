@@ -128,7 +128,7 @@ TEST(Crypto, AES_CCM){
     parse_hex(enc_data, "d0bd7f4a89a2ff6222af59a90a60ad58acfe3123356f5cec29");
     parse_hex(key,      "c80253af86b33dfa450bbdb2a191fea3");  // session key
     parse_hex(nonce,    "da7ddbe78b5f62b81d6847487e");        // session nonce
-    btstack_crypo_ccm_init(&crypto_ccm_request, key, nonce);
+    btstack_crypo_ccm_init(&crypto_ccm_request, key, nonce, 25);
     btstack_crypto_ccm_decrypt_block(&crypto_ccm_request, 25, enc_data, plaintext, &crypto_done_callback, NULL);
     perform_crypto_operation();
     // printf_hexdump(plaintext, 25);
