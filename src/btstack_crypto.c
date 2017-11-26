@@ -706,7 +706,6 @@ static void btstack_crypto_handle_encryption_result(const uint8_t * data){
 	btstack_crypto_aes128_cmac_t * btstack_crypto_cmac;
     btstack_crypto_ccm_t         * btstack_crypto_ccm;
 	uint8_t result[16];
-    uint16_t i;
     uint16_t bytes_to_process;
 
     btstack_crypto_t * btstack_crypto = (btstack_crypto_t*) btstack_linked_list_get_first_item(&btstack_crypto_operations);
