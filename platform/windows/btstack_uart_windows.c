@@ -35,16 +35,16 @@
  *
  */
 
-#define __BTSTACK_FILE__ "btstack_uart_block_windows.c"
+#define __BTSTACK_FILE__ "btstack_uart_windows.c"
 
 /*
- *  btstack_uart_block_windows.c
+ *  btstack_uart_windows.c
  *
  *  Common code to access serial port via asynchronous block read/write commands
  *
  */
 
-#include "btstack_uart_block.h"
+#include "btstack_block.h"
 #include "btstack_run_loop.h"
 #include "btstack_debug.h"
 
@@ -56,7 +56,7 @@
 #include <Windows.h>
 
 // uart config
-static const btstack_uart_config_t * uart_config;
+static const btstack_config_t * uart_config;
 
 // data source for integration with BTstack Runloop
 static btstack_data_source_t transport_data_source_read;
@@ -445,7 +445,7 @@ static void btstack_uart_windows_set_block_sent( void (*block_handler)(void)){
 // static void btstack_uart_windows_set_csr_irq_handler( void (*csr_irq_handler)(void)){
 // }
 
-static const btstack_uart_block_t btstack_uart_windows = {
+static const btstack_block_t btstack_uart_windows = {
     /* int  (*init)(hci_transport_config_uart_t * config); */         &btstack_uart_windows_init,
     /* int  (*open)(void); */                                         &btstack_uart_windows_open,
     /* int  (*close)(void); */                                        &btstack_uart_windows_close_new,
@@ -457,10 +457,10 @@ static const btstack_uart_block_t btstack_uart_windows = {
     /* void (*receive_block)(uint8_t *buffer, uint16_t len); */       &btstack_uart_windows_receive_block,
     /* void (*send_block)(const uint8_t *buffer, uint16_t length); */ &btstack_uart_windows_send_block,
     /* int (*get_supported_sleep_modes); */                           NULL,
-    /* void (*set_sleep)(btstack_uart_sleep_mode_t sleep_mode); */    NULL,
+    /* void (*set_sleep)(btstack_sleep_mode_t sleep_mode); */    NULL,
     /* void (*set_wakeup_handler)(void (*handler)(void)); */          NULL,
 };
 
-const btstack_uart_block_t * btstack_uart_block_windows_instance(void){
+const btstack_uart_t * btstack_uart_windows_instance(void){
 	return &btstack_uart_windows;
 }

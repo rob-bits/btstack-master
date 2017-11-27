@@ -36,12 +36,12 @@
  */
 
 /*
- *  hci_h4_transport_wiced.c
+ *  btstack_uart_wiced.c
  *
- *  HCI Transport API implementation for basic H4 protocol for use with btstack_run_loop_wiced.c
+ *  UART driver for WICED
  */
 
-#define __BTSTACK_FILE__ "hci_transport_h4_wiced.c"
+#define __BTSTACK_FILE__ "btstack_uart_wiced.c"
 
 #include "btstack_config.h"
 #include "btstack_run_loop_wiced.h"
@@ -79,7 +79,7 @@ static enum {
     BTSTACK_FLOW_CONTROL_MANUAL,
 } btstack_flow_control_mode;
 
-static wiced_result_t btstack_uart_block_wiced_rx_worker_receive_block(void * arg);
+static wiced_result_t btstack_uart_wiced_rx_worker_receive_block(void * arg);
 
 static wiced_worker_thread_t tx_worker_thread;
 static const uint8_t *       tx_worker_data_buffer;
@@ -100,7 +100,7 @@ static void (*block_sent)(void);
 static void (*block_received)(void);
 
 // executed on main run loop
-static wiced_result_t btstack_uart_block_wiced_main_notify_block_send(void *arg){
+static wiced_result_t btstack_uart_wiced_main_notify_block_send(void *arg){
     if (block_sent){
         block_sent();
     }
@@ -108,7 +108,7 @@ static wiced_result_t btstack_uart_block_wiced_main_notify_block_send(void *arg)
 }
 
 // executed on main run loop
-static wiced_result_t btstack_uart_block_wiced_main_notify_block_read(void *arg){
+static wiced_result_t btstack_uart_wiced_main_notify_block_read(void *arg){
     if (block_received){
         block_received();
     }
@@ -116,7 +116,7 @@ static wiced_result_t btstack_uart_block_wiced_main_notify_block_read(void *arg)
 }
 
 // executed on tx worker thread
-static wiced_result_t btstack_uart_block_wiced_tx_worker_send_block(void * arg){
+static wiced_result_t btstack_uart_wiced_tx_worker_send_block(void * arg){
     // wait for CTS to become low in manual flow control mode
     if (btstack_flow_control_mode == BTSTACK_FLOW_CONTROL_MANUAL && wiced_bt_uart_pins[WICED_BT_PIN_UART_CTS]){
         while (platform_gpio_input_get(wiced_bt_uart_pins[WICED_BT_PIN_UART_CTS]) == WICED_TRUE){
@@ -128,12 +128,12 @@ static wiced_result_t btstack_uart_block_wiced_tx_worker_send_block(void * arg){
     platform_uart_transmit_bytes(wiced_bt_uart_driver, tx_worker_data_buffer, tx_worker_data_size);
 
     // let transport know
-    btstack_run_loop_wiced_execute_code_on_main_thread(&btstack_uart_block_wiced_main_notify_block_send, NULL);
+    btstack_run_loop_wiced_execute_code_on_main_thread(&btstack_uart_wiced_main_notify_block_send, NULL);
     return WICED_SUCCESS;
 }
 
 // executed on rx worker thread
-static wiced_result_t btstack_uart_block_wiced_rx_worker_receive_block(void * arg){
+static wiced_result_t btstack_uart_wiced_rx_worker_receive_block(void * arg){
 
     if (btstack_flow_control_mode == BTSTACK_FLOW_CONTROL_MANUAL && wiced_bt_uart_pins[WICED_BT_PIN_UART_CTS]){
         platform_gpio_output_low(wiced_bt_uart_pins[WICED_BT_PIN_UART_RTS]);
@@ -154,11 +154,11 @@ static wiced_result_t btstack_uart_block_wiced_rx_worker_receive_block(void * ar
     }
 
     // let transport know
-    btstack_run_loop_wiced_execute_code_on_main_thread(&btstack_uart_block_wiced_main_notify_block_read, NULL);
+    btstack_run_loop_wiced_execute_code_on_main_thread(&btstack_uart_wiced_main_notify_block_read, NULL);
     return WICED_SUCCESS;
 }
 
-static int btstack_uart_block_wiced_init(const btstack_uart_config_t * config){
+static int btstack_uart_wiced_init(const btstack_uart_config_t * config){
     uart_config = config;
 
     // determine flow control mode based on hardware config and uart config
@@ -174,7 +174,7 @@ static int btstack_uart_block_wiced_init(const btstack_uart_config_t * config){
     return 0;
 }
 
-static int btstack_uart_block_wiced_open(void){
+static int btstack_uart_wiced_open(void){
 
     // UART config
     wiced_uart_config_t wiced_uart_config =
@@ -217,7 +217,7 @@ static int btstack_uart_block_wiced_open(void){
                 // configuration done by platform_uart_init
                 break;
             case BTSTACK_FLOW_CONTROL_MANUAL:
-                // configure RTS pin as output and set to high - controlled by btstack_uart_block_wiced_rx_worker_receive_block
+                // configure RTS pin as output and set to high - controlled by btstack_uart_wiced_rx_worker_receive_block
                 platform_gpio_init(wiced_bt_uart_pins[WICED_BT_PIN_UART_RTS], OUTPUT_PUSH_PULL);
                 platform_gpio_output_high(wiced_bt_uart_pins[WICED_BT_PIN_UART_RTS]);
                 break;
@@ -276,20 +276,20 @@ static int btstack_uart_block_wiced_open(void){
     return 0;
 }
 
-static int btstack_uart_block_wiced_close(void){
+static int btstack_uart_wiced_close(void){
     // not implemented
     return 0;
 }
 
-static void btstack_uart_block_wiced_set_block_received( void (*block_handler)(void)){
+static void btstack_uart_wiced_set_block_received( void (*block_handler)(void)){
     block_received = block_handler;
 }
 
-static void btstack_uart_block_wiced_set_block_sent( void (*block_handler)(void)){
+static void btstack_uart_wiced_set_block_sent( void (*block_handler)(void)){
     block_sent = block_handler;
 }
 
-static int btstack_uart_block_wiced_set_baudrate(uint32_t baudrate){
+static int btstack_uart_wiced_set_baudrate(uint32_t baudrate){
 
 #if defined(_STM32F205RGT6_) || defined(STM32F40_41xxx)
 
@@ -335,51 +335,51 @@ static int btstack_uart_block_wiced_set_baudrate(uint32_t baudrate){
     GPIO_Init( gpio->port, &gpio_init_structure );
 
 #else
-    log_error("btstack_uart_block_wiced_set_baudrate not implemented for this WICED Platform");
+    log_error("btstack_uart_wiced_set_baudrate not implemented for this WICED Platform");
 #endif
     return 0;
 }
 
-static int btstack_uart_block_wiced_set_parity(int parity){
-    log_error("btstack_uart_block_wiced_set_parity not implemented");
+static int btstack_uart_wiced_set_parity(int parity){
+    log_error("btstack_uart_wiced_set_parity not implemented");
     return 0;
 }
 
-static void btstack_uart_block_wiced_send_block(const uint8_t *buffer, uint16_t length){
+static void btstack_uart_wiced_send_block(const uint8_t *buffer, uint16_t length){
     // store in request
     tx_worker_data_buffer = buffer;
     tx_worker_data_size = length;
-    wiced_rtos_send_asynchronous_event(&tx_worker_thread, &btstack_uart_block_wiced_tx_worker_send_block, NULL);    
+    wiced_rtos_send_asynchronous_event(&tx_worker_thread, &btstack_uart_wiced_tx_worker_send_block, NULL);    
 }
 
-static void btstack_uart_block_wiced_receive_block(uint8_t *buffer, uint16_t len){
+static void btstack_uart_wiced_receive_block(uint8_t *buffer, uint16_t len){
     rx_worker_read_buffer = buffer;
     rx_worker_read_size   = len;
-    wiced_rtos_send_asynchronous_event(&rx_worker_thread, &btstack_uart_block_wiced_rx_worker_receive_block, NULL);    
+    wiced_rtos_send_asynchronous_event(&rx_worker_thread, &btstack_uart_wiced_rx_worker_receive_block, NULL);    
 }
 
 
-// static void btstack_uart_block_wiced_set_sleep(uint8_t sleep){
+// static void btstack_uart_wiced_set_sleep(uint8_t sleep){
 // }
-// static void btstack_uart_block_wiced_set_csr_irq_handler( void (*csr_irq_handler)(void)){
+// static void btstack_uart_wiced_set_csr_irq_handler( void (*csr_irq_handler)(void)){
 // }
 
-static const btstack_uart_block_t btstack_uart_block_wiced = {
-    /* int  (*init)(hci_transport_config_uart_t * config); */         &btstack_uart_block_wiced_init,
-    /* int  (*open)(void); */                                         &btstack_uart_block_wiced_open,
-    /* int  (*close)(void); */                                        &btstack_uart_block_wiced_close,
-    /* void (*set_block_received)(void (*handler)(void)); */          &btstack_uart_block_wiced_set_block_received,
-    /* void (*set_block_sent)(void (*handler)(void)); */              &btstack_uart_block_wiced_set_block_sent,
-    /* int  (*set_baudrate)(uint32_t baudrate); */                    &btstack_uart_block_wiced_set_baudrate,
-    /* int  (*set_parity)(int parity); */                             &btstack_uart_block_wiced_set_parity,
+static const btstack_uart_t btstack_uart_wiced = {
+    /* int  (*init)(hci_transport_config_uart_t * config); */         &btstack_uart_wiced_init,
+    /* int  (*open)(void); */                                         &btstack_uart_wiced_open,
+    /* int  (*close)(void); */                                        &btstack_uart_wiced_close,
+    /* void (*set_block_received)(void (*handler)(void)); */          &btstack_uart_wiced_set_block_received,
+    /* void (*set_block_sent)(void (*handler)(void)); */              &btstack_uart_wiced_set_block_sent,
+    /* int  (*set_baudrate)(uint32_t baudrate); */                    &btstack_uart_wiced_set_baudrate,
+    /* int  (*set_parity)(int parity); */                             &btstack_uart_wiced_set_parity,
     /* int  (*set_flowcontrol)(int flowcontrol); */                   NULL,
-    /* void (*receive_block)(uint8_t *buffer, uint16_t len); */       &btstack_uart_block_wiced_receive_block,
-    /* void (*send_block)(const uint8_t *buffer, uint16_t length); */ &btstack_uart_block_wiced_send_block,
+    /* void (*receive_block)(uint8_t *buffer, uint16_t len); */       &btstack_uart_wiced_receive_block,
+    /* void (*send_block)(const uint8_t *buffer, uint16_t length); */ &btstack_uart_wiced_send_block,
     /* int (*get_supported_sleep_modes); */                           NULL,
     /* void (*set_sleep)(btstack_uart_sleep_mode_t sleep_mode); */    NULL,
     /* void (*set_wakeup_handler)(void (*handler)(void)); */          NULL,
 };
 
-const btstack_uart_block_t * btstack_uart_block_wiced_instance(void){
-    return &btstack_uart_block_wiced;
+const btstack_uart_t * btstack_uart_wiced_instance(void){
+    return &btstack_uart_wiced;
 }

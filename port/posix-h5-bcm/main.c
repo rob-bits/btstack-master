@@ -118,7 +118,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
     }
 }
 
-static const btstack_uart_block_t * uart_block_driver;
+static const btstack_uart_t       * uart_driver;
 static const btstack_uart_slip_t  * uart_slip_driver;
 static void phase2(int status);
 int main(int argc, const char * argv[]){
@@ -143,7 +143,7 @@ int main(int argc, const char * argv[]){
     btstack_chipset_bcm_set_device_name("BCM43430A1");
 
     // setup UART drivers
-    uart_block_driver = btstack_uart_block_posix_instance();
+    uart_block_driver = btstack_uart_posix_instance();
     uart_slip_driver  = btstack_uart_slip_posix_instance();
 
     // extract UART config from transport config

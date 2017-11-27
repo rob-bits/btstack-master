@@ -51,7 +51,7 @@
 #include "platform/wwd_platform_interface.h"
 
 extern int btstack_main(int argc, char ** argv);
-extern const btstack_uart_block_t * btstack_uart_block_wiced_instance(void);
+extern const btstack_uart_t * btstack_uart_wiced_instance(void);
 
 static void phase2(int status);
 
@@ -119,7 +119,7 @@ void application_start(void){
     chipset->init(&transport_config);
 
     // setup uart driver
-    const btstack_uart_block_t * uart_driver = btstack_uart_block_wiced_instance();
+    const btstack_uart_t * uart_driver = btstack_uart_wiced_instance();
 
     // extract UART config from transport config
     uart_config.baudrate    = transport_config.baudrate_init;

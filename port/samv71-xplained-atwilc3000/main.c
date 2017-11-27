@@ -517,7 +517,7 @@ int  hal_tick_get_tick_period_in_ms(void){
 	return 1;
 }
 
-static const btstack_uart_block_t * uart_driver;
+static const btstack_uart_t * uart_driver;
 
 static void phase2(int status){
 
@@ -570,7 +570,7 @@ int main(void)
 	// hci_dump_open(NULL, HCI_DUMP_STDOUT);
 
 	// setup UART HAL + Run Loop integration
-	uart_driver = btstack_uart_block_embedded_instance();
+	uart_driver = btstack_uart_embedded_instance();
 
     // extract UART config from transport config, but disable flow control and use default baudrate
     uart_config.baudrate    = HCI_DEFAULT_BAUDRATE;

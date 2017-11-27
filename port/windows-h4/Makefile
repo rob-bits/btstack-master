@@ -6,7 +6,7 @@ CORE += main.c btstack_stdin_windows.c
 COMMON  += \
 			btstack_run_loop_windows.c   \
 			hci_transport_h4.c           \
-			btstack_uart_block_windows.c \
+			btstack_uart_windows.c       \
 			le_device_db_fs.c            \
 			btstack_link_key_db_fs.c     \
 			bluetooth_init_cc2564B_1.6_BT_Spec_4.1.c \

@@ -69,7 +69,7 @@ static void da14581_w4_final_ack_sent(void);
 
 // globals
 static void (*download_complete)(int result);
-static const btstack_uart_block_t * the_uart_driver;
+static const btstack_uart_t * the_uart_driver;
 
 static int     download_count;
 static uint8_t response_buffer[1];
@@ -172,7 +172,7 @@ static void da14581_w4_final_ack_sent(void){
     download_complete(0);
 }
 
-void btstack_chipset_da14581_download_firmware(const btstack_uart_block_t * uart_driver, const uint8_t * da_fw_data, uint16_t da_fw_size, void (*done)(int result)){
+void btstack_chipset_da14581_download_firmware(const btstack_uart_t * uart_driver, const uint8_t * da_fw_data, uint16_t da_fw_size, void (*done)(int result)){
 
 	the_uart_driver   = uart_driver;
     download_complete = done;

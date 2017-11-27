@@ -49,7 +49,7 @@
 #include "wiced.h"
 #include "platform/wwd_platform_interface.h"
 
-const btstack_uart_block_t * btstack_uart_block_wiced_instance(void);
+const btstack_uart_t * btstack_uart_wiced_instance(void);
 
 // see generated_mac_address.txt - "macaddr=02:0A:F7:3d:76:be"
 static const char * wifi_mac_address = NVRAM_GENERATED_MAC_ADDRESS;
@@ -112,7 +112,7 @@ void application_start(void){
     le_device_db_dump();
     
     // init HCI
-    const btstack_uart_block_t * uart_driver = btstack_uart_block_wiced_instance();
+    const btstack_uart_t * uart_driver = btstack_uart_wiced_instance();
     const hci_transport_t * transport = hci_transport_h4_instance(uart_driver);
     hci_init(transport, (void*) &hci_transport_config_uart);
     hci_set_link_key_db(btstack_link_key_db_wiced_dct_instance());

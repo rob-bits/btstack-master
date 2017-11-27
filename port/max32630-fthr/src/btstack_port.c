@@ -398,7 +398,7 @@ int bluetooth_main(void)
 	//hci_dump_open(NULL, HCI_DUMP_STDOUT);
 
 	/* Init HCI */
-	const hci_transport_t * transport = hci_transport_h4_instance(btstack_uart_block_embedded_instance());
+	const hci_transport_t * transport = hci_transport_h4_instance(btstack_uart_embedded_instance());
 	hci_init(transport, &config);
 	hci_set_chipset(btstack_chipset_cc256x_instance());
 

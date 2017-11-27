@@ -35,16 +35,16 @@
  *
  */
 
-#define __BTSTACK_FILE__ "btstack_uart_block_posix.c"
+#define __BTSTACK_FILE__ "btstack_uart_posix.c"
 
 /*
- *  btstack_uart_block_posix.c
+ *  btstack_uart_posix.c
  *
  *  Common code to access serial port via asynchronous block read/write commands
  *
  */
 
-#include "btstack_uart_block.h"
+#include "btstack_uart.h"
 #include "btstack_run_loop.h"
 #include "btstack_debug.h"
 
@@ -404,7 +404,7 @@ static void btstack_uart_posix_receive_block(uint8_t *buffer, uint16_t len){
 // static void btstack_uart_posix_set_csr_irq_handler( void (*csr_irq_handler)(void)){
 // }
 
-static const btstack_uart_block_t btstack_uart_posix = {
+static const btstack_uart_t btstack_uart_posix = {
     /* int  (*init)(hci_transport_config_uart_t * config); */         &btstack_uart_posix_init,
     /* int  (*open)(void); */                                         &btstack_uart_posix_open,
     /* int  (*close)(void); */                                        &btstack_uart_posix_close_new,
@@ -420,6 +420,6 @@ static const btstack_uart_block_t btstack_uart_posix = {
     /* void (*set_wakeup_handler)(void (*handler)(void)); */          NULL,
 };
 
-const btstack_uart_block_t * btstack_uart_block_posix_instance(void){
+const btstack_uart_t * btstack_uart_posix_instance(void){
 	return &btstack_uart_posix;
 }

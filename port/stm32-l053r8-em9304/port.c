@@ -477,7 +477,7 @@ void port_main(void){
     btstack_run_loop_add_data_source(&transport_data_source);
 
     // init HCI
-    hci_init(hci_transport_h4_instance(btstack_uart_block_embedded_instance()), &config);
+    hci_init(hci_transport_h4_instance(btstack_uart_embedded_instance()), &config);
     hci_set_chipset(btstack_chipset_em9301_instance());
 
 #if 0

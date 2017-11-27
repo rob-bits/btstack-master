@@ -104,7 +104,7 @@
           <itemPath>../../../src/hci_transport.h</itemPath>
           <itemPath>../../../src/l2cap.h</itemPath>
           <itemPath>../../../src/l2cap_signaling.h</itemPath>
-          <itemPath>../../../src/btstack_uart_block.h</itemPath>
+          <itemPath>../../../src/btstack_uart.h</itemPath>
           <itemPath>../../../src/ad_parser.h</itemPath>
         </logicalFolder>
       </logicalFolder>
@@ -206,7 +206,7 @@
         </logicalFolder>
         <logicalFolder name="f1" displayName="platform-embedded" projectFiles="true">
           <itemPath>../../../platform/embedded/btstack_run_loop_embedded.c</itemPath>
-          <itemPath>../../../platform/embedded/btstack_uart_block_embedded.c</itemPath>
+          <itemPath>../../../platform/embedded/btstack_uart_embedded.c</itemPath>
         </logicalFolder>
         <logicalFolder name="src" displayName="src" projectFiles="true">
           <logicalFolder name="f2" displayName="ble" projectFiles="true">

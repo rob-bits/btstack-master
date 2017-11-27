@@ -53,7 +53,7 @@
 #include "hci.h"
 #include "hci_transport.h"
 #include "bluetooth_company_id.h"
-#include "btstack_uart_block.h"
+#include "btstack_uart.h"
 
 #define ENABLE_LOG_EHCILL
 
@@ -124,7 +124,7 @@ typedef enum {
 } TX_STATE;
 
 // UART Driver + Config
-static const btstack_uart_block_t * btstack_uart;
+static const btstack_uart_t * btstack_uart;
 static btstack_uart_config_t uart_config;
 
 // write state
@@ -665,7 +665,7 @@ static const hci_transport_t hci_transport_h4 = {
 };
 
 // configure and return h4 singleton
-const hci_transport_t * hci_transport_h4_instance(const btstack_uart_block_t * uart_driver) {
+const hci_transport_t * hci_transport_h4_instance(const btstack_uart_t * uart_driver) {
     btstack_uart = uart_driver;
     return &hci_transport_h4;
 }

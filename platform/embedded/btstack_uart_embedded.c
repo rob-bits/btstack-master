@@ -35,17 +35,17 @@
  *
  */
 
-#define __BTSTACK_FILE__ "btstack_uart_block_embedded.c"
+#define __BTSTACK_FILE__ "btstack_uart_embedded.c"
 
 /*
- *  btstack_uart_block_embedded.c
+ *  btstack_uart_embedded.c
  *
  *  Common code to access UART via asynchronous block read/write commands on top of hal_uart_dma.h
  *
  */
 
 #include "btstack_debug.h"
-#include "btstack_uart_block.h"
+#include "btstack_uart.h"
 #include "btstack_run_loop_embedded.h"
 #include "hal_uart_dma.h"
 
@@ -65,25 +65,25 @@ static void (*block_received)(void);
 static void (*wakeup_handler)(void);
 
 
-static void btstack_uart_block_received(void){
+static void btstack_uart_embedded_block_received(void){
     receive_complete = 1;
     btstack_run_loop_embedded_trigger();
 }
 
-static void btstack_uart_block_sent(void){
+static void btstack_uart_embedded_block_sent(void){
     send_complete = 1;
     btstack_run_loop_embedded_trigger();
 }
 
-static void btstack_uart_cts_pulse(void){
+static void btstack_uart_embedded_cts_pulse(void){
     wakeup_event = 1;
     btstack_run_loop_embedded_trigger();
 }
 
 static int btstack_uart_embedded_init(const btstack_uart_config_t * config){
     uart_config = config;
-    hal_uart_dma_set_block_received(&btstack_uart_block_received);
-    hal_uart_dma_set_block_sent(&btstack_uart_block_sent);
+    hal_uart_dma_set_block_received(&btstack_uart_embedded_block_received);
+    hal_uart_dma_set_block_sent(&btstack_uart_embedded_block_sent);
     return 0;
 }
 
@@ -171,7 +171,7 @@ static int btstack_uart_embedded_get_supported_sleep_modes(void){
 static void btstack_uart_embedded_set_sleep(btstack_uart_sleep_mode_t sleep_mode){
 	log_info("set sleep %u", sleep_mode);
 	if (sleep_mode == BTSTACK_UART_SLEEP_RTS_HIGH_WAKE_ON_CTS_PULSE){
-		hal_uart_dma_set_csr_irq_handler(&btstack_uart_cts_pulse);
+		hal_uart_dma_set_csr_irq_handler(&btstack_uart_embedded_cts_pulse);
 	} else {
 		hal_uart_dma_set_csr_irq_handler(NULL);
 	}
@@ -184,7 +184,7 @@ static void btstack_uart_embedded_set_sleep(btstack_uart_sleep_mode_t sleep_mode
 	log_info("done");
 }
 
-static const btstack_uart_block_t btstack_uart_embedded = {
+static const btstack_uart_t btstack_uart_embedded = {
     /* int  (*init)(hci_transport_config_uart_t * config); */         &btstack_uart_embedded_init,
     /* int  (*open)(void); */                                         &btstack_uart_embedded_open,
     /* int  (*close)(void); */                                        &btstack_uart_embedded_close,
@@ -204,6 +204,6 @@ static const btstack_uart_block_t btstack_uart_embedded = {
     /* void (*set_wakeup_handler)(void (*handler)(void)); */          &btstack_uart_embedded_set_wakeup_handler,
 };
 
-const btstack_uart_block_t * btstack_uart_block_embedded_instance(void){
+const btstack_uart_t * btstack_uart_embedded_instance(void){
 	return &btstack_uart_embedded;
 }

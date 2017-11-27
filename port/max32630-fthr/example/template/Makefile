@@ -141,7 +141,7 @@ COMMON = \
     hci.o                     \
     hci_cmd.o                 \
     hci_dump.o                \
-    btstack_uart_block_embedded.o \
+    btstack_uart_embedded.o \
     hal_flash_bank_mxc.o      \
     btstack_tlv.o             \
     btstack_tlv_flash_bank.o  \

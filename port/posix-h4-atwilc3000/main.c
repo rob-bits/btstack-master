@@ -67,7 +67,7 @@
 
 static int main_argc;
 static const char ** main_argv;
-static const btstack_uart_block_t * uart_driver;
+static const btstack_uart_t * uart_driver;
 static btstack_uart_config_t uart_config;
 
 int btstack_main(int argc, const char * argv[]);
@@ -155,7 +155,7 @@ int main(int argc, const char * argv[]){
 
     // pick serial port and configure uart block driver
     transport_config.device_name = "/dev/tty.usbserial-A96PXBJ7";
-    uart_driver = btstack_uart_block_posix_instance();
+    uart_driver = btstack_uart_posix_instance();
 
     // extract UART config from transport config, but disable flow control and use default baudrate
     uart_config.baudrate    = HCI_DEFAULT_BAUDRATE;

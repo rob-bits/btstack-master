@@ -50,7 +50,7 @@ extern "C" {
 #endif
 
 #include "btstack_chipset.h"
-#include "btstack_uart_block.h"
+#include "btstack_uart.h"
 
 /**
  * @brief get chipset instance
@@ -62,7 +62,7 @@ const btstack_chipset_t * btstack_chipset_da14581_instance(void);
  * @param uart_driver -- already initialized
  * @param done callback. 0 = Success
  */
-void btstack_chipset_da14581_download_firmware(const btstack_uart_block_t * uart_driver, const uint8_t * fw, uint16_t fw_size, void (*done)(int result));
+void btstack_chipset_da14581_download_firmware(const btstack_uart_t * uart_driver, const uint8_t * fw, uint16_t fw_size, void (*done)(int result));
 
 #if defined __cplusplus
 }

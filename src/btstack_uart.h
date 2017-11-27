@@ -146,4 +146,11 @@ typedef struct {
 
 } btstack_uart_t;
 
+ // common implementations
+const btstack_uart_t * btstack_uart_posix_instance(void);
+const btstack_uart_t * btstack_uart_windows_instance(void);
+const btstack_uart_t * btstack_uart_embedded_instance(void);
+const btstack_uart_t * btstack_uart_freertos_instance(void);
+
+
 #endif

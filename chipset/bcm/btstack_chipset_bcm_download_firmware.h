@@ -40,11 +40,11 @@
  *  Helper to upload patchram before starting up stack in H5 mode
  */
 
-#include "btstack_uart_block.h"
+#include "btstack_uart.h"
 
  /**
  * @brief Download firmware via uart_driver
  * @param uart_driver -- already initialized
  * @param done callback. 0 = Success
  */
-void btstack_chipset_bcm_download_firmware(const btstack_uart_block_t * the_uart_driver, int baudrate_upload, void (*done)(int result));
+void btstack_chipset_bcm_download_firmware(const btstack_uart_t * the_uart_driver, int baudrate_upload, void (*done)(int result));

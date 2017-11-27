@@ -54,7 +54,7 @@ COMMON = \
 	ad_parser.c 					   \
 	btstack_chipset_cc256x.c       	   \
 	btstack_link_key_db_memory.c       \
-    btstack_uart_block_embedded.c      \
+    btstack_uart_embedded.c      \
     hal_uart_dma.c            		   \
     hci.c			          		   \
     hci_cmd.c		                   \

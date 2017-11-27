@@ -50,7 +50,7 @@ extern "C" {
 #endif
 
 #include "btstack_chipset.h"
-#include "btstack_uart_block.h"
+#include "btstack_uart.h"
 
 #define HCI_DEFAULT_BAUDRATE 115200
 
@@ -66,7 +66,7 @@ const btstack_chipset_t * btstack_chipset_atwilc3000_instance(void);
  * @param flowcontrol after firmwware update
  * @param done callback. 0 = Success
  */
-void btstack_chipset_atwilc3000_download_firmware(const btstack_uart_block_t * uart_driver, uint32_t baudrate, int flowcontrol, const uint8_t * fw, uint32_t fw_size, void (*done)(int result));
+void btstack_chipset_atwilc3000_download_firmware(const btstack_uart_t * uart_driver, uint32_t baudrate, int flowcontrol, const uint8_t * fw, uint32_t fw_size, void (*done)(int result));
 
 #if defined __cplusplus
 }

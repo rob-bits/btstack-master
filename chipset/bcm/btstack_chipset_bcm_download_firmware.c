@@ -55,7 +55,7 @@ static void bcm_send_next_init_script_command(void);
 static void bcm_set_local_baudrate(void);
 static void bcm_w4_command_complete(void);
 
-static const btstack_uart_block_t * uart_driver;
+static const btstack_uart_t * uart_driver;
 static const btstack_chipset_t * chipset;
 
 static uint8_t response_buffer[260];
@@ -134,7 +134,7 @@ static void bcm_send_next_init_script_command(void){
  * @param done callback. 0 = Success
  */
 
-void btstack_chipset_bcm_download_firmware(const btstack_uart_block_t * the_uart_driver, int baudrate_upload, void (*done)(int result)){
+void btstack_chipset_bcm_download_firmware(const btstack_uart_t * the_uart_driver, int baudrate_upload, void (*done)(int result)){
     // 
     uart_driver = the_uart_driver;
     chipset     = btstack_chipset_bcm_instance();
