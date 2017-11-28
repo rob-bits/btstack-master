@@ -36,7 +36,7 @@ VPATH += ${BTSTACK_ROOT}/platform/libusb
 CFLAGS  += $(shell pkg-config libusb-1.0 --cflags)
 LDFLAGS += $(shell pkg-config libusb-1.0 --libs)
 
-mesh: ${CORE_OBJ} ${COMMON_OBJ} ${SM_OBJ} mesh.c 
+mesh: ${CORE_OBJ} ${COMMON_OBJ} ${SM_OBJ} provisioning_device.c mesh.c
 	${CC} $^ ${CFLAGS} ${LDFLAGS} -o $@
 
 sniffer: ${CORE_OBJ} ${COMMON_OBJ} ${SM_OBJ} sniffer.c 
