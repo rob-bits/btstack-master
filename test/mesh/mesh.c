@@ -206,6 +206,7 @@ static uint8_t  prov_ec_q[64];
 static btstack_crypto_aes128_cmac_t prov_cmac_request;
 static btstack_crypto_random_t      prov_random_request;
 static btstack_crypto_ecc_p256_t    prov_ecc_p256_request;
+static btstack_crypto_ccm_t         prov_ccm_request;
 
 static void provisioning_handle_invite(uint8_t *packet, uint16_t size){
 
@@ -312,6 +313,16 @@ static uint8_t auth_value[16];
 static uint8_t session_key[16];
 // SessionNonce
 static uint8_t session_nonce[16];
+// EncProvisioningData
+static uint8_t enc_provisioning_data[25];
+// ProvisioningData
+static uint8_t provisioning_data[25];
+
+static uint8_t  net_key[16];
+static uint16_t net_key_index;
+static uint8_t  flags;
+static uint32_t iv_index;
+static uint16_t unicast_address;
 
 static void provisioning_handle_confirmation_device_calculated(void * arg){
 
@@ -433,16 +444,41 @@ static void provisioning_handle_random(uint8_t *packet, uint16_t size){
     btstack_crypto_aes128_cmac_zero(&prov_cmac_request, sizeof(prov_confirmation_inputs), prov_confirmation_inputs, provisioning_salt, &provisioning_handle_random_s1_calculated, NULL);
 }
 
-static void provisioning_handle_data(uint8_t *packet, uint16_t size){
+static void provisioning_handle_data_ccm(void * arg){
 
-    UNUSED(size);
-    UNUSED(packet);
+    UNUSED(arg);
+
+    // sort provisioin data
+    memcpy(net_key, provisioning_data, 16);
+    net_key_index = big_endian_read_16(provisioning_data, 16);
+    flags = provisioning_data[18];
+    iv_index = big_endian_read_32(provisioning_data, 19);
+    unicast_address = big_endian_read_16(provisioning_data, 23);
+
+    // dump
+    printf("NetKey: ");
+    printf_hexdump(provisioning_data, 16);
+    printf("NetKeyIndex: %04x\n", net_key_index);
+    printf("Flags: %02x\n", flags);
+    printf("IVIndex: %04x\n", iv_index);
+    printf("UnicastAddress: %02x\n", unicast_address);
 
     // setup response 
     prov_buffer_out[0] = MESH_PROV_COMPLETE;
 
     // send
     pb_adv_send_pdu(prov_buffer_out, 1);
+}
+
+static void provisioning_handle_data(uint8_t *packet, uint16_t size){
+
+    UNUSED(size);
+
+    memcpy(enc_provisioning_data, packet, 25);
+
+    // decode response
+    btstack_crypo_ccm_init(&prov_ccm_request, session_key, session_nonce, 25);
+    btstack_crypto_ccm_encrypt_block(&prov_ccm_request, 25, enc_provisioning_data, provisioning_data, &provisioning_handle_data_ccm, NULL);
 }
 
 static void provisioning_handle_pdu(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
