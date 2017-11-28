@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 BlueKitchen GmbH
+ * Copyright (C) 2014 BlueKitchen GmbH
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -35,24 +35,75 @@
  *
  */
 
-/*
- *  provisioning_device.h
- */
-
-#ifndef __PROVISIONING_DEVICE_H
-#define __PROVISIONING_DEVICE_H
+#define __BTSTACK_FILE__ "mesh.c"
 
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "ble/mesh/adv_bearer.h"
+#include "ble/mesh/pb_adv.h"
+#include "ble/mesh/beacon.h"
+#include "provisioning_device.h"
+#include "btstack.h"
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
+#include "CppUTest/TestHarness.h"
+#include "CppUTest/CommandLineTestRunner.h"
 
-void provisioning_device_init(const uint8_t * device_uuid);
 
-#ifdef __cplusplus
-} /* end of extern "C" */
-#endif
+// returns if anything was done
+extern "C" int mock_process_hci_cmd(void);
 
-#endif
+const static uint8_t device_uuid[] = { 0x00, 0x1B, 0xDC, 0x08, 0x10, 0x21, 0x0B, 0x0E, 0x0A, 0x0C, 0x00, 0x0B, 0x0E, 0x0A, 0x0C, 0x00 };
+
+// pb-adv mock for testing
+
+/**
+ * Initialize Provisioning Bearer using Advertisement Bearer
+ * @param DeviceUUID
+ */
+void pb_adv_init(const uint8_t * device_uuid){
+    printf("pb_adv_init\n");
+}
+
+/**
+ * Register listener for Provisioning PDUs and MESH_PBV_ADV_SEND_COMPLETE
+ */
+void pb_adv_register_packet_handler(btstack_packet_handler_t packet_handler){
+    printf("pb_adv_register_packet_handler\n");
+}
+
+/** 
+ * Send Provisioning PDU
+ */
+void pb_adv_send_pdu(const uint8_t * pdu, uint16_t size){
+    printf("pb_adv_send_pdu\n");
+}
+ 
+static void perform_crypto_operations(void){
+    int more = 1;
+    while (more){
+        more = mock_process_hci_cmd();
+    }
+}
+
+TEST_GROUP(Crypto){
+    void setup(void){
+        static int first = 1;
+        if (first){
+            first = 0;
+        }
+        btstack_crypto_init();
+        provisioning_device_init(device_uuid);
+        perform_crypto_operations();
+    }
+};
+
+TEST(Crypto, AES128){
+}
+
+
+int main (int argc, const char * argv[]){
+    // hci_dump_open("hci_dump.pklg", HCI_DUMP_PACKETLOGGER);
+    return CommandLineTestRunner::RunAllTests(argc, argv);
+}

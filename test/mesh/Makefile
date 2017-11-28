@@ -20,7 +20,7 @@ CORE += \
 # examples
 include ${BTSTACK_ROOT}/example/Makefile.inc
 
-CFLAGS  += -g -Wall -Werror \
+CFLAGS  += -g -DUNIT_TEST \
 	-I$(BTSTACK_ROOT)/platform/embedded \
 	-I$(BTSTACK_ROOT)/platform/posix \
 	-I$(BTSTACK_ROOT)/3rd-party/rijndael \
@@ -32,6 +32,9 @@ VPATH += ${BTSTACK_ROOT}/platform/posix
 VPATH += ${BTSTACK_ROOT}/platform/embedded
 VPATH += ${BTSTACK_ROOT}/platform/libusb
 
+# cpputest
+CC_UNIT = g++
+
 # libusb
 CFLAGS  += $(shell pkg-config libusb-1.0 --cflags)
 LDFLAGS += $(shell pkg-config libusb-1.0 --libs)
@@ -42,7 +45,10 @@ mesh: ${CORE_OBJ} ${COMMON_OBJ} ${SM_OBJ} provisioning_device.c mesh.c
 sniffer: ${CORE_OBJ} ${COMMON_OBJ} ${SM_OBJ} sniffer.c 
 	${CC} $^ ${CFLAGS} ${LDFLAGS} -o $@
 
-EXAMPLES= mesh sniffer
+provisioning_device_test: provisioning_device_test.cpp uECC.o provisioning_device.o btstack_crypto.o btstack_util.o btstack_linked_list.o mock.o rijndael.o hci_cmd.o hci_dump.o
+	${CC_UNIT} ${CFLAGS} ${LDFLAGS} $^ -lCppUTest -lCppUTestExt -o $@	
+
+EXAMPLES= mesh sniffer provisioning_device_test
 
 all: ${EXAMPLES}
 
