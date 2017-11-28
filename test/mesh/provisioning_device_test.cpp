@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 BlueKitchen GmbH
+ * Copyright (C) 2017 BlueKitchen GmbH
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -35,21 +35,56 @@
  *
  */
 
-#define __BTSTACK_FILE__ "mesh.c"
-
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "ble/mesh/adv_bearer.h"
 #include "ble/mesh/pb_adv.h"
-#include "ble/mesh/beacon.h"
 #include "provisioning_device.h"
 #include "btstack.h"
 
 #include "CppUTest/TestHarness.h"
 #include "CppUTest/CommandLineTestRunner.h"
 
+static void CHECK_EQUAL_ARRAY(uint8_t * expected, uint8_t * actual, int size){
+    int i;
+    for (i=0; i<size; i++){
+        if (expected[i] != actual[i]) {
+            printf("offset %u wrong\n", i);
+            printf("expected: "); printf_hexdump(expected, size);
+            printf("actual:   "); printf_hexdump(actual, size);
+        }
+        BYTES_EQUAL(expected[i], actual[i]);
+    }
+}
+
+static void dump_data(uint8_t * buffer, uint16_t size){
+    static int data_counter = 1;
+    char var_name[80];
+    sprintf(var_name, "test_data_%02u", data_counter);
+    printf("uint8_t %s[] = { ", var_name);
+    for (int i = 0; i < size ; i++){
+        if ((i % 16) == 0) printf("\n    ");
+        printf ("0x%02x, ", buffer[i]);
+    }
+    printf("};\n");
+    data_counter++;
+}
+
+static int parse_hex(uint8_t * buffer, const char * hex_string){
+    int len = 0;
+    while (*hex_string){
+        if (*hex_string == ' '){
+            hex_string++;
+            continue;
+        }
+        int high_nibble = nibble_for_char(*hex_string++);
+        int low_nibble = nibble_for_char(*hex_string++);
+        *buffer++ = (high_nibble << 4) | low_nibble;
+        len++;
+    }
+    return len;
+}
 
 // returns if anything was done
 extern "C" int mock_process_hci_cmd(void);
@@ -57,6 +92,11 @@ extern "C" int mock_process_hci_cmd(void);
 const static uint8_t device_uuid[] = { 0x00, 0x1B, 0xDC, 0x08, 0x10, 0x21, 0x0B, 0x0E, 0x0A, 0x0C, 0x00, 0x0B, 0x0E, 0x0A, 0x0C, 0x00 };
 
 // pb-adv mock for testing
+
+static btstack_packet_handler_t pb_adv_packet_handler;
+
+static uint8_t * pdu_data;
+static uint16_t  pdu_size;
 
 /**
  * Initialize Provisioning Bearer using Advertisement Bearer
@@ -70,14 +110,17 @@ void pb_adv_init(const uint8_t * device_uuid){
  * Register listener for Provisioning PDUs and MESH_PBV_ADV_SEND_COMPLETE
  */
 void pb_adv_register_packet_handler(btstack_packet_handler_t packet_handler){
-    printf("pb_adv_register_packet_handler\n");
+    pb_adv_packet_handler = packet_handler;
 }
 
 /** 
  * Send Provisioning PDU
  */
 void pb_adv_send_pdu(const uint8_t * pdu, uint16_t size){
-    printf("pb_adv_send_pdu\n");
+    pdu_data = (uint8_t*) pdu;
+    pdu_size = size;
+    // dump_data((uint8_t*)pdu,size);
+    // printf_hexdump(pdu, size);
 }
  
 static void perform_crypto_operations(void){
@@ -87,21 +130,59 @@ static void perform_crypto_operations(void){
     }
 }
 
-TEST_GROUP(Crypto){
+static void send_prov_pdu(const uint8_t * packet, uint16_t size){
+    pb_adv_packet_handler(PROVISIONING_DATA_PACKET, 0, (uint8_t*) packet, size);
+    perform_crypto_operations();
+}
+
+TEST_GROUP(Provisioning){
     void setup(void){
-        static int first = 1;
-        if (first){
-            first = 0;
-        }
         btstack_crypto_init();
         provisioning_device_init(device_uuid);
         perform_crypto_operations();
     }
 };
 
-TEST(Crypto, AES128){
-}
+uint8_t prov_invite[] = { 0x00, 0x00 };
+uint8_t prov_capabilities[] = { 0x01, 0x01, 0x00, 0x01, 0x00, 0x01, 0x08, 0x00, 0x08, 0x08, 0x00, 0x08, };
+uint8_t prov_start[] = { 0x02, 0x00, 0x00, 0x02, 0x00, 0x01 };
+uint8_t prov_public_key[] = { 0x03,
+    0xf0, 0xc8, 0x63, 0xf8, 0xe5, 0x55, 0x11, 0x4b, 0xf4, 0x88, 0x2c, 0xc7, 0x87, 0xb9, 0x5c, 0x27,
+    0x2a, 0x7f, 0xe4, 0xdc, 0xdd, 0xf1, 0x92, 0x2f, 0x4f, 0x18, 0xa4, 0x94, 0xe1, 0xc3, 0x57, 0xa1,
+    0xa6, 0xc3, 0x2d, 0x07, 0xbe, 0xb5, 0x76, 0xab, 0x60, 0x10, 0x68, 0x06, 0x8f, 0x0a, 0x9e, 0x01,
+    0x60, 0xc3, 0xa1, 0x41, 0x19, 0xf5, 0xd4, 0x26, 0xa7, 0x95, 0x5d, 0xa3, 0xe6, 0xed, 0x3e, 0x81, };
+uint8_t prov_confirm[] = { 0x05, 0x80, 0x4d, 0xdc, 0x3b, 0xba, 0x60, 0xd5, 0x93, 0x5b, 0x56, 0xef, 0xb5, 0xcb, 0x59, 0x31, 0xfa, };
+uint8_t prov_random[]  = { 0x06, 0x9b, 0x4d, 0x39, 0xf6, 0xf7, 0xe8, 0xa1, 0x05, 0xd3, 0xfe, 0xed, 0xa5, 0xd5, 0xf3, 0xd9, 0xe4, };
+uint8_t prov_data[] = {
+    0x07, 0x85, 0x66, 0xac, 0x46, 0x37, 0x34, 0x86, 0xe1, 0x3e, 0x4c, 0x13, 0x52, 0xd0, 0x6d, 0x34,
+    0x7d, 0xce, 0xf1, 0xd1, 0x7d, 0xbd, 0xbe, 0xcc, 0x99, 0xc3, 0xf6, 0xd4, 0x36, 0x50, 0xa7, 0x58,
+    0xef, };
+uint8_t prov_complete[] = { 0x08, };
 
+TEST(Provisioning, Prov1){
+    // send prov inviate
+    send_prov_pdu(prov_invite, sizeof(prov_invite));        
+    // check for prov cap
+    CHECK_EQUAL_ARRAY(prov_capabilities, pdu_data, sizeof(prov_capabilities));
+    // send prov start
+    send_prov_pdu(prov_start, sizeof(prov_start));        
+    // send public key
+    send_prov_pdu(prov_public_key, sizeof(prov_public_key));
+    // check for public key
+    CHECK_EQUAL_ARRAY(prov_public_key, pdu_data, sizeof(prov_public_key));
+    // send prov confirm
+    send_prov_pdu(prov_confirm, sizeof(prov_confirm));
+    // check for prov confirm
+    CHECK_EQUAL_ARRAY(prov_confirm, pdu_data, sizeof(prov_confirm));
+    // send prov random
+    send_prov_pdu(prov_random, sizeof(prov_random));
+    // check for prov random
+    CHECK_EQUAL_ARRAY(prov_random, pdu_data, sizeof(prov_random));
+    // send prov data
+    send_prov_pdu(prov_data, sizeof(prov_data));
+    // check prov complete
+    CHECK_EQUAL_ARRAY(prov_complete, pdu_data, sizeof(prov_complete));
+}
 
 int main (int argc, const char * argv[]){
     // hci_dump_open("hci_dump.pklg", HCI_DUMP_PACKETLOGGER);

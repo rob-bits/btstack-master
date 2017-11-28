@@ -401,7 +401,7 @@ static void provisioning_handle_data(uint8_t *packet, uint16_t size){
 
     // decode response
     btstack_crypo_ccm_init(&prov_ccm_request, session_key, session_nonce, 25);
-    btstack_crypto_ccm_encrypt_block(&prov_ccm_request, 25, enc_provisioning_data, provisioning_data, &provisioning_handle_data_ccm, NULL);
+    btstack_crypto_ccm_decrypt_block(&prov_ccm_request, 25, enc_provisioning_data, provisioning_data, &provisioning_handle_data_ccm, NULL);
 }
 
 static void provisioning_handle_pdu(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
@@ -455,10 +455,23 @@ static void provisioning_handle_pdu(uint8_t packet_type, uint16_t channel, uint8
     }
 }
 
+static void dump_data(uint8_t * buffer, uint16_t size){
+    static int data_counter = 1;
+    char var_name[80];
+    sprintf(var_name, "test_data_%02u", data_counter);
+    printf("uint8_t %s[] = { ", var_name);
+    for (int i = 0; i < size ; i++){
+        if ((i % 16) == 0) printf("\n    ");
+        printf ("0x%02x, ", buffer[i]);
+    }
+    printf("};\n");
+    data_counter++;
+}
+
 static void prov_key_generated(void * arg){
     UNUSED(arg);
     printf("ECC-P256: ");
-    printf_hexdump(prov_ec_q, sizeof(prov_ec_q));
+    dump_data(prov_ec_q, sizeof(prov_ec_q));
 }
 
 void provisioning_device_init(const uint8_t * device_uuid){
