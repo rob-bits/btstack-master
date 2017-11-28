@@ -317,10 +317,15 @@ static uint8_t session_nonce[16];
 static uint8_t enc_provisioning_data[25];
 // ProvisioningData
 static uint8_t provisioning_data[25];
-
+// DeviceKey
+static uint8_t device_key[16];
+// NetKey
 static uint8_t  net_key[16];
+// NetKeyIndex
 static uint16_t net_key_index;
+
 static uint8_t  flags;
+
 static uint32_t iv_index;
 static uint16_t unicast_address;
 
@@ -444,11 +449,20 @@ static void provisioning_handle_random(uint8_t *packet, uint16_t size){
     btstack_crypto_aes128_cmac_zero(&prov_cmac_request, sizeof(prov_confirmation_inputs), prov_confirmation_inputs, provisioning_salt, &provisioning_handle_random_s1_calculated, NULL);
 }
 
+static void provisioning_handle_data_device_key(void * arg){
+    // seend response
+    prov_buffer_out[0] = MESH_PROV_COMPLETE;
+    pb_adv_send_pdu(prov_buffer_out, 1);
+
+}
+
 static void provisioning_handle_data_ccm(void * arg){
 
     UNUSED(arg);
 
-    // sort provisioin data
+    // validate MIC?
+
+    // sort provisoning data
     memcpy(net_key, provisioning_data, 16);
     net_key_index = big_endian_read_16(provisioning_data, 16);
     flags = provisioning_data[18];
@@ -463,11 +477,8 @@ static void provisioning_handle_data_ccm(void * arg){
     printf("IVIndex: %04x\n", iv_index);
     printf("UnicastAddress: %02x\n", unicast_address);
 
-    // setup response 
-    prov_buffer_out[0] = MESH_PROV_COMPLETE;
-
-    // send
-    pb_adv_send_pdu(prov_buffer_out, 1);
+    // DeviceKey
+    mesh_k1(&prov_cmac_request, dhkey, sizeof(dhkey), provisioning_salt, (const uint8_t*) "prdk", 4, device_key, &provisioning_handle_data_device_key, NULL);
 }
 
 static void provisioning_handle_data(uint8_t *packet, uint16_t size){
