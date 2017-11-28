@@ -263,7 +263,6 @@ static void provisioning_handle_start(uint8_t * packet, uint16_t size){
 
     // output authentication action
     prov_authentication_action = packet[3];
-    printf("Authentication Action: %02x\n", prov_authentication_action);
 }
 
 static void provisioning_handle_public_key_dhkey(void * arg){
@@ -344,11 +343,7 @@ static void provisioning_handle_confirmation_device_calculated(void * arg){
     pb_adv_send_pdu(prov_buffer_out, 17);
 }
 
-static void provisioning_handle_confirmation_random(void * arg){
-
-    memset(auth_value, 0, sizeof(auth_value));
-    auth_value[15] = prov_authentication_action;
-
+static void provisioning_handle_confirmation_random_device(void * arg){
     // re-use prov_confirmation_inputs buffer
     memcpy(&prov_confirmation_inputs[0],  random_device, 16);
     memcpy(&prov_confirmation_inputs[16], auth_value, 16);
@@ -357,12 +352,28 @@ static void provisioning_handle_confirmation_random(void * arg){
     btstack_crypto_aes128_cmac_message(&prov_cmac_request, confirmation_key, 32, prov_confirmation_inputs, confirmation_device, &provisioning_handle_confirmation_device_calculated, NULL);
 }
 
+static void provisioning_handle_confirmation_random_auth(void * arg){
+
+    // limit auth value to single digit
+    auth_value[15] = auth_value[15] % 9 + 1;
+
+    // output auth value
+    printf("AuthAction: %02x\n", prov_authentication_action);
+    printf("AuthValue:  '%u'\n", auth_value[15]);
+
+    // generate random_device
+    btstack_crypto_random_generate(&prov_random_request,random_device, 16, &provisioning_handle_confirmation_random_device, NULL);
+}
+
 static void provisioning_handle_confirmation_k1_calculated(void * arg){
     printf("ConfirmationKey:   ");
     printf_hexdump(confirmation_key, sizeof(confirmation_key));
 
-    // generate random data
-    btstack_crypto_random_generate(&prov_random_request, random_device, 16, &provisioning_handle_confirmation_random, NULL);
+    // auth_value
+    memset(auth_value, 0, sizeof(auth_value));
+
+    // generate single byte of random data to use for authentication
+    btstack_crypto_random_generate(&prov_random_request, &auth_value[15], 1, &provisioning_handle_confirmation_random_auth, NULL);
 }
 
 static void provisioning_handle_confirmation_s1_calculated(void * arg){
