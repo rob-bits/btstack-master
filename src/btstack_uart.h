@@ -97,6 +97,16 @@ typedef struct {
     void (*set_block_sent)(void (*block_handler)(void));
 
     /**
+     * SLIP only: set callback for frame received. NULL disables callback
+     */
+    void (*set_frame_received)(void (*frame_handler)(uint16_t frame_size));
+
+    /**
+     * SLIP only: set callback for frame sent. NULL disables callback
+     */
+    void (*set_frame_sent)(void (*block_handler)(void));
+
+    /**
      * set baudrate
      */
     int (*set_baudrate)(uint32_t baudrate);
@@ -120,6 +130,16 @@ typedef struct {
      * send block
      */
     void (*send_block)(const uint8_t *buffer, uint16_t length);
+
+    /**
+     * SLIP only: receive SLIP frame
+     */
+    void (*receive_frame)(uint8_t *buffer, uint16_t len);
+
+    /**
+     * SLIP only: send SLIP frame
+     */
+    void (*send_frame)(const uint8_t *buffer, uint16_t length);
 
     // support for sleep modes in TI's H4 eHCILL and H5
 
