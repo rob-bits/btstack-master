@@ -373,6 +373,7 @@ static void btstack_uart_posix_receive_block(uint8_t *buffer, uint16_t len){
 }
 
 // SLIP Implementation Start
+#ifdef ENABLE_H5
 
 #include "btstack_slip.h"
 
@@ -580,22 +581,29 @@ static void btstack_uart_slip_posix_set_frame_sent( void (*block_handler)(void))
 }
 
 // SLIP Implementation End
+#endif
 
 // dispatch into block or SLIP code
 static void hci_uart_posix_process(btstack_data_source_t *ds, btstack_data_source_callback_type_t callback_type) {
     if (ds->fd < 0) return;
     switch (callback_type){
         case DATA_SOURCE_CALLBACK_READ:
+#ifdef ENABLE_H5
             if (btstack_uart_slip_receive_active){
                 btstack_uart_slip_posix_process_read(ds);
-            } else {
+            } else
+#endif
+            {
                 btstack_uart_block_posix_process_read(ds);
             }
             break;
         case DATA_SOURCE_CALLBACK_WRITE:
+#ifdef ENABLE_H5
             if (btstack_uart_slip_write_active){
                 btstack_uart_slip_posix_process_write(ds);
-            } else {
+            } else 
+#endif
+            {
                 btstack_uart_block_posix_process_write(ds);
             }
             break;
@@ -603,6 +611,7 @@ static void hci_uart_posix_process(btstack_data_source_t *ds, btstack_data_sourc
             break;
     }
 }
+
 
 // static void btstack_uart_posix_set_sleep(uint8_t sleep){
 // }
@@ -615,15 +624,19 @@ static const btstack_uart_t btstack_uart_posix = {
     /* int  (*close)(void); */                                             &btstack_uart_posix_close_new,
     /* void (*set_block_received)(void (*handler)(void)); */               &btstack_uart_posix_set_block_received,
     /* void (*set_block_sent)(void (*handler)(void)); */                   &btstack_uart_posix_set_block_sent,
+#ifdef ENABLE_H5
     /* void (*set_frame_received)(void (*handler)(uint16_t frame_size); */ &btstack_uart_slip_posix_set_frame_received,
     /* void (*set_fraae_sent)(void (*handler)(void)); */                   &btstack_uart_slip_posix_set_frame_sent,
+#endif
     /* int  (*set_baudrate)(uint32_t baudrate); */                         &btstack_uart_posix_set_baudrate,
     /* int  (*set_parity)(int parity); */                                  &btstack_uart_posix_set_parity,
     /* int  (*set_flowcontrol)(int flowcontrol); */                        &btstack_uart_posix_set_flowcontrol,
     /* void (*receive_block)(uint8_t *buffer, uint16_t len); */            &btstack_uart_posix_receive_block,
     /* void (*send_block)(const uint8_t *buffer, uint16_t length); */      &btstack_uart_posix_send_block,
+#ifdef ENABLE_H5
     /* void (*receive_block)(uint8_t *buffer, uint16_t len); */            &btstack_uart_slip_posix_receive_frame,
     /* void (*send_block)(const uint8_t *buffer, uint16_t length); */      &btstack_uart_slip_posix_send_frame,    
+#endif
     /* int (*get_supported_sleep_modes); */                                NULL,
     /* void (*set_sleep)(btstack_uart_sleep_mode_t sleep_mode); */         NULL,
     /* void (*set_wakeup_handler)(void (*handler)(void)); */               NULL,

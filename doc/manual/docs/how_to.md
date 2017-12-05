@@ -72,6 +72,7 @@ BTstack properties:
 ENABLE_CLASSIC                  | Enable Classic related code in HCI and L2CAP
 ENABLE_BLE                      | Enable BLE related code in HCI and L2CAP
 ENABLE_EHCILL                   | Enable eHCILL low power mode on TI CC256x/WL18xx chipsets
+ENABLE_H5                       | Enable HCI H5 transport - needed for deep sleep on non-TI chipsets 
 ENABLE_LOG_DEBUG                | Enable log_debug messages
 ENABLE_LOG_ERROR                | Enable log_error messages
 ENABLE_LOG_INFO                 | Enable log_info messages
