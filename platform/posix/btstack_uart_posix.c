@@ -65,31 +65,32 @@ static const btstack_uart_config_t * uart_config;
 static btstack_data_source_t transport_data_source;
 
 // block write
-static int             write_bytes_len;
-static const uint8_t * write_bytes_data;
+static int             btstack_uart_block_write_bytes_len;
+static const uint8_t * btstack_uart_block_write_bytes_data;
 
 // block read
-static uint16_t  read_bytes_len;
-static uint8_t * read_bytes_data;
+static uint16_t  btstack_uart_block_read_bytes_len;
+static uint8_t * btstack_uart_block_read_bytes_data;
 
 // callbacks
 static void (*block_sent)(void);
 static void (*block_received)(void);
 
+static void hci_uart_posix_process(btstack_data_source_t *ds, btstack_data_source_callback_type_t callback_type);
 
 static int btstack_uart_posix_init(const btstack_uart_config_t * config){
     uart_config = config;
     return 0;
 }
 
-static void btstack_uart_posix_process_write(btstack_data_source_t *ds) {
+static void btstack_uart_block_posix_process_write(btstack_data_source_t *ds) {
     
-    if (write_bytes_len == 0) return;
+    if (btstack_uart_block_write_bytes_len == 0) return;
 
     uint32_t start = btstack_run_loop_get_time_ms();
 
-    // write up to write_bytes_len to fd
-    int bytes_written = (int) write(ds->fd, write_bytes_data, write_bytes_len);
+    // write up to btstack_uart_block_write_bytes_len to fd
+    int bytes_written = (int) write(ds->fd, btstack_uart_block_write_bytes_data, btstack_uart_block_write_bytes_len);
     uint32_t end = btstack_run_loop_get_time_ms();
     if (end - start > 10){
         log_info("write took %u ms", end - start);
@@ -104,10 +105,10 @@ static void btstack_uart_posix_process_write(btstack_data_source_t *ds) {
         return;
     }
 
-    write_bytes_data += bytes_written;
-    write_bytes_len  -= bytes_written;
+    btstack_uart_block_write_bytes_data += bytes_written;
+    btstack_uart_block_write_bytes_len  -= bytes_written;
 
-    if (write_bytes_len){
+    if (btstack_uart_block_write_bytes_len){
         btstack_run_loop_enable_data_source_callbacks(ds, DATA_SOURCE_CALLBACK_WRITE);
         return;
     }
@@ -120,9 +121,9 @@ static void btstack_uart_posix_process_write(btstack_data_source_t *ds) {
     }
 }
 
-static void btstack_uart_posix_process_read(btstack_data_source_t *ds) {
+static void btstack_uart_block_posix_process_read(btstack_data_source_t *ds) {
 
-    if (read_bytes_len == 0) {
+    if (btstack_uart_block_read_bytes_len == 0) {
         log_info("called but no read pending");
         btstack_run_loop_disable_data_source_callbacks(ds, DATA_SOURCE_CALLBACK_READ);
     }
@@ -130,8 +131,8 @@ static void btstack_uart_posix_process_read(btstack_data_source_t *ds) {
     uint32_t start = btstack_run_loop_get_time_ms();
     
     // read up to bytes_to_read data in
-    ssize_t bytes_read = read(ds->fd, read_bytes_data, read_bytes_len);
-    // log_info("btstack_uart_posix_process_read need %u bytes, got %d", read_bytes_len, (int) bytes_read);
+    ssize_t bytes_read = read(ds->fd, btstack_uart_block_read_bytes_data, btstack_uart_block_read_bytes_len);
+    // log_info("btstack_uart_block_posix_process_read need %u bytes, got %d", btstack_uart_block_read_bytes_len, (int) bytes_read);
     uint32_t end = btstack_run_loop_get_time_ms();
     if (end - start > 10){
         log_info("read took %u ms", end - start);
@@ -145,28 +146,14 @@ static void btstack_uart_posix_process_read(btstack_data_source_t *ds) {
         return;
     }
 
-    read_bytes_len   -= bytes_read;
-    read_bytes_data  += bytes_read;
-    if (read_bytes_len > 0) return;
+    btstack_uart_block_read_bytes_len   -= bytes_read;
+    btstack_uart_block_read_bytes_data  += bytes_read;
+    if (btstack_uart_block_read_bytes_len > 0) return;
     
     btstack_run_loop_disable_data_source_callbacks(ds, DATA_SOURCE_CALLBACK_READ);
 
     if (block_received){
         block_received();
-    }
-}
-
-static void hci_uart_posix_process(btstack_data_source_t *ds, btstack_data_source_callback_type_t callback_type) {
-    if (ds->fd < 0) return;
-    switch (callback_type){
-        case DATA_SOURCE_CALLBACK_READ:
-            btstack_uart_posix_process_read(ds);
-            break;
-        case DATA_SOURCE_CALLBACK_WRITE:
-            btstack_uart_posix_process_write(ds);
-            break;
-        default:
-            break;
     }
 }
 
@@ -382,21 +369,253 @@ static void btstack_uart_posix_set_block_sent( void (*block_handler)(void)){
 
 static void btstack_uart_posix_send_block(const uint8_t *data, uint16_t size){
     // setup async write
-    write_bytes_data = data;
-    write_bytes_len  = size;
+    btstack_uart_block_write_bytes_data = data;
+    btstack_uart_block_write_bytes_len  = size;
 
     // go
-    // btstack_uart_posix_process_write(&transport_data_source);
+    // btstack_uart_block_posix_process_write(&transport_data_source);
     btstack_run_loop_enable_data_source_callbacks(&transport_data_source, DATA_SOURCE_CALLBACK_WRITE);
 }
 
 static void btstack_uart_posix_receive_block(uint8_t *buffer, uint16_t len){
-    read_bytes_data = buffer;
-    read_bytes_len = len;
+    btstack_uart_block_read_bytes_data = buffer;
+    btstack_uart_block_read_bytes_len = len;
     btstack_run_loop_enable_data_source_callbacks(&transport_data_source, DATA_SOURCE_CALLBACK_READ);
 
     // go
-    // btstack_uart_posix_process_read(&transport_data_source);
+    // btstack_uart_block_posix_process_read(&transport_data_source);
+}
+
+// SLIP Implementation Start
+
+#include "btstack_slip.h"
+
+// max size of outgoing SLIP chunks 
+#define SLIP_TX_CHUNK_LEN   128
+
+#define SLIP_RECEIVE_BUFFER_SIZE 128
+
+// uart config
+static const btstack_uart_config_t * uart_config;
+
+// data source for integration with BTstack Runloop
+static btstack_data_source_t transport_data_source;
+
+// encoded SLIP chunk
+static uint8_t   btstack_uart_slip_outgoing_buffer[SLIP_TX_CHUNK_LEN+1];
+
+// block write
+static int             btstack_uart_slip_write_bytes_len;
+static const uint8_t * btstack_uart_slip_write_bytes_data;
+static int             btstack_uart_slip_write_active;
+
+// block read
+static uint8_t         btstack_uart_slip_receive_buffer[SLIP_RECEIVE_BUFFER_SIZE];
+static uint16_t        btstack_uart_slip_receive_pos;
+static uint16_t        btstack_uart_slip_receive_len;
+static uint8_t         btstack_uart_slip_receive_track_start;
+static uint32_t        btstack_uart_slip_receive_start_time;
+static int             btstack_uart_slip_receive_active;
+
+// callbacks
+static void (*frame_sent)(void);
+static void (*frame_received)(uint16_t frame_size);
+
+static void btstack_uart_slip_posix_block_sent(void);
+
+static void btstack_uart_slip_posix_process_write(btstack_data_source_t *ds) {
+    
+    if (btstack_uart_slip_write_bytes_len == 0) return;
+
+    uint32_t start = btstack_run_loop_get_time_ms();
+
+    // write up to btstack_uart_slip_write_bytes_len to fd
+    int bytes_written = (int) write(ds->fd, btstack_uart_slip_write_bytes_data, btstack_uart_slip_write_bytes_len);
+    if (bytes_written < 0) {
+        btstack_run_loop_enable_data_source_callbacks(ds, DATA_SOURCE_CALLBACK_WRITE);
+        return;
+    }
+
+    uint32_t end = btstack_run_loop_get_time_ms();
+    if (end - start > 10){
+        log_info("write took %u ms", end - start);
+    }
+
+    btstack_uart_slip_write_bytes_data += bytes_written;
+    btstack_uart_slip_write_bytes_len  -= bytes_written;
+
+    if (btstack_uart_slip_write_bytes_len){
+        btstack_run_loop_enable_data_source_callbacks(ds, DATA_SOURCE_CALLBACK_WRITE);
+        return;
+    }
+
+    btstack_run_loop_disable_data_source_callbacks(ds, DATA_SOURCE_CALLBACK_WRITE);
+
+    // done with TX chunk
+    btstack_uart_slip_posix_block_sent();
+}
+
+// @returns frame size if complete frame decoded and delivered
+static uint16_t btstack_uart_slip_posix_process_buffer(void){
+    log_debug("process buffer: pos %u, len %u", btstack_uart_slip_receive_pos, btstack_uart_slip_receive_len);
+
+    uint16_t frame_size = 0;
+    while (btstack_uart_slip_receive_pos < btstack_uart_slip_receive_len && frame_size == 0){
+        btstack_slip_decoder_process(btstack_uart_slip_receive_buffer[btstack_uart_slip_receive_pos++]);
+        frame_size = btstack_slip_decoder_frame_size();
+    }
+
+    // reset buffer if fully processed
+    if (btstack_uart_slip_receive_pos == btstack_uart_slip_receive_len ){
+        btstack_uart_slip_receive_len = 0;
+        btstack_uart_slip_receive_pos = 0;
+    }
+
+    // deliver frame if frame complete
+    if (frame_size) {
+
+        // receive done
+        btstack_uart_slip_receive_active = 0;
+
+        // only print if read was involved
+        if (btstack_uart_slip_receive_track_start == 0){
+            log_info("frame receive time %u ms", btstack_run_loop_get_time_ms() - btstack_uart_slip_receive_start_time);
+            btstack_uart_slip_receive_start_time = 0;
+        }
+
+        (*frame_received)(frame_size);
+    }
+
+    return frame_size;
+}
+
+static void btstack_uart_slip_posix_process_read(btstack_data_source_t *ds) {
+
+    uint32_t start = btstack_run_loop_get_time_ms();
+
+    if (btstack_uart_slip_receive_track_start){
+        btstack_uart_slip_receive_track_start = 0;
+        btstack_uart_slip_receive_start_time = start;
+    }
+    
+    // read up to bytes_to_read data in
+    ssize_t bytes_read = read(ds->fd, btstack_uart_slip_receive_buffer, SLIP_RECEIVE_BUFFER_SIZE);
+
+    log_debug("requested %u bytes, got %d", SLIP_RECEIVE_BUFFER_SIZE, (int) bytes_read);
+    uint32_t end = btstack_run_loop_get_time_ms();
+    if (end - start > 10){
+        log_info("read took %u ms", end - start);
+    }
+    if (bytes_read < 0) return;
+    
+    btstack_uart_slip_receive_pos = 0;
+    btstack_uart_slip_receive_len = (uint16_t ) bytes_read;
+
+    btstack_uart_slip_posix_process_buffer();
+}
+
+// -----------------------------
+// SLIP ENCODING
+
+static void btstack_uart_slip_posix_encode_chunk_and_send(void){
+    uint16_t pos = 0;
+    while (btstack_slip_encoder_has_data() & (pos < SLIP_TX_CHUNK_LEN)) {
+        btstack_uart_slip_outgoing_buffer[pos++] = btstack_slip_encoder_get_byte();
+    }
+
+    // setup async write and start sending
+    log_debug("slip: send %d bytes", pos);
+    btstack_uart_slip_write_bytes_data = btstack_uart_slip_outgoing_buffer;
+    btstack_uart_slip_write_bytes_len  = pos;
+    btstack_run_loop_enable_data_source_callbacks(&transport_data_source, DATA_SOURCE_CALLBACK_WRITE);
+}
+
+static void btstack_uart_slip_posix_block_sent(void){
+    // check if more data to send
+    if (btstack_slip_encoder_has_data()){
+        btstack_uart_slip_posix_encode_chunk_and_send();
+        return;
+    }
+
+    // write done
+    btstack_uart_slip_write_active = 0;
+
+    // notify done
+    if (frame_sent){
+        frame_sent();
+    }
+}
+
+static void btstack_uart_slip_posix_send_frame(const uint8_t * frame, uint16_t frame_size){
+
+    // write started
+    btstack_uart_slip_write_active = 1;
+
+    // Prepare encoding of Header + Packet (+ DIC)
+    btstack_slip_encoder_start(frame, frame_size);
+
+    // Fill rest of chunk from packet and send
+    btstack_uart_slip_posix_encode_chunk_and_send();
+}
+
+// SLIP ENCODING
+// -----------------------------
+
+static void btstack_uart_slip_posix_receive_frame(uint8_t *buffer, uint16_t len){
+
+    // receive started
+    btstack_uart_slip_receive_active = 1;
+
+    log_debug("receive block, size %u", len);
+    btstack_uart_slip_receive_track_start = 1;
+
+    // setup SLIP decoder
+    btstack_slip_decoder_init(buffer, len);
+
+    // process bytes received in earlier read. might deliver packet, which in turn will call us again. 
+    // just make sure to exit right away
+    if (btstack_uart_slip_receive_len){
+        int frame_found = btstack_uart_slip_posix_process_buffer();
+        if (frame_found) return;
+    }
+
+    // no frame delivered, enable posix read
+    btstack_run_loop_enable_data_source_callbacks(&transport_data_source, DATA_SOURCE_CALLBACK_READ);
+}
+
+
+
+static void btstack_uart_slip_posix_set_frame_received( void (*block_handler)(uint16_t frame_size)){
+    frame_received = block_handler;
+}
+
+static void btstack_uart_slip_posix_set_frame_sent( void (*block_handler)(void)){
+    frame_sent = block_handler;
+}
+
+// SLIP Implementation End
+
+// dispatch into block or SLIP code
+static void hci_uart_posix_process(btstack_data_source_t *ds, btstack_data_source_callback_type_t callback_type) {
+    if (ds->fd < 0) return;
+    switch (callback_type){
+        case DATA_SOURCE_CALLBACK_READ:
+            if (btstack_uart_slip_receive_active){
+                btstack_uart_slip_posix_process_read(ds);
+            } else {
+                btstack_uart_block_posix_process_read(ds);
+            }
+            break;
+        case DATA_SOURCE_CALLBACK_WRITE:
+            if (btstack_uart_slip_write_active){
+                btstack_uart_slip_posix_process_write(ds);
+            } else {
+                btstack_uart_block_posix_process_write(ds);
+            }
+            break;
+        default:
+            break;
+    }
 }
 
 // static void btstack_uart_posix_set_sleep(uint8_t sleep){
@@ -405,19 +624,23 @@ static void btstack_uart_posix_receive_block(uint8_t *buffer, uint16_t len){
 // }
 
 static const btstack_uart_t btstack_uart_posix = {
-    /* int  (*init)(hci_transport_config_uart_t * config); */         &btstack_uart_posix_init,
-    /* int  (*open)(void); */                                         &btstack_uart_posix_open,
-    /* int  (*close)(void); */                                        &btstack_uart_posix_close_new,
-    /* void (*set_block_received)(void (*handler)(void)); */          &btstack_uart_posix_set_block_received,
-    /* void (*set_block_sent)(void (*handler)(void)); */              &btstack_uart_posix_set_block_sent,
-    /* int  (*set_baudrate)(uint32_t baudrate); */                    &btstack_uart_posix_set_baudrate,
-    /* int  (*set_parity)(int parity); */                             &btstack_uart_posix_set_parity,
-    /* int  (*set_flowcontrol)(int flowcontrol); */                   &btstack_uart_posix_set_flowcontrol,
-    /* void (*receive_block)(uint8_t *buffer, uint16_t len); */       &btstack_uart_posix_receive_block,
-    /* void (*send_block)(const uint8_t *buffer, uint16_t length); */ &btstack_uart_posix_send_block,
-    /* int (*get_supported_sleep_modes); */                           NULL,
-    /* void (*set_sleep)(btstack_uart_sleep_mode_t sleep_mode); */    NULL,
-    /* void (*set_wakeup_handler)(void (*handler)(void)); */          NULL,
+    /* int  (*init)(hci_transport_config_uart_t * config); */              &btstack_uart_posix_init,
+    /* int  (*open)(void); */                                              &btstack_uart_posix_open,
+    /* int  (*close)(void); */                                             &btstack_uart_posix_close_new,
+    /* void (*set_block_received)(void (*handler)(void)); */               &btstack_uart_posix_set_block_received,
+    /* void (*set_block_sent)(void (*handler)(void)); */                   &btstack_uart_posix_set_block_sent,
+    /* void (*set_frame_received)(void (*handler)(uint16_t frame_size); */ &btstack_uart_slip_posix_set_frame_received,
+    /* void (*set_fraae_sent)(void (*handler)(void)); */                   &btstack_uart_slip_posix_set_frame_sent,
+    /* int  (*set_baudrate)(uint32_t baudrate); */                         &btstack_uart_posix_set_baudrate,
+    /* int  (*set_parity)(int parity); */                                  &btstack_uart_posix_set_parity,
+    /* int  (*set_flowcontrol)(int flowcontrol); */                        &btstack_uart_posix_set_flowcontrol,
+    /* void (*receive_block)(uint8_t *buffer, uint16_t len); */            &btstack_uart_posix_receive_block,
+    /* void (*send_block)(const uint8_t *buffer, uint16_t length); */      &btstack_uart_posix_send_block,
+    /* void (*receive_block)(uint8_t *buffer, uint16_t len); */            &btstack_uart_slip_posix_receive_frame,
+    /* void (*send_block)(const uint8_t *buffer, uint16_t length); */      &btstack_uart_slip_posix_send_frame,    
+    /* int (*get_supported_sleep_modes); */                                NULL,
+    /* void (*set_sleep)(btstack_uart_sleep_mode_t sleep_mode); */         NULL,
+    /* void (*set_wakeup_handler)(void (*handler)(void)); */               NULL,
 };
 
 const btstack_uart_t * btstack_uart_posix_instance(void){
