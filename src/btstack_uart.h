@@ -46,6 +46,7 @@
 #define __BTSTACK_UART_H
 
 #include <stdint.h>
+#include "btstack_config.h"
 
 typedef struct {
     uint32_t   baudrate;
