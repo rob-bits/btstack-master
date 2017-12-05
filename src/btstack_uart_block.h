@@ -38,8 +38,7 @@
 /*
  *  btstack_uart_block.h
  *
- *  Common code to access serial port via asynchronous block read/write commands
- *
+ *  Compatibility layer for ports that use btstack_uart_block_t 
  */
 
 #ifndef __BTSTACK_UART_BLOCK_H
@@ -49,5 +48,16 @@
 #include "btstack_uart.h"
 
 typedef btstack_uart_t btstack_uart_block_t;
-
+inline const btstack_uart_block_t * btstack_uart_block_posix_instance(void){
+    return btstack_uart_posix_instance();
+}
+inline const btstack_uart_block_t * btstack_uart_block_windows_instance(void){
+    return btstack_uart_windows_instance();
+}
+inline const btstack_uart_block_t * btstack_uart_block_embedded_instance(void){
+    return btstack_uart_embedded_instance();
+}
+inline const btstack_uart_block_t * btstack_uart_block_freertos_instance(void){
+    return btstack_uart_freertos_instance();
+}
 #endif
