@@ -118,8 +118,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
     }
 }
 
-static const btstack_uart_t       * uart_driver;
-static const btstack_uart_slip_t  * uart_slip_driver;
+static const btstack_uart_t     * uart_driver;
 static void phase2(int status);
 int main(int argc, const char * argv[]){
 
@@ -143,15 +142,13 @@ int main(int argc, const char * argv[]){
     btstack_chipset_bcm_set_device_name("BCM43430A1");
 
     // setup UART drivers
-    uart_block_driver = btstack_uart_posix_instance();
-    uart_slip_driver  = btstack_uart_slip_posix_instance();
+    uart_driver = btstack_uart_posix_instance();
 
     // extract UART config from transport config
     uart_config.baudrate    = transport_config.baudrate_init;
     uart_config.flowcontrol = transport_config.flowcontrol;
     uart_config.device_name = transport_config.device_name;
-    uart_block_driver->init(&uart_config);
-    // uart_slip_driver->init(&uart_config);
+    uart_driver->init(&uart_config);
 
     // handle CTRL-c
     signal(SIGINT, sigint_handler);
@@ -163,7 +160,7 @@ int main(int argc, const char * argv[]){
     printf("Phase 1: Download firmware\n");
 
     // phase #2 start main app
-    btstack_chipset_bcm_download_firmware(uart_block_driver, transport_config.baudrate_main, &phase2);
+    btstack_chipset_bcm_download_firmware(uart_driver, transport_config.baudrate_main, &phase2);
 
     // go
     btstack_run_loop_execute();    
@@ -172,16 +169,15 @@ int main(int argc, const char * argv[]){
 
 static void phase2(int status){
 
+    // close uart driver
+    uart_driver->close();
+
     if (status){
         printf("Download firmware failed\n");
         return;
     }
-
-    // close uart block driver
-    uart_block_driver->close();
-
     // init HCI
-    const hci_transport_t * transport = hci_transport_h5_instance(uart_slip_driver);
+    const hci_transport_t * transport = hci_transport_h5_instance(uart_driver);
     const btstack_link_key_db_t * link_key_db = btstack_link_key_db_fs_instance();
     hci_init(transport, (void*) &transport_config);
     hci_set_link_key_db(link_key_db);
