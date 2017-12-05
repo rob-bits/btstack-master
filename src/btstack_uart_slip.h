@@ -73,7 +73,7 @@ typedef struct {
     /**
      * set callback for sent. NULL disables callback
      */
-    void (*set_block_sent)(void (*block_handler)(void));
+    void (*set_frame_sent)(void (*block_handler)(void));
 
     /**
      * set baudrate

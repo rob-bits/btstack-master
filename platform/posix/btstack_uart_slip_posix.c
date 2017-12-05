@@ -449,24 +449,24 @@ static void btstack_uart_slip_posix_set_frame_received( void (*block_handler)(ui
     frame_received = block_handler;
 }
 
-static void btstack_uart_slip_posix_set_block_sent( void (*block_handler)(void)){
+static void btstack_uart_slip_posix_set_frame_sent( void (*block_handler)(void)){
     frame_sent = block_handler;
 }
 
 static const btstack_uart_slip_t btstack_uart_slip_posix = {
-    /* int  (*init)(hci_transport_config_uart_t * config); */             &btstack_uart_slip_posix_init,
-    /* int  (*open)(void); */                                             &btstack_uart_slip_posix_open,
-    /* int  (*close)(void); */                                            &btstack_uart_slip_posix_close,
-    /* void (*set_frae_received)(void (*handler)(uint16_t frame_size); */ &btstack_uart_slip_posix_set_frame_received,
-    /* void (*set_block_sent)(void (*handler)(void)); */                  &btstack_uart_slip_posix_set_block_sent,
-    /* int  (*set_baudrate)(uint32_t baudrate); */                        &btstack_uart_slip_posix_set_baudrate,
-    /* int  (*set_parity)(int parity); */                                 &btstack_uart_slip_posix_set_parity,
-    /* int  (*set_flowcontrol)(int flowcontrol); */                       &btstack_uart_slip_posix_set_flowcontrol,
-    /* void (*receive_block)(uint8_t *buffer, uint16_t len); */           &btstack_uart_slip_posix_receive_frame,
-    /* void (*send_block)(const uint8_t *buffer, uint16_t length); */     &btstack_uart_slip_posix_send_frame,    
-    /* int (*get_supported_sleep_modes); */                               NULL,
-    /* void (*set_sleep)(btstack_uart_sleep_mode_t sleep_mode); */        NULL,
-    /* void (*set_wakeup_handler)(void (*handler)(void)); */              NULL,
+    /* int  (*init)(hci_transport_config_uart_t * config); */              &btstack_uart_slip_posix_init,
+    /* int  (*open)(void); */                                              &btstack_uart_slip_posix_open,
+    /* int  (*close)(void); */                                             &btstack_uart_slip_posix_close,
+    /* void (*set_frame_received)(void (*handler)(uint16_t frame_size); */ &btstack_uart_slip_posix_set_frame_received,
+    /* void (*set_fraae_sent)(void (*handler)(void)); */                   &btstack_uart_slip_posix_set_frame_sent,
+    /* int  (*set_baudrate)(uint32_t baudrate); */                         &btstack_uart_slip_posix_set_baudrate,
+    /* int  (*set_parity)(int parity); */                                  &btstack_uart_slip_posix_set_parity,
+    /* int  (*set_flowcontrol)(int flowcontrol); */                        &btstack_uart_slip_posix_set_flowcontrol,
+    /* void (*receive_block)(uint8_t *buffer, uint16_t len); */            &btstack_uart_slip_posix_receive_frame,
+    /* void (*send_block)(const uint8_t *buffer, uint16_t length); */      &btstack_uart_slip_posix_send_frame,    
+    /* int (*get_supported_sleep_modes); */                                NULL,
+    /* void (*set_sleep)(btstack_uart_sleep_mode_t sleep_mode); */         NULL,
+    /* void (*set_wakeup_handler)(void (*handler)(void)); */               NULL,
 };
 
 const btstack_uart_slip_t * btstack_uart_slip_posix_instance(void){

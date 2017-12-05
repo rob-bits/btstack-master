@@ -749,7 +749,7 @@ static void hci_transport_h5_init(const void * transport_config){
     // setup UART driver
     btstack_uart->init(&uart_config);
     btstack_uart->set_frame_received(&hci_transport_h5_frame_received);
-    btstack_uart->set_block_sent(&hci_transport_h5_frame_sent);
+    btstack_uart->set_frame_sent(&hci_transport_h5_frame_sent);
 }
 
 static int hci_transport_h5_open(void){
