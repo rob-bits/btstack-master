@@ -148,7 +148,7 @@ static  void (*packet_handler)(uint8_t packet_type, uint8_t *packet, uint16_t si
 static int hci_transport_link_actions;
 
 // UART Driver + Config
-static const btstack_uart_slip_t * btstack_uart;
+static const btstack_uart_t * btstack_uart;
 static btstack_uart_config_t uart_config;
 static btstack_uart_sleep_mode_t btstack_uart_sleep_mode;
 static int hci_transport_bcsp_mode;
@@ -876,7 +876,7 @@ static const hci_transport_t hci_transport_h5 = {
 };
 
 // configure and return h5 singleton
-const hci_transport_t * hci_transport_h5_instance(const btstack_uart_slip_t * uart_driver) {
+const hci_transport_t * hci_transport_h5_instance(const btstack_uart_t * uart_driver) {
     btstack_uart = uart_driver;
     return &hci_transport_h5;
 }

@@ -10,7 +10,7 @@ CORE += \
 	btstack_chipset_tc3566x.c \
 	btstack_link_key_db_fs.c \
 	btstack_run_loop_posix.c \
-	btstack_uart_slip_posix.c \
+	btstack_uart_posix.c \
 	btstack_slip.c \
 	hci_transport_h5.c \
 	le_device_db_fs.c \
