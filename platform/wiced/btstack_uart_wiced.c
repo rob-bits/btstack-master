@@ -99,6 +99,22 @@ static const btstack_uart_config_t * uart_config;
 static void (*block_sent)(void);
 static void (*block_received)(void);
 
+// workaround for API change in WICED
+static uint32_t btstack_uart_wiced_read_bytes(uint8_t * buffer, uint32_t bytes_to_read, uint32_t timeout){
+    uint32_t bytes = bytes_to_read;
+#ifdef WICED_UART_READ_DOES_NOT_RETURN_BYTES_READ
+    // older API passes in number of bytes to read (checked in 3.3.1 and 3.4.0)
+    if (timeout != WICED_NEVER_TIMEOUT){
+        log_error("btstack_uart_wiced_read_bytes called with timeout != WICED_NEVER_TIMEOUT -> not supported in older WICED Versions");
+    }
+    platform_uart_receive_bytes(wiced_bt_uart_driver, buffer, bytes_to_read, timeout);
+#else
+    // newer API uses pointer to return number of read bytes
+    platform_uart_receive_bytes(wiced_bt_uart_driver, buffer, &bytes, timeout);
+#endif
+    return bytes;
+}
+
 // executed on main run loop
 static wiced_result_t btstack_uart_wiced_main_notify_block_send(void *arg){
     if (block_sent){
@@ -139,15 +155,7 @@ static wiced_result_t btstack_uart_wiced_rx_worker_receive_block(void * arg){
         platform_gpio_output_low(wiced_bt_uart_pins[WICED_BT_PIN_UART_RTS]);
     }
 
-#ifdef WICED_UART_READ_DOES_NOT_RETURN_BYTES_READ
-    // older API passes in number of bytes to read (checked in 3.3.1 and 3.4.0)
-    platform_uart_receive_bytes(wiced_bt_uart_driver, rx_worker_read_buffer, rx_worker_read_size, WICED_NEVER_TIMEOUT);
-#else
-    // newer API uses pointer to return number of read bytes
-    uint32_t bytes = rx_worker_read_size;
-    platform_uart_receive_bytes(wiced_bt_uart_driver, rx_worker_read_buffer, &bytes, WICED_NEVER_TIMEOUT);
-    // assumption: bytes = bytes_to_read as timeout is never    
-#endif
+    btstack_uart_wiced_read_bytes(rx_worker_read_buffer, rx_worker_read_size, WICED_NEVER_TIMEOUT);
 
     if (btstack_flow_control_mode == BTSTACK_FLOW_CONTROL_MANUAL && wiced_bt_uart_pins[WICED_BT_PIN_UART_CTS]){
         platform_gpio_output_high(wiced_bt_uart_pins[WICED_BT_PIN_UART_RTS]);
@@ -160,6 +168,12 @@ static wiced_result_t btstack_uart_wiced_rx_worker_receive_block(void * arg){
 
 static int btstack_uart_wiced_init(const btstack_uart_config_t * config){
     uart_config = config;
+
+#ifdef ENABLE_H5
+    log_info("init / h5 supported");
+#else
+    log_info("init / h5 not supported");
+#endif
 
     // determine flow control mode based on hardware config and uart config
     if (uart_config->flowcontrol){
@@ -175,6 +189,8 @@ static int btstack_uart_wiced_init(const btstack_uart_config_t * config){
 }
 
 static int btstack_uart_wiced_open(void){
+
+    log_info("open");
 
     // UART config
     wiced_uart_config_t wiced_uart_config =
@@ -341,11 +357,12 @@ static int btstack_uart_wiced_set_baudrate(uint32_t baudrate){
 }
 
 static int btstack_uart_wiced_set_parity(int parity){
-    log_error("btstack_uart_wiced_set_parity not implemented");
+    log_error("set_parity(%u) not implemented", parity);
     return 0;
 }
 
 static void btstack_uart_wiced_send_block(const uint8_t *buffer, uint16_t length){
+    // log_info("send block, size %u", length);
     // store in request
     tx_worker_data_buffer = buffer;
     tx_worker_data_size = length;
@@ -353,11 +370,175 @@ static void btstack_uart_wiced_send_block(const uint8_t *buffer, uint16_t length
 }
 
 static void btstack_uart_wiced_receive_block(uint8_t *buffer, uint16_t len){
+    // log_info("receive block, size %u", len);
     rx_worker_read_buffer = buffer;
     rx_worker_read_size   = len;
     wiced_rtos_send_asynchronous_event(&rx_worker_thread, &btstack_uart_wiced_rx_worker_receive_block, NULL);    
 }
 
+
+// SLIP Implementation Start
+#ifdef ENABLE_H5
+
+#include "btstack_slip.h"
+
+// max size of outgoing SLIP chunks 
+#define SLIP_TX_CHUNK_LEN   128
+
+#define SLIP_RECEIVE_BUFFER_SIZE 128
+
+// encoded SLIP chunk
+static uint8_t   btstack_uart_slip_outgoing_buffer[SLIP_TX_CHUNK_LEN+1];
+
+// block read
+static uint8_t         btstack_uart_slip_receive_buffer[SLIP_RECEIVE_BUFFER_SIZE];
+static uint16_t        btstack_uart_slip_receive_pos;
+static uint16_t        btstack_uart_slip_receive_len;
+static uint16_t        btstack_uart_slip_receive_frame_size;
+
+// callbacks
+static void (*frame_sent)(void);
+static void (*frame_received)(uint16_t frame_size);
+
+// -----------------------------
+// SLIP DECODING
+
+// executed on main run loop
+static wiced_result_t btstack_uart_wiced_main_notify_frame_received(void *arg){
+    if (frame_received){
+        frame_received(btstack_uart_slip_receive_frame_size);
+    }
+    return WICED_SUCCESS;
+}
+
+// @returns frame size if complete frame decoded and delivered
+static uint16_t btstack_uart_wiced_process_buffer(void){
+    // log_debug("process buffer: pos %u, len %u", btstack_uart_slip_receive_pos, btstack_uart_slip_receive_len);
+
+    uint16_t frame_size = 0;
+    while (btstack_uart_slip_receive_pos < btstack_uart_slip_receive_len && frame_size == 0){
+        btstack_slip_decoder_process(btstack_uart_slip_receive_buffer[btstack_uart_slip_receive_pos++]);
+        frame_size = btstack_slip_decoder_frame_size();
+    }
+
+#if 0
+    // reset buffer if fully processed
+    if (btstack_uart_slip_receive_pos == btstack_uart_slip_receive_len ){
+        btstack_uart_slip_receive_len = 0;
+        btstack_uart_slip_receive_pos = 0;
+    }
+#endif
+
+    return frame_size;
+}
+
+// executed on tx worker thread
+static wiced_result_t btstack_uart_wiced_rx_worker_receive_frame(void * arg){
+    
+    // manual flow control, clear RTS
+    if (btstack_flow_control_mode == BTSTACK_FLOW_CONTROL_MANUAL && wiced_bt_uart_pins[WICED_BT_PIN_UART_CTS]){
+        platform_gpio_output_low(wiced_bt_uart_pins[WICED_BT_PIN_UART_RTS]);
+    }
+
+    // first time, we wait for a single byte to avoid polling until frame has started
+    btstack_uart_wiced_read_bytes(btstack_uart_slip_receive_buffer, 1, WICED_NEVER_TIMEOUT);
+    btstack_slip_decoder_process(btstack_uart_slip_receive_buffer[0]);
+
+    // however, that's certainly not enough to receive a complete SLIP frame, now, try reading with low timeout
+    uint16_t frame_size = 0;
+    while (!frame_size){
+        btstack_uart_slip_receive_pos = 0;
+        btstack_uart_slip_receive_len = btstack_uart_wiced_read_bytes(btstack_uart_slip_receive_buffer, 1, WICED_NEVER_TIMEOUT);
+        frame_size = btstack_uart_wiced_process_buffer();
+    }
+
+    // raise RTS again
+    if (btstack_flow_control_mode == BTSTACK_FLOW_CONTROL_MANUAL && wiced_bt_uart_pins[WICED_BT_PIN_UART_CTS]){
+        platform_gpio_output_high(wiced_bt_uart_pins[WICED_BT_PIN_UART_RTS]);
+    }
+
+    // let transport know
+    btstack_uart_slip_receive_frame_size = frame_size;
+    btstack_run_loop_wiced_execute_code_on_main_thread(&btstack_uart_wiced_main_notify_frame_received, NULL);
+    return WICED_SUCCESS;
+}
+
+static void btstack_uart_wiced_receive_frame(uint8_t *buffer, uint16_t len){
+    log_debug("receive frame, size %u", len);
+    // setup SLIP decoder
+    btstack_slip_decoder_init(buffer, len);
+    // process bytes received in earlier read. might deliver packet, which in turn will call us again. 
+    // just make sure to exit right away
+    if (btstack_uart_slip_receive_len){
+        int frame_size = btstack_uart_wiced_process_buffer();
+        if (frame_size) {
+            if (frame_received) {
+                (*frame_received)(frame_size);
+            }
+            return;
+        }
+    }
+    // receive frame on worker thread
+    wiced_rtos_send_asynchronous_event(&rx_worker_thread, &btstack_uart_wiced_rx_worker_receive_frame, NULL);    
+}
+
+// -----------------------------
+// SLIP ENCODING
+
+// executed on main run loop
+static wiced_result_t btstack_uart_wiced_main_notify_frame_sent(void *arg){
+    if (frame_sent){
+        frame_sent();
+    }
+    return WICED_SUCCESS;
+}
+
+// executed on tx worker thread
+static wiced_result_t btstack_uart_wiced_tx_worker_send_frame(void * arg){
+    while (btstack_slip_encoder_has_data()){
+        // encode chunk
+        uint16_t pos = 0;
+        while (btstack_slip_encoder_has_data() & (pos < SLIP_TX_CHUNK_LEN)) {
+            btstack_uart_slip_outgoing_buffer[pos++] = btstack_slip_encoder_get_byte();
+        }
+#if 0
+        // wait for CTS to become low in manual flow control mode
+        if (btstack_flow_control_mode == BTSTACK_FLOW_CONTROL_MANUAL && wiced_bt_uart_pins[WICED_BT_PIN_UART_CTS]){
+            while (platform_gpio_input_get(wiced_bt_uart_pins[WICED_BT_PIN_UART_CTS]) == WICED_TRUE){
+                wiced_rtos_delay_milliseconds(10);
+            }        
+        }
+#endif
+        // blocking send
+        platform_uart_transmit_bytes(wiced_bt_uart_driver, btstack_uart_slip_outgoing_buffer, pos);
+    }
+
+    // let transport know
+    btstack_run_loop_wiced_execute_code_on_main_thread(&btstack_uart_wiced_main_notify_frame_sent, NULL);
+    return WICED_SUCCESS;
+}
+
+static void btstack_uart_wiced_send_frame(const uint8_t * frame, uint16_t frame_size){
+    log_debug("send frame, size %u", frame_size);
+    // Prepare encoding of frame
+    btstack_slip_encoder_start(frame, frame_size);
+    // send on tx worker
+    wiced_rtos_send_asynchronous_event(&tx_worker_thread, &btstack_uart_wiced_tx_worker_send_frame, NULL);    
+}
+
+// SLIP ENCODING
+// -----------------------------
+
+static void btstack_uart_wiced_set_frame_received( void (*block_handler)(uint16_t frame_size)){
+    frame_received = block_handler;
+}
+
+static void btstack_uart_wiced_set_frame_sent( void (*block_handler)(void)){
+    frame_sent = block_handler;
+}
+
+// SLIP Implementation End
+#endif
 
 // static void btstack_uart_wiced_set_sleep(uint8_t sleep){
 // }
@@ -365,19 +546,27 @@ static void btstack_uart_wiced_receive_block(uint8_t *buffer, uint16_t len){
 // }
 
 static const btstack_uart_t btstack_uart_wiced = {
-    /* int  (*init)(hci_transport_config_uart_t * config); */         &btstack_uart_wiced_init,
-    /* int  (*open)(void); */                                         &btstack_uart_wiced_open,
-    /* int  (*close)(void); */                                        &btstack_uart_wiced_close,
-    /* void (*set_block_received)(void (*handler)(void)); */          &btstack_uart_wiced_set_block_received,
-    /* void (*set_block_sent)(void (*handler)(void)); */              &btstack_uart_wiced_set_block_sent,
-    /* int  (*set_baudrate)(uint32_t baudrate); */                    &btstack_uart_wiced_set_baudrate,
-    /* int  (*set_parity)(int parity); */                             &btstack_uart_wiced_set_parity,
-    /* int  (*set_flowcontrol)(int flowcontrol); */                   NULL,
-    /* void (*receive_block)(uint8_t *buffer, uint16_t len); */       &btstack_uart_wiced_receive_block,
-    /* void (*send_block)(const uint8_t *buffer, uint16_t length); */ &btstack_uart_wiced_send_block,
-    /* int (*get_supported_sleep_modes); */                           NULL,
-    /* void (*set_sleep)(btstack_uart_sleep_mode_t sleep_mode); */    NULL,
-    /* void (*set_wakeup_handler)(void (*handler)(void)); */          NULL,
+    /* int  (*init)(hci_transport_config_uart_t * config); */              &btstack_uart_wiced_init,
+    /* int  (*open)(void); */                                              &btstack_uart_wiced_open,
+    /* int  (*close)(void); */                                             &btstack_uart_wiced_close,
+    /* void (*set_block_received)(void (*handler)(void)); */               &btstack_uart_wiced_set_block_received,
+    /* void (*set_block_sent)(void (*handler)(void)); */                   &btstack_uart_wiced_set_block_sent,
+#ifdef ENABLE_H5
+    /* void (*set_frame_received)(void (*handler)(uint16_t frame_size); */ &btstack_uart_wiced_set_frame_received,
+    /* void (*set_fraae_sent)(void (*handler)(void)); */                   &btstack_uart_wiced_set_frame_sent,
+#endif
+    /* int  (*set_baudrate)(uint32_t baudrate); */                         &btstack_uart_wiced_set_baudrate,
+    /* int  (*set_parity)(int parity); */                                  &btstack_uart_wiced_set_parity,
+    /* int  (*set_flowcontrol)(int flowcontrol); */                        NULL,
+    /* void (*receive_block)(uint8_t *buffer, uint16_t len); */            &btstack_uart_wiced_receive_block,
+    /* void (*send_block)(const uint8_t *buffer, uint16_t length); */      &btstack_uart_wiced_send_block,
+#ifdef ENABLE_H5
+    /* void (*receive_block)(uint8_t *buffer, uint16_t len); */            &btstack_uart_wiced_receive_frame,
+    /* void (*send_block)(const uint8_t *buffer, uint16_t length); */      &btstack_uart_wiced_send_frame,    
+#endif
+    /* int (*get_supported_sleep_modes); */                                NULL,
+    /* void (*set_sleep)(btstack_uart_sleep_mode_t sleep_mode); */         NULL,
+    /* void (*set_wakeup_handler)(void (*handler)(void)); */               NULL,
 };
 
 const btstack_uart_t * btstack_uart_wiced_instance(void){
