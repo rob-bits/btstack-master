@@ -76,8 +76,8 @@ static btstack_data_source_t transport_data_source;
 static uint8_t   btstack_uart_slip_outgoing_buffer[SLIP_TX_CHUNK_LEN+1];
 
 // block write
-static int             write_bytes_len;
-static const uint8_t * write_bytes_data;
+static int             btstack_uart_slip_write_bytes_len;
+static const uint8_t * btstack_uart_slip_write_bytes_data;
 
 // block read
 static uint8_t   btstack_uart_slip_receive_buffer[SLIP_RECEIVE_BUFFER_SIZE];
@@ -92,19 +92,14 @@ static void (*frame_received)(uint16_t frame_size);
 
 static void btstack_uart_slip_posix_block_sent(void);
 
-static int btstack_uart_slip_posix_init(const btstack_uart_config_t * config){
-    uart_config = config;
-    return 0;
-}
-
 static void btstack_uart_slip_posix_process_write(btstack_data_source_t *ds) {
     
-    if (write_bytes_len == 0) return;
+    if (btstack_uart_slip_write_bytes_len == 0) return;
 
     uint32_t start = btstack_run_loop_get_time_ms();
 
-    // write up to write_bytes_len to fd
-    int bytes_written = (int) write(ds->fd, write_bytes_data, write_bytes_len);
+    // write up to btstack_uart_slip_write_bytes_len to fd
+    int bytes_written = (int) write(ds->fd, btstack_uart_slip_write_bytes_data, btstack_uart_slip_write_bytes_len);
     if (bytes_written < 0) {
         btstack_run_loop_enable_data_source_callbacks(ds, DATA_SOURCE_CALLBACK_WRITE);
         return;
@@ -115,10 +110,10 @@ static void btstack_uart_slip_posix_process_write(btstack_data_source_t *ds) {
         log_info("write took %u ms", end - start);
     }
 
-    write_bytes_data += bytes_written;
-    write_bytes_len  -= bytes_written;
+    btstack_uart_slip_write_bytes_data += bytes_written;
+    btstack_uart_slip_write_bytes_len  -= bytes_written;
 
-    if (write_bytes_len){
+    if (btstack_uart_slip_write_bytes_len){
         btstack_run_loop_enable_data_source_callbacks(ds, DATA_SOURCE_CALLBACK_WRITE);
         return;
     }
@@ -183,7 +178,7 @@ static void btstack_uart_slip_posix_process_read(btstack_data_source_t *ds) {
     btstack_uart_slip_posix_process_buffer();
 }
 
-static void hci_transport_h5_process(btstack_data_source_t *ds, btstack_data_source_callback_type_t callback_type) {
+static void btstack_uart_slip_posix_process(btstack_data_source_t *ds, btstack_data_source_callback_type_t callback_type) {
     if (ds->fd < 0) return;
     switch (callback_type){
         case DATA_SOURCE_CALLBACK_READ:
@@ -208,8 +203,8 @@ static void btstack_uart_slip_posix_encode_chunk_and_send(void){
 
     // setup async write and start sending
     log_debug("slip: send %d bytes", pos);
-    write_bytes_data = btstack_uart_slip_outgoing_buffer;
-    write_bytes_len  = pos;
+    btstack_uart_slip_write_bytes_data = btstack_uart_slip_outgoing_buffer;
+    btstack_uart_slip_write_bytes_len  = pos;
     btstack_run_loop_enable_data_source_callbacks(&transport_data_source, DATA_SOURCE_CALLBACK_WRITE);
 }
 
@@ -254,6 +249,11 @@ static void btstack_uart_slip_posix_receive_frame(uint8_t *buffer, uint16_t len)
 
     // no frame delivered, enable posix read
     btstack_run_loop_enable_data_source_callbacks(&transport_data_source, DATA_SOURCE_CALLBACK_READ);
+}
+
+static int btstack_uart_slip_posix_init(const btstack_uart_config_t * config){
+    uart_config = config;
+    return 0;
 }
 
 static int btstack_uart_slip_posix_set_baudrate(uint32_t baudrate){
@@ -425,7 +425,7 @@ static int btstack_uart_slip_posix_open(void){
 
     // set up data_source
     btstack_run_loop_set_data_source_fd(&transport_data_source, fd);
-    btstack_run_loop_set_data_source_handler(&transport_data_source, &hci_transport_h5_process);
+    btstack_run_loop_set_data_source_handler(&transport_data_source, &btstack_uart_slip_posix_process);
     btstack_run_loop_add_data_source(&transport_data_source);
 
     // wait a bit - at least cheap FTDI232 clones might send the first byte out incorrectly
