@@ -124,7 +124,7 @@ void beacon_init(const uint8_t * device_uuid, uint16_t oob_information){
 }
 
 void beacon_register_for_unprovisioned_device_beacons(btstack_packet_handler_t packet_handler){
-    secure_network_beacon_handler = packet_handler;
+    unprovisioned_device_beacon_handler = packet_handler;
 }
 
 void beacon_register_for_secure_network_beacons(btstack_packet_handler_t packet_handler){
