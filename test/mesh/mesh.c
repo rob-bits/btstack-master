@@ -180,7 +180,9 @@ static void btstack_print_hex(const uint8_t * data, uint16_t len, char separator
     printf("\n");
 }
 
-static const uint8_t adv_prov_invite_pdu[] = { 0x00, 0x00 };
+static uint8_t adv_prov_invite_pdu[] = { 0x00, 0x00 };
+static uint8_t adv_prov_start_pdu[] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x00}; 
+static uint8_t adv_prov_public_key_pdu[65];
 
 static void stdin_process(char cmd){
     switch (cmd){
@@ -188,7 +190,7 @@ static void stdin_process(char cmd){
             adv_bearer_request_can_send_now_for_mesh_message();
             break;
         case '2':
-            printf("Creating link to devie uuid: ");
+            printf("Creating link to device uuid: ");
             printf_hexdump(pts_device_uuid, 16);
             pb_adv_create_link(pts_device_uuid);
             break;
@@ -199,6 +201,16 @@ static void stdin_process(char cmd){
         case '4':
             printf("Send invite with attention timer = 0\n");
             pb_adv_send_pdu(adv_prov_invite_pdu, sizeof(adv_prov_invite_pdu));
+            break;
+        case '5':
+            printf("Send Start\n");
+            pb_adv_send_pdu(adv_prov_start_pdu, sizeof(adv_prov_start_pdu));
+            break;
+        case '6':
+            printf("Send Public key\n");
+            adv_prov_public_key_pdu[0] = 0x03;
+            memset(&adv_prov_public_key_pdu[1], 0x5a, 64);
+            pb_adv_send_pdu(adv_prov_public_key_pdu, sizeof(adv_prov_public_key_pdu));
             break;
         default:
             printf("Command: '%c'\n", cmd);
