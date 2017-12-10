@@ -350,13 +350,15 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
             // generic provision PDU
             generic_provisioning_control = data[7];
             mesh_gpcf_format_t generic_provisioning_control_format = (mesh_gpcf_format_t) generic_provisioning_control & 3;
-            if (generic_provisioning_control_format != MESH_GPCF_PROV_BEARER_CONTROL){
-                // verify link id and link state
-                if (link_id    != pb_adv_link_id) break;
-                if (link_state != LINK_STATE_OPEN) break;
+
+            if (generic_provisioning_control_format == MESH_GPCF_PROV_BEARER_CONTROL){
+                pb_adv_handle_bearer_control(link_id, transaction_nr, &data[7], length-6);
+                break;
             }
-            // log_info("trans %x - ", transaction_nr);
-            // log_info_hexdump(&data[7], length-6);
+
+            // verify link id and link state
+            if (link_id    != pb_adv_link_id) break;
+            if (link_state != LINK_STATE_OPEN) break;
 
             switch (generic_provisioning_control_format){
                 case MESH_GPCF_TRANSACTION_START:
@@ -368,8 +370,7 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 case MESH_GPCF_TRANSACTION_ACK:
                     pb_adv_handle_transaction_ack(transaction_nr, &data[7], length-6);
                     break;
-                case MESH_GPCF_PROV_BEARER_CONTROL:
-                    pb_adv_handle_bearer_control(link_id, transaction_nr, &data[7], length-6);
+                default:
                     break;
             }
             break;
