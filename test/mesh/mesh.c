@@ -180,6 +180,8 @@ static void btstack_print_hex(const uint8_t * data, uint16_t len, char separator
     printf("\n");
 }
 
+static const uint8_t adv_prov_invite_pdu[] = { 0x00, 0x00 };
+
 static void stdin_process(char cmd){
     switch (cmd){
         case '1':
@@ -193,6 +195,10 @@ static void stdin_process(char cmd){
         case '3':
             printf("Close link\n");
             pb_adv_close_link(1, 0);
+            break;
+        case '4':
+            printf("Send invite with attention timer = 0\n");
+            pb_adv_send_pdu(adv_prov_invite_pdu, sizeof(adv_prov_invite_pdu));
             break;
         default:
             printf("Command: '%c'\n", cmd);
