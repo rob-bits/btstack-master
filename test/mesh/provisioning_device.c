@@ -98,6 +98,7 @@ static void mesh_k1(btstack_crypto_aes128_cmac_t * request, const uint8_t * n, u
 #define MESH_INPUT_OOB_NUMBER       0x04
 #define MESH_INPUT_OOB_STRING       0x08
 
+static uint8_t  prov_next_command;
 
 static uint8_t  prov_buffer_out[100];   // TODO: how large are prov messages?
 // ConfirmationInputs = ProvisioningInvitePDUValue || ProvisioningCapabilitiesPDUValue || ProvisioningStartPDUValue || PublicKeyProvisioner || PublicKeyDevice
@@ -140,6 +141,16 @@ static void provisioning_attention_timer_timeout(btstack_timer_source_t * ts){
 #ifdef ENABLE_ATTENTION_TIMER
     // TODO: check if provisioning complete, stop attention
 #endif
+}
+
+static void provisiong_error(uint8_t error_code){
+    // setup response 
+    prov_buffer_out[0] = MESH_PROV_FAILED;
+    prov_buffer_out[1] = error_code;
+    provisioning_timer_stop();
+    pb_adv_send_pdu(prov_buffer_out, 2);
+    // reset state
+    prov_next_command = MESH_PROV_INVITE;
 }
 
 static void provisioning_handle_invite(uint8_t *packet, uint16_t size){
@@ -191,6 +202,9 @@ static void provisioning_handle_invite(uint8_t *packet, uint16_t size){
     // send
     provisiong_timer_start();
     pb_adv_send_pdu(prov_buffer_out, 12);
+
+    // next state
+    prov_next_command = MESH_PROV_START;
 }
 
 static void provisioning_handle_start(uint8_t * packet, uint16_t size){
@@ -202,6 +216,9 @@ static void provisioning_handle_start(uint8_t * packet, uint16_t size){
 
     // output authentication action
     prov_authentication_action = packet[3];
+
+    // next state
+    prov_next_command = MESH_PROV_PUB_KEY;
 }
 
 static void provisioning_handle_public_key_dhkey(void * arg){
@@ -220,6 +237,9 @@ static void provisioning_handle_public_key_dhkey(void * arg){
     // send
     provisiong_timer_start();
     pb_adv_send_pdu(prov_buffer_out, 65);
+
+    // next state
+    prov_next_command = MESH_PROV_CONFIRM;
 }
 
 static void provisioning_handle_public_key(uint8_t *packet, uint16_t size){
@@ -282,6 +302,9 @@ static void provisioning_handle_confirmation_device_calculated(void * arg){
     // send
     provisiong_timer_start();
     pb_adv_send_pdu(prov_buffer_out, 17);
+
+    // next state
+    prov_next_command = MESH_PROV_RANDOM;
 }
 
 static void provisioning_handle_confirmation_random_device(void * arg){
@@ -409,6 +432,9 @@ static void provisioning_handle_data_device_key(void * arg){
     prov_buffer_out[0] = MESH_PROV_COMPLETE;
     provisioning_timer_stop();
     pb_adv_send_pdu(prov_buffer_out, 1);
+
+    // reset state
+    prov_next_command = MESH_PROV_INVITE;
 }
 
 static void provisioning_handle_data_ccm(void * arg){
@@ -455,6 +481,10 @@ static void provisioning_handle_pdu(uint8_t packet_type, uint16_t channel, uint8
         case HCI_EVENT_PACKET:
             break;
         case PROVISIONING_DATA_PACKET:
+            // check expected
+            if (packet[0] != prov_next_command){
+                provisiong_error(0x03); // unexpected command
+            }
             // dispatch msg
             switch (packet[0]){
                 case MESH_PROV_INVITE:
@@ -521,6 +551,9 @@ void provisioning_device_init(const uint8_t * device_uuid){
     pb_adv_init(device_uuid);
     pb_adv_register_packet_handler(&provisioning_handle_pdu);
 
-    // generaete public key
+    // 
+    prov_next_command = MESH_PROV_INVITE;
+
+    // generate public key
     btstack_crypto_ecc_p256_generate_key(&prov_ecc_p256_request, prov_ec_q, &prov_key_generated, NULL);
 }
