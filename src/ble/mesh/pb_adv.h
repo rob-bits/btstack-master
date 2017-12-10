@@ -63,6 +63,12 @@ void pb_adv_register_packet_handler(btstack_packet_handler_t packet_handler);
  */
 void pb_adv_send_pdu(const uint8_t * pdu, uint16_t size);
  
+/**
+ * Close Link
+ * @param pb_adv_cid
+ * @param reason 0 = success, 1 = timeout, 2 = fail
+ */
+void pb_adv_close_link(uint16_t pb_adv_cid, uint8_t reason); 
 
 #ifdef ENABLE_MESH_PROVISIONER
 /**
@@ -72,7 +78,6 @@ void pb_adv_send_pdu(const uint8_t * pdu, uint16_t size);
  */
 uint16_t pb_adv_create_link(const uint8_t * device_uuid);
 #endif
-
 
 #if defined __cplusplus
 }

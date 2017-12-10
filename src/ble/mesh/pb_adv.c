@@ -508,6 +508,24 @@ void pb_adv_send_pdu(const uint8_t * pdu, uint16_t size){
     pb_adv_run();
 }
 
+/**
+ * Close Link
+ * @param pb_adv_cid
+ */
+void pb_adv_close_link(uint16_t pb_adv_cid, uint8_t reason){
+    if (link_state != LINK_STATE_OPEN) return;
+
+    // build packet
+    uint8_t buffer[7];
+    big_endian_store_32(buffer, 0, pb_adv_link_id);
+    buffer[4] = 0;            // Transaction ID = 0
+    buffer[5] = (2 << 2) | 3; // Link Close | Provisioning Bearer Control
+    buffer[6] = reason;
+    adv_bearer_send_pb_adv(buffer, sizeof(buffer));
+    log_info("link close %08x", pb_adv_link_id);
+    printf("PB-ADV: Sending Link Close\n");
+}
+
 #ifdef ENABLE_MESH_PROVISIONER
 uint16_t pb_adv_create_link(const uint8_t * device_uuid){
     if (link_state != LINK_STATE_W4_OPEN) return 0;
