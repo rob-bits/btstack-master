@@ -77,6 +77,7 @@ typedef enum {
     LINK_STATE_W2_SEND_ACK,
     LINK_STATE_W4_ACK,
     LINK_STATE_OPEN,
+    LINK_STATE_CLOSING,
 } link_state_t;
 static link_state_t link_state;
 
@@ -92,6 +93,8 @@ static uint16_t pb_adv_cid = 1;
 
 // link state
 static uint32_t pb_adv_link_id;
+static uint8_t  pb_adv_link_close_reason;
+static uint8_t  pb_adv_link_close_countdown;
 
 // random delay for outgoing packets
 static uint32_t pb_adv_lfsr;
@@ -405,6 +408,24 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
         case HCI_EVENT_MESH_META:
             switch(packet[2]){
                 case MESH_SUBEVENT_CAN_SEND_NOW:
+                    if (link_state == LINK_STATE_CLOSING){
+                        log_info("link close %08x", pb_adv_link_id);
+                        printf("PB-ADV: Sending Link Close\n");
+                        // build packet
+                        uint8_t buffer[7];
+                        big_endian_store_32(buffer, 0, pb_adv_link_id);
+                        buffer[4] = 0;            // Transaction ID = 0
+                        buffer[5] = (2 << 2) | 3; // Link Close | Provisioning Bearer Control
+                        buffer[6] = pb_adv_link_close_reason;
+                        adv_bearer_send_pb_adv(buffer, sizeof(buffer));
+                        pb_adv_link_close_countdown--;
+                        if (pb_adv_link_close_countdown) {
+                            adv_bearer_request_can_send_now_for_pb_adv();  
+                        } else {
+                            link_state = LINK_STATE_W4_OPEN;
+                        }
+                        break;                        
+                    }
                     if (link_state == LINK_STATE_W2_SEND_ACK){
                         link_state = LINK_STATE_OPEN;
                         pb_adv_msg_out_transaction_nr = 0x80;
@@ -513,17 +534,20 @@ void pb_adv_send_pdu(const uint8_t * pdu, uint16_t size){
  * @param pb_adv_cid
  */
 void pb_adv_close_link(uint16_t pb_adv_cid, uint8_t reason){
-    if (link_state != LINK_STATE_OPEN) return;
-
-    // build packet
-    uint8_t buffer[7];
-    big_endian_store_32(buffer, 0, pb_adv_link_id);
-    buffer[4] = 0;            // Transaction ID = 0
-    buffer[5] = (2 << 2) | 3; // Link Close | Provisioning Bearer Control
-    buffer[6] = reason;
-    adv_bearer_send_pb_adv(buffer, sizeof(buffer));
-    log_info("link close %08x", pb_adv_link_id);
-    printf("PB-ADV: Sending Link Close\n");
+    switch (link_state){
+        case LINK_STATE_W4_ACK:
+        case LINK_STATE_OPEN:
+        case LINK_STATE_W2_SEND_ACK:
+            link_state = LINK_STATE_CLOSING;
+            pb_adv_link_close_countdown = 3;
+            pb_adv_link_close_reason = reason;
+            adv_bearer_request_can_send_now_for_pb_adv();
+            break;
+        case LINK_STATE_W4_OPEN:
+        case LINK_STATE_CLOSING:
+            // nothing to do
+            break;
+    }
 }
 
 #ifdef ENABLE_MESH_PROVISIONER
