@@ -106,6 +106,9 @@ void pb_adv_init(const uint8_t * device_uuid){
     printf("pb_adv_init\n");
 }
 
+void pb_adv_close_link(uint16_t pb_adv_cid, uint8_t reason){
+}
+
 /**
  * Register listener for Provisioning PDUs and MESH_PBV_ADV_SEND_COMPLETE
  */

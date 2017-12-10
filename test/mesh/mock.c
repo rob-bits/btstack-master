@@ -150,3 +150,14 @@ void hci_add_event_handler(btstack_packet_callback_registration_t * callback_han
 HCI_STATE hci_get_state(void){
 	return HCI_STATE_WORKING;
 }
+
+void btstack_run_loop_add_timer(btstack_timer_source_t * ts){
+}
+int btstack_run_loop_remove_timer(btstack_timer_source_t * ts){
+	return 0;
+}
+void btstack_run_loop_set_timer(btstack_timer_source_t * ts, uint32_t timeout){
+}
+void btstack_run_loop_set_timer_handler(btstack_timer_source_t * ts, void (*fn)(btstack_timer_source_t * ts)){
+}
+

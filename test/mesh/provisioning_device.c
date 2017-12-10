@@ -45,6 +45,8 @@
 #include "classic/rfcomm.h" // for crc8
 #include "btstack.h"
 
+#define PROVISIONING_PROTOCOL_TIMEOUT_MS 60000
+
 // remote ecc
 static uint8_t remote_ec_q[64];
 static uint8_t dhkey[32];
@@ -104,10 +106,41 @@ static uint8_t  prov_authentication_action;
 
 static uint8_t  prov_ec_q[64];
 
+#ifdef ENABLE_ATTENTION_TIMER
+static btstack_timer_source_t       prov_attention_timer;
+#endif
+
+static btstack_timer_source_t       prov_protocol_timer;
+
 static btstack_crypto_aes128_cmac_t prov_cmac_request;
 static btstack_crypto_random_t      prov_random_request;
 static btstack_crypto_ecc_p256_t    prov_ecc_p256_request;
 static btstack_crypto_ccm_t         prov_ccm_request;
+
+static void provisiong_timer_handler(btstack_timer_source_t * ts){
+    UNUSED(ts);
+    printf("provisiong_timer_handler!\n");
+    // TODO: use actual pb_adv_cid
+    pb_adv_close_link(1, 1);
+}
+
+static void provisiong_timer_start(void){
+    btstack_run_loop_remove_timer(&prov_protocol_timer);
+    btstack_run_loop_set_timer_handler(&prov_protocol_timer, &provisiong_timer_handler);
+    btstack_run_loop_set_timer(&prov_protocol_timer, PROVISIONING_PROTOCOL_TIMEOUT_MS);
+    btstack_run_loop_add_timer(&prov_protocol_timer);
+}
+
+static void provisioning_timer_stop(void){
+    btstack_run_loop_remove_timer(&prov_protocol_timer);
+}
+
+static void provisioning_attention_timer_timeout(btstack_timer_source_t * ts){
+    UNUSED(ts);
+#ifdef ENABLE_ATTENTION_TIMER
+    // TODO: check if provisioning complete, stop attention
+#endif
+}
 
 static void provisioning_handle_invite(uint8_t *packet, uint16_t size){
 
@@ -117,8 +150,12 @@ static void provisioning_handle_invite(uint8_t *packet, uint16_t size){
     memcpy(&prov_confirmation_inputs[0], packet, 1);
 
     // handle invite message
-
-    // TODO: store Attention Timer State
+#ifdef ENABLE_ATTENTION_TIMER
+    uint32_t attention_timer_timeout_ms = packet[0] * 1000;
+    btstack_run_loop_set_timer_handler(&prov_attention_timer, &provisioning_attention_timer_timeout);
+    btstack_run_loop_set_timer(&prov_attention_timer, attention_timer_timeout_ms);
+    btstack_run_loop_add_timer(&prov_attention_timer);
+#endif
 
     // setup response 
     prov_buffer_out[0] = MESH_PROV_CAPABILITIES;
@@ -152,6 +189,7 @@ static void provisioning_handle_invite(uint8_t *packet, uint16_t size){
     memcpy(&prov_confirmation_inputs[1], &prov_buffer_out[1], 11);
 
     // send
+    provisiong_timer_start();
     pb_adv_send_pdu(prov_buffer_out, 12);
 }
 
@@ -180,6 +218,7 @@ static void provisioning_handle_public_key_dhkey(void * arg){
     memcpy(&prov_confirmation_inputs[81], &prov_buffer_out[1], 64);
 
     // send
+    provisiong_timer_start();
     pb_adv_send_pdu(prov_buffer_out, 65);
 }
 
@@ -241,6 +280,7 @@ static void provisioning_handle_confirmation_device_calculated(void * arg){
     memcpy(&prov_buffer_out[1], confirmation_device, 16);
 
     // send
+    provisiong_timer_start();
     pb_adv_send_pdu(prov_buffer_out, 17);
 }
 
@@ -307,6 +347,9 @@ static void provisioning_send_random(void  *arg){
     // setup response 
     prov_buffer_out[0] = MESH_PROV_RANDOM;
     memcpy(&prov_buffer_out[1],  random_device, 16);
+
+    // send pdu
+    provisiong_timer_start();
     pb_adv_send_pdu(prov_buffer_out, 17);
 }
 
@@ -362,10 +405,10 @@ static void provisioning_handle_random(uint8_t *packet, uint16_t size){
 }
 
 static void provisioning_handle_data_device_key(void * arg){
-    // seend response
+    // send response
     prov_buffer_out[0] = MESH_PROV_COMPLETE;
+    provisioning_timer_stop();
     pb_adv_send_pdu(prov_buffer_out, 1);
-
 }
 
 static void provisioning_handle_data_ccm(void * arg){
