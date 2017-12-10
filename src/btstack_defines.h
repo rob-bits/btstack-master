@@ -1951,4 +1951,12 @@ typedef uint8_t sm_key_t[16];
  */
 #define MESH_PB_ADV_PDU_SENT                                                0x02 
 
+/**
+ * @format 114
+ * @param subevent_code
+ * @param status
+ * @param link_id
+ */
+#define MESH_PB_ADV_LINK_OPEN                                               0x03
+
 #endif

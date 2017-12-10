@@ -41,6 +41,7 @@
 
 #include <stdint.h>
 #include "btstack_defines.h"
+#include "btstack_config.h"
 
 #if defined __cplusplus
 extern "C" {
@@ -62,6 +63,17 @@ void pb_adv_register_packet_handler(btstack_packet_handler_t packet_handler);
  */
 void pb_adv_send_pdu(const uint8_t * pdu, uint16_t size);
  
+
+#ifdef ENABLE_MESH_PROVISIONER
+/**
+ * Setup Link with unprovisioned device
+ * @param DeviceUUID
+ * @returns pb_adv_cid or 0
+ */
+uint16_t pb_adv_create_link(const uint8_t * device_uuid);
+#endif
+
+
 #if defined __cplusplus
 }
 #endif
