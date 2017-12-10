@@ -190,6 +190,10 @@ static void stdin_process(char cmd){
             printf_hexdump(pts_device_uuid, 16);
             pb_adv_create_link(pts_device_uuid);
             break;
+        case '3':
+            printf("Close link\n");
+            pb_adv_close_link(1, 0);
+            break;
         default:
             printf("Command: '%c'\n", cmd);
             break;
