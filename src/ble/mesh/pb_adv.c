@@ -47,6 +47,8 @@
 #include "btstack_debug.h"
 #include "btstack_event.h"
 
+#define PB_ADV_LINK_OPEN_RETRANSMIT_MS 1000
+
 static void pb_adv_run(void);
 
 /* taps: 32 31 29 1; characteristic polynomial: x^32 + x^31 + x^29 + x + 1 */
@@ -81,9 +83,10 @@ typedef enum {
 } link_state_t;
 static link_state_t link_state;
 
-static const uint8_t * pb_adv_device_uuid;
+static const uint8_t * pb_adv_own_device_uuid;
 
 #ifdef ENABLE_MESH_PROVISIONER
+static const uint8_t * pb_adv_peer_device_uuid;
 #endif
 
 static uint8_t  pb_adv_msg_in_buffer[MESH_PB_ADV_MAX_PDU_SIZE];   // TODO: how large are prov messages?
@@ -147,7 +150,7 @@ static void pb_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_n
     switch (bearer_opcode){
         case MESH_GENERIC_PROVISIONING_LINK_OPEN: // Open a session on a bearer with a device
             // does it match our device_uuid?
-            if (memcmp(&pdu[1], pb_adv_device_uuid, 16) != 0) break;
+            if (memcmp(&pdu[1], pb_adv_own_device_uuid, 16) != 0) break;
             switch(link_state){
                 case LINK_STATE_W4_OPEN:
                     pb_adv_link_id = link_id;
@@ -173,6 +176,7 @@ static void pb_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_n
         case MESH_GENERIC_PROVISIONING_LINK_ACK:   // Acknowledge a session on a bearer
             if (link_state != LINK_STATE_W4_ACK) break;
             link_state = LINK_STATE_OPEN;
+            btstack_run_loop_remove_timer(&pb_adv_random_delay_timer);
             log_info("link open, id %08x", pb_adv_link_id);
             printf("PB-ADV: Link Open %08x\n", pb_adv_link_id);
             pb_adv_emit_link_open(0, pb_adv_cid);
@@ -193,7 +197,6 @@ static void pb_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_n
 }
 
 static void pb_adv_pdu_complete(void){
-
 
     // Verify FCS
     uint8_t pdu_crc = btstack_crc8_calc((uint8_t*)pb_adv_msg_in_buffer, pb_adv_msg_in_len);
@@ -337,7 +340,7 @@ static void pb_adv_handle_transaction_ack(uint8_t transaction_nr, const uint8_t 
 }
 
 static int pb_adv_packet_to_send(void){
-    return pb_adv_msg_in_send_ack || pb_adv_msg_out_active;
+    return pb_adv_msg_in_send_ack || pb_adv_msg_out_active || (link_state == LINK_STATE_W4_ACK);
 }
 
 static void pb_adv_timer_handler(btstack_timer_source_t * ts){
@@ -408,6 +411,22 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
         case HCI_EVENT_MESH_META:
             switch(packet[2]){
                 case MESH_SUBEVENT_CAN_SEND_NOW:
+                    if (link_state == LINK_STATE_W4_ACK){
+                        // build packet
+                        uint8_t buffer[22];
+                        big_endian_store_32(buffer, 0, pb_adv_link_id);
+                        buffer[4] = 0;            // Transaction ID = 0
+                        buffer[5] = (0 << 2) | 3; // Link Open | Provisioning Bearer Control
+                        memcpy(&buffer[6], pb_adv_peer_device_uuid, 16);
+                        adv_bearer_send_pb_adv(buffer, sizeof(buffer));
+                        log_info("link open %08x", pb_adv_link_id);
+                        printf("PB-ADV: Sending Link Open for device uuid: ");
+                        printf_hexdump(pb_adv_peer_device_uuid, 16);
+                        btstack_run_loop_set_timer_handler(&pb_adv_random_delay_timer, &pb_adv_timer_handler);
+                        btstack_run_loop_set_timer(&pb_adv_random_delay_timer, PB_ADV_LINK_OPEN_RETRANSMIT_MS);
+                        btstack_run_loop_add_timer(&pb_adv_random_delay_timer);
+                        break;
+                    }
                     if (link_state == LINK_STATE_CLOSING){
                         log_info("link close %08x", pb_adv_link_id);
                         printf("PB-ADV: Sending Link Close\n");
@@ -510,7 +529,7 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 }
 
 void pb_adv_init(uint8_t * device_uuid){
-    pb_adv_device_uuid = device_uuid;
+    pb_adv_own_device_uuid = device_uuid;
     adv_bearer_register_for_pb_adv(&pb_adv_handler);
     pb_adv_lfsr = little_endian_read_32(device_uuid, 0);
     pb_adv_random();
@@ -553,23 +572,17 @@ void pb_adv_close_link(uint16_t pb_adv_cid, uint8_t reason){
 #ifdef ENABLE_MESH_PROVISIONER
 uint16_t pb_adv_create_link(const uint8_t * device_uuid){
     if (link_state != LINK_STATE_W4_OPEN) return 0;
-        
+    
+    pb_adv_peer_device_uuid = device_uuid;
+
     // create new 32-bit link id
     pb_adv_link_id = pb_adv_random();
 
     // after sending OPEN, we wait for an ACK
     link_state = LINK_STATE_W4_ACK;
 
-    // build packet
-    uint8_t buffer[22];
-    big_endian_store_32(buffer, 0, pb_adv_link_id);
-    buffer[4] = 0;            // Transaction ID = 0
-    buffer[5] = (0 << 2) | 3; // Link Open | Provisioning Bearer Control
-    memcpy(&buffer[6], device_uuid, 16);
-    adv_bearer_send_pb_adv(buffer, sizeof(buffer));
-    log_info("link open %08x", pb_adv_link_id);
-    printf("PB-ADV: Sending Link Open for device uuid: ");
-    printf_hexdump(device_uuid, 16);
+    // request outgoing
+    adv_bearer_request_can_send_now_for_pb_adv();
 
     // dummy pb_adv_cid
     return pb_adv_cid;
