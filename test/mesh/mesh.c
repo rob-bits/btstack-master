@@ -104,6 +104,9 @@ static void mesh_message_handler (uint8_t packet_type, uint16_t channel, uint8_t
                     adv_bearer_send_mesh_message(&message[0], sizeof(message));
                     adv_bearer_request_can_send_now_for_mesh_message();
                     break;
+                case MESH_PB_ADV_LINK_OPEN:
+                    printf("Provisioner link opened");
+                    break;
                 default:
                     break;
             }
@@ -124,20 +127,68 @@ static void mesh_unprovisioned_beacon_handler(uint8_t packet_type, uint16_t chan
     switch(packet[0]){
         case GAP_EVENT_ADVERTISING_REPORT:
             data = gap_event_advertising_report_get_data(packet);
-            memcpy(device_uuid, &packet[3], 16);
-            oob = big_endian_read_16(data, 19);
+            memcpy(device_uuid, &packet[15], 16);
+            oob = big_endian_read_16(data, 31);
             printf("received unprovisioned device beacon, oob data %x, device uuid: ", oob);
             printf_hexdump(device_uuid, 16);
+            pb_adv_create_link(device_uuid);
             break;
         default:
             break;
     }
 }
 
+uint8_t      pts_device_uuid[16];
+const char * pts_device_uuid_string = "001BDC0810210B0E0A0C000B0E0A0C00";
+
+static int scan_hex_byte(const char * byte_string){
+    int upper_nibble = nibble_for_char(*byte_string++);
+    if (upper_nibble < 0) return -1;
+    int lower_nibble = nibble_for_char(*byte_string);
+    if (lower_nibble < 0) return -1;
+    return (upper_nibble << 4) | lower_nibble;
+}
+
+static int btstack_parse_hex(const char * string, uint16_t len, uint8_t * buffer){
+    int i;
+    for (i = 0; i < len; i++) {
+        int single_byte = scan_hex_byte(string);
+        if (single_byte < 0) return 0;
+        string += 2;
+        buffer[i] = (uint8_t)single_byte;
+        // don't check seperator after last byte
+        if (i == len - 1) {
+            return 1;
+        }
+        // optional seperator
+        char separator = *string;
+        if (separator == ':' && separator == '-' && separator == ' ') {
+            string++;
+        }
+    }
+    return 1;
+}
+
+static void btstack_print_hex(const uint8_t * data, uint16_t len, char separator){
+    int i;
+    for (i=0;i<len;i++){
+        printf("%02x", data[i]);
+        if (separator){
+            printf("%c", separator);
+        }
+    }
+    printf("\n");
+}
+
 static void stdin_process(char cmd){
     switch (cmd){
         case '1':
             adv_bearer_request_can_send_now_for_mesh_message();
+            break;
+        case '2':
+            printf("Creating link to devie uuid: ");
+            printf_hexdump(pts_device_uuid, 16);
+            pb_adv_create_link(pts_device_uuid);
             break;
         default:
             printf("Command: '%c'\n", cmd);
@@ -170,6 +221,10 @@ int btstack_main(void)
     
     // Provisioning in device role
     provisioning_device_init(device_uuid);
+
+    //
+    btstack_parse_hex(pts_device_uuid_string, 16, pts_device_uuid);
+    btstack_print_hex(pts_device_uuid, 16, 0);
 
     // turn on!
 	hci_power_control(HCI_POWER_ON);
