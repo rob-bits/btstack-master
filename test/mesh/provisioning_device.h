@@ -43,6 +43,7 @@
 #define __PROVISIONING_DEVICE_H
 
 #include <stdint.h>
+#include "btstack_defines.h"
 
 #ifdef __cplusplus
 extern "C"
@@ -55,11 +56,20 @@ extern "C"
  */
 void provisioning_device_init(const uint8_t * device_uuid);
 
+
+/**
+ * @brief Register packet handler
+ * @param packet_handler
+ */
+void provisioning_device_register_packet_handler(btstack_packet_handler_t packet_handler);
+
 /**
  * @brief Public Key OOB Available
- * @note Requires ability to transmit public key out-of-band
+ * @param public_key  (64 bytes), need to stay valid forever
+ * @param private_key (32 bytes), need to stay valid forever 
+ * @note Requires ability to transmit public key out-of-band. Memory needs to stay available. Only works with Software ECC.
  */
-void provisioning_device_set_public_key_oob_available(void);
+void provisioning_device_set_public_key_oob(const uint8_t * public_key, const uint8_t * private_key);
 
 /**
  * @brief Static OOB Available
@@ -81,6 +91,13 @@ void provisioning_device_set_output_oob_actions(uint16_t supported_output_oob_ac
  * @param max_oob_input_size in bytes
  */
 void provisioning_device_set_input_oob_actions(uint16_t supported_input_oob_action_types, uint8_t max_oob_input_size);
+
+/**
+ * @brief Input OOB Complete
+ * @param pv_adv_cid
+ * @Param input
+ */
+void provisioning_device_input_oob_complete(uint16_t pb_adv_cid, uint32_t input_oob);
 
 #ifdef __cplusplus
 } /* end of extern "C" */

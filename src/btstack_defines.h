@@ -1952,11 +1952,47 @@ typedef uint8_t sm_key_t[16];
 #define MESH_PB_ADV_PDU_SENT                                                0x02 
 
 /**
- * @format 114
+ * @format 112
  * @param subevent_code
  * @param status
- * @param link_id
+ * @param pb_adv_cid
  */
 #define MESH_PB_ADV_LINK_OPEN                                               0x03
+
+/**
+ * @format 12
+ * @param subevent_code
+ * @param pb_adv_cid
+ */
+#define MESH_PB_PROV_START_EMIT_PUBLIC_KEY_OOB                              0x10
+
+/**
+ * @format 12
+ * @param subevent_code
+ * @param pb_adv_cid
+ */
+#define MESH_PB_PROV_STOP_EMIT_PUBLIC_KEY_OOB                               0x11
+
+/**
+ * @format 12
+ * @param subevent_code
+ * @param pb_adv_cid
+ */
+#define MESH_PB_PROV_INPUT_OOB_REQUEST                                      0x12
+
+/**
+ * @format 124
+ * @param subevent_code
+ * @param pb_adv_cid
+ * @param output_oob number
+ */
+#define MESH_PB_PROV_START_EMIT_OUTPUT_OOB                                  0x13
+
+/**
+ * @format 12
+ * @param subevent_code
+ * @param pb_adv_cid
+ */
+#define MESH_PB_PROV_STOP_EMIT_OUTPUT_OOB                                   0x14
 
 #endif
