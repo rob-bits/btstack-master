@@ -74,6 +74,37 @@ static void mesh_k1(btstack_crypto_aes128_cmac_t * request, const uint8_t * n, u
     btstack_crypto_aes128_cmac_message(request, salt, n_len, n, mesh_k1_temp, mesh_k1_temp_calculated, request);
 }
 
+// mesh k3 - might get moved to btstack_crypto and all vars go into btstack_crypto_mesh_k3_t struct
+static const uint8_t   mesh_k3_tag[5] = { 'i', 'd', '6', '4', 0x01}; 
+static uint8_t         mesh_k3_salt[16];
+static uint8_t         mesh_k3_temp[16];
+static uint8_t         mesh_k3_result128[16];
+static void (*         mesh_k3_callback)(void * arg);
+static void *          mesh_k3_arg;
+static const uint8_t * mesh_k3_n;
+static uint8_t       * mesh_k3_result;
+
+static void mesh_k3_result128_calculated(void * arg){
+    UNUSED(arg);
+    memcpy(mesh_k3_result, mesh_k3_result128, 8);
+    (*mesh_k3_callback)(mesh_k3_arg);        
+}
+static void mesh_k3_temp_callback(void * arg){
+    btstack_crypto_aes128_cmac_t * request = (btstack_crypto_aes128_cmac_t*) arg;
+    btstack_crypto_aes128_cmac_message(request, mesh_k3_temp, sizeof(mesh_k3_tag), mesh_k3_tag, mesh_k3_result128, mesh_k3_result128_calculated, request);
+}
+static void mesh_k3_salt_calculated(void * arg){
+    btstack_crypto_aes128_cmac_t * request = (btstack_crypto_aes128_cmac_t*) arg;
+    btstack_crypto_aes128_cmac_message(request, mesh_k3_salt, 16, mesh_k3_n, mesh_k3_temp, mesh_k3_temp_callback, request);
+}
+static void mesh_k3(btstack_crypto_aes128_cmac_t * request, const uint8_t * n, uint8_t * result, void (* callback)(void * arg), void * callback_arg){
+    mesh_k3_callback = callback;
+    mesh_k3_arg      = callback_arg;
+    mesh_k3_n        = n;
+    mesh_k3_result   = result;
+    btstack_crypto_aes128_cmac_zero(request, 4, (const uint8_t *) "smk3", mesh_k3_salt, mesh_k3_salt_calculated, request);
+}
+
 // Provisioning Bearer Control
 
 #define MESH_PROV_INVITE            0x00
@@ -172,6 +203,12 @@ static uint8_t  flags;
 
 static uint32_t iv_index;
 static uint16_t unicast_address;
+
+static const uint8_t id128_tag[] = { 'i', 'd', '1', '2', '8', 0x01};
+
+// derived
+static uint8_t network_id[8];
+static uint8_t beacon_key[16];
 
 static void provisioning_emit_event(uint8_t mesh_subevent, uint16_t pb_adv_cid){
     if (!prov_packet_handler) return;
@@ -501,6 +538,8 @@ static void provisioning_handle_confirmation(uint8_t *packet, uint16_t size){
     // CalculationInputs
     printf("ConfirmationInputs: ");
     printf_hexdump(prov_confirmation_inputs, sizeof(prov_confirmation_inputs));
+
+    // calculate s1
     btstack_crypto_aes128_cmac_zero(&prov_cmac_request, sizeof(prov_confirmation_inputs), prov_confirmation_inputs, confirmation_salt, &provisioning_handle_confirmation_s1_calculated, NULL);
 }
 
@@ -568,7 +607,11 @@ static void provisioning_handle_random(uint8_t *packet, uint16_t size){
     btstack_crypto_aes128_cmac_zero(&prov_cmac_request, sizeof(prov_confirmation_inputs), prov_confirmation_inputs, provisioning_salt, &provisioning_handle_random_s1_calculated, NULL);
 }
 
-static void provisioning_handle_data_device_key(void * arg){
+static void provisioning_handle_beacon_key_calculated(void *arg){
+
+    printf("BeaconKey: ");
+    printf_hexdump(beacon_key, 16);
+
     // send response
     prov_buffer_out[0] = MESH_PROV_COMPLETE;
     provisioning_timer_stop();
@@ -576,6 +619,24 @@ static void provisioning_handle_data_device_key(void * arg){
 
     // reset state
     provisioning_done();
+}
+
+static void provisioning_handle_s1_for_beacon_key_calculated(void *arg){
+    mesh_k1(&prov_cmac_request, net_key, 16, provisioning_salt, id128_tag, sizeof(id128_tag), beacon_key, &provisioning_handle_beacon_key_calculated, NULL);
+}
+
+static void provisioning_handle_data_network_id_calculated(void * arg){
+    // dump
+    printf("Network ID: ");
+    printf_hexdump(network_id, 8);
+
+    // calculate s1 for network beacon
+    btstack_crypto_aes128_cmac_zero(&prov_cmac_request, 4, (const uint8_t *) "nkbk", provisioning_salt, &provisioning_handle_s1_for_beacon_key_calculated, NULL);
+}
+
+static void provisioning_handle_data_device_key(void * arg){
+    // calculate Network ID
+    mesh_k3(&prov_cmac_request, net_key, network_id, provisioning_handle_data_network_id_calculated, NULL);
 }
 
 static void provisioning_handle_data_ccm(void * arg){
