@@ -353,6 +353,12 @@ static int btstack_uart_wiced_set_baudrate(uint32_t baudrate){
 #else
     log_error("btstack_uart_wiced_set_baudrate not implemented for this WICED Platform");
 #endif
+
+    // without flowcontrol, wait a bit to make sure Broadcom module is ready again
+    if (btstack_flow_control_mode == BTSTACK_FLOW_CONTROL_OFF){
+        wiced_rtos_delay_milliseconds( 100 );
+    }
+
     return 0;
 }
 
