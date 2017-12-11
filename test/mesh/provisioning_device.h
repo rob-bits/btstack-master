@@ -99,6 +99,12 @@ void provisioning_device_set_input_oob_actions(uint16_t supported_input_oob_acti
  */
 void provisioning_device_input_oob_complete(uint16_t pb_adv_cid, uint32_t input_oob);
 
+// Query provisioning data
+uint8_t provisioning_device_data_get_flags(void);
+const uint8_t * provisioning_device_data_get_network_id(void);
+uint32_t provisioning_device_data_get_iv_index(void);
+const uint8_t * provisioning_device_data_get_beacon_key(void);
+
 #ifdef __cplusplus
 } /* end of extern "C" */
 #endif

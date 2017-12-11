@@ -810,3 +810,16 @@ void provisioning_device_input_oob_complete(uint16_t pb_adv_cid, uint32_t input_
 
     prov_next_command = MESH_PROV_CONFIRM;
 }
+
+uint8_t provisioning_device_data_get_flags(void){
+    return flags;
+}
+const uint8_t * provisioning_device_data_get_network_id(void){
+    return network_id;
+}
+uint32_t provisioning_device_data_get_iv_index(void){
+    return iv_index;
+}
+const uint8_t * provisioning_device_data_get_beacon_key(void){
+    return beacon_key;
+}

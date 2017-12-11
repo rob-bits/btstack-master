@@ -47,6 +47,8 @@
 #include "provisioning_device.h"
 #include "btstack.h"
 
+#define BEACON_TYPE_SECURE_NETWORK 1
+
 const static uint8_t device_uuid[] = { 0x00, 0x1B, 0xDC, 0x08, 0x10, 0x21, 0x0B, 0x0E, 0x0A, 0x0C, 0x00, 0x0B, 0x0E, 0x0A, 0x0C, 0x00 };
 
 static btstack_packet_callback_registration_t hci_event_callback_registration;
@@ -187,6 +189,23 @@ static uint8_t adv_prov_public_key_pdu[65];
 static uint8_t      prov_static_oob_data[16];
 static const char * prov_static_oob_string = "00000000000000000102030405060708";
 
+static btstack_crypto_aes128_cmac_t mesh_cmac_request;
+static uint8_t mesh_secure_network_beacon[22];
+static uint8_t mesh_secure_network_beacon_auth_value[16];
+
+static uint8_t mesh_flags;
+static const uint8_t * mesh_network_id;
+static uint32_t mesh_iv_index;
+static const uint8_t * mesh_beacon_key;
+
+static void mesh_secure_network_beacon_auth_value_calculated(void * arg){
+    UNUSED(arg);
+    memcpy(&mesh_secure_network_beacon[14], mesh_secure_network_beacon_auth_value, 8);
+    printf("- ");
+    printf_hexdump(mesh_secure_network_beacon, sizeof(mesh_secure_network_beacon));
+    adv_bearer_send_mesh_beacon(mesh_secure_network_beacon, sizeof(mesh_secure_network_beacon));
+}
+
 static void stdin_process(char cmd){
     switch (cmd){
         case '1':
@@ -227,6 +246,33 @@ static void stdin_process(char cmd){
             printf("+ Static OOB Enabled\n");
             btstack_parse_hex(prov_static_oob_string, 16, prov_static_oob_data);
             provisioning_device_set_static_oob(16, prov_static_oob_data);
+            break;
+        case 'b':
+            printf("+ Setup Secure Network Beacon\n");
+            
+#if 1
+            mesh_flags      = provisioning_device_data_get_flags();
+            mesh_network_id = provisioning_device_data_get_network_id();
+            mesh_iv_index   = provisioning_device_data_get_iv_index();
+            mesh_beacon_key = provisioning_device_data_get_beacon_key();
+#else
+            // test data from spec
+            static uint8_t network_id[8];
+            mesh_flags = 0;
+            btstack_parse_hex("3ecaff672f673370", 8, network_id);
+            mesh_network_id = network_id;
+            mesh_iv_index = 0x12345678;
+            static uint8_t network_beacon_key[16];
+            btstack_parse_hex("5423d967da639a99cb02231a83f7d254", 16, network_beacon_key);
+            mesh_beacon_key = network_beacon_key;
+#endif
+            mesh_secure_network_beacon[0] = BEACON_TYPE_SECURE_NETWORK;
+            mesh_secure_network_beacon[1] = mesh_flags;
+            memcpy(&mesh_secure_network_beacon[2], mesh_network_id, 8);
+            big_endian_store_32(mesh_secure_network_beacon, 10, mesh_iv_index);
+            printf("beacon key: "); printf_hexdump(mesh_beacon_key, 16);
+            btstack_crypto_aes128_cmac_message(&mesh_cmac_request, mesh_beacon_key, 13,
+                &mesh_secure_network_beacon[1], mesh_secure_network_beacon_auth_value, &mesh_secure_network_beacon_auth_value_calculated, NULL);
             break;
         default:
             printf("Command: '%c'\n", cmd);
