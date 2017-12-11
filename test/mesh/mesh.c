@@ -184,6 +184,9 @@ static uint8_t adv_prov_invite_pdu[] = { 0x00, 0x00 };
 static uint8_t adv_prov_start_pdu[] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x00}; 
 static uint8_t adv_prov_public_key_pdu[65];
 
+static uint8_t      prov_static_oob_data[16];
+static const char * prov_static_oob_string = "00000000000000000102030405060708";
+
 static void stdin_process(char cmd){
     switch (cmd){
         case '1':
@@ -211,6 +214,19 @@ static void stdin_process(char cmd){
             adv_prov_public_key_pdu[0] = 0x03;
             memset(&adv_prov_public_key_pdu[1], 0x5a, 64);
             pb_adv_send_pdu(adv_prov_public_key_pdu, sizeof(adv_prov_public_key_pdu));
+            break;
+        case 'o':
+            printf("+ Output OOB Enabled\n");
+            provisioning_device_set_output_oob_actions(0x08, 0x08);
+            break;
+        case 'i':
+            printf("+ Input OOB Enabled\n");
+            provisioning_device_set_input_oob_actions(0x08, 0x08);
+            break;
+        case 's':
+            printf("+ Static OOB Enabled\n");
+            btstack_parse_hex(prov_static_oob_string, 16, prov_static_oob_data);
+            provisioning_device_set_static_oob(16, prov_static_oob_data);
             break;
         default:
             printf("Command: '%c'\n", cmd);

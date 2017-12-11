@@ -63,8 +63,10 @@ void provisioning_device_set_public_key_oob_available(void);
 
 /**
  * @brief Static OOB Available
+ * @param static_oob_len in bytes
+ * @param static_oob_data
  */
-void provisioning_device_set_static_oob_available(void);
+void provisioning_device_set_static_oob(uint16_t static_oob_len, const uint8_t * static_oob_data);
 
 /**
  * @brief Configure Output OOB Options

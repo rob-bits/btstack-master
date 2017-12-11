@@ -138,11 +138,43 @@ static void send_prov_pdu(const uint8_t * packet, uint16_t size){
     perform_crypto_operations();
 }
 
+static int scan_hex_byte(const char * byte_string){
+    int upper_nibble = nibble_for_char(*byte_string++);
+    if (upper_nibble < 0) return -1;
+    int lower_nibble = nibble_for_char(*byte_string);
+    if (lower_nibble < 0) return -1;
+    return (upper_nibble << 4) | lower_nibble;
+}
+
+static int btstack_parse_hex(const char * string, uint16_t len, uint8_t * buffer){
+    int i;
+    for (i = 0; i < len; i++) {
+        int single_byte = scan_hex_byte(string);
+        if (single_byte < 0) return 0;
+        string += 2;
+        buffer[i] = (uint8_t)single_byte;
+        // don't check seperator after last byte
+        if (i == len - 1) {
+            return 1;
+        }
+        // optional seperator
+        char separator = *string;
+        if (separator == ':' && separator == '-' && separator == ' ') {
+            string++;
+        }
+    }
+    return 1;
+}
+
+static uint8_t      prov_static_oob_data[16];
+static const char * prov_static_oob_string = "00000000000000000102030405060708";
+
 TEST_GROUP(Provisioning){
     void setup(void){
         btstack_crypto_init();
         provisioning_device_init(device_uuid);
-        provisioning_device_set_static_oob_available();
+        btstack_parse_hex(prov_static_oob_string, 16, prov_static_oob_data);
+        provisioning_device_set_static_oob(16, prov_static_oob_data);
         provisioning_device_set_output_oob_actions(0x08, 0x08);
         provisioning_device_set_input_oob_actions(0x08, 0x08);
         perform_crypto_operations();

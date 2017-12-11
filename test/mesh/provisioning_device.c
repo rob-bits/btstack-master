@@ -111,12 +111,15 @@ static uint8_t  prov_ec_q[64];
 static uint8_t  prov_num_elements = 1;
 
 // capabilites
-static uint16_t prov_output_oob_actions;
-static uint16_t prov_input_oob_actions;
-static uint8_t  prov_public_key_oob_available;
-static uint8_t  prov_static_oob_available;
-static uint8_t  prov_output_oob_size;
-static uint8_t  prov_input_oob_size;
+static const uint8_t * prov_static_oob_data;
+
+static uint16_t  prov_static_oob_len;
+static uint16_t  prov_output_oob_actions;
+static uint16_t  prov_input_oob_actions;
+static uint8_t   prov_public_key_oob_available;
+static uint8_t   prov_static_oob_available;
+static uint8_t   prov_output_oob_size;
+static uint8_t   prov_input_oob_size;
 
 #ifdef ENABLE_ATTENTION_TIMER
 static btstack_timer_source_t       prov_attention_timer;
@@ -258,7 +261,9 @@ static void provisioning_handle_start(uint8_t * packet, uint16_t size){
     memcpy(&prov_confirmation_inputs[12], packet, 5);
 
     // output authentication action
-    prov_authentication_action = packet[3];
+    prov_authentication_action = packet[2];
+
+    printf("AuthAction: %02x\n", prov_authentication_action);
 
     // next state
     prov_next_command = MESH_PROV_PUB_KEY;
@@ -359,17 +364,20 @@ static void provisioning_handle_confirmation_random_device(void * arg){
     btstack_crypto_aes128_cmac_message(&prov_cmac_request, confirmation_key, 32, prov_confirmation_inputs, confirmation_device, &provisioning_handle_confirmation_device_calculated, NULL);
 }
 
-static void provisioning_handle_confirmation_random_auth(void * arg){
-
-    // limit auth value to single digit
-    auth_value[15] = auth_value[15] % 9 + 1;
-
-    // output auth value
-    printf("AuthAction: %02x\n", prov_authentication_action);
-    printf("AuthValue:  '%u'\n", auth_value[15]);
+static void provisioning_handle_confirmation_auth_value_complete(void){
+    printf("AuthValue: ");
+    printf_hexdump(auth_value, 16);
 
     // generate random_device
     btstack_crypto_random_generate(&prov_random_request,random_device, 16, &provisioning_handle_confirmation_random_device, NULL);
+}
+
+static void provisioning_handle_confirmation_random_auth(void * arg){
+    // limit auth value to single digit
+    auth_value[15] = auth_value[15] % 9 + 1;
+
+    // continue
+    provisioning_handle_confirmation_auth_value_complete();
 }
 
 static void provisioning_handle_confirmation_k1_calculated(void * arg){
@@ -379,8 +387,25 @@ static void provisioning_handle_confirmation_k1_calculated(void * arg){
     // auth_value
     memset(auth_value, 0, sizeof(auth_value));
 
-    // generate single byte of random data to use for authentication
-    btstack_crypto_random_generate(&prov_random_request, &auth_value[15], 1, &provisioning_handle_confirmation_random_auth, NULL);
+    // handle authentication method
+    switch (prov_authentication_action){
+        case 0x00:
+            // no OOB
+            provisioning_handle_confirmation_auth_value_complete();  
+            break;
+        case 0x01:
+            memcpy(auth_value, prov_static_oob_data, prov_static_oob_len);
+            provisioning_handle_confirmation_auth_value_complete();  
+            break;
+        case 0x02:
+        case 0x03:
+            printf("Generate random for auth_value\n");
+            // generate single byte of random data to use for authentication
+            btstack_crypto_random_generate(&prov_random_request, &auth_value[15], 1, &provisioning_handle_confirmation_random_auth, NULL);
+            break;
+        default:
+            break;
+    }
 }
 
 static void provisioning_handle_confirmation_s1_calculated(void * arg){
@@ -605,8 +630,10 @@ void provisioning_device_set_public_key_oob_available(void){
     prov_public_key_oob_available = 1;
 }
 
-void provisioning_device_set_static_oob_available(void){
+void provisioning_device_set_static_oob(uint16_t static_oob_len, const uint8_t * static_oob_data){
     prov_static_oob_available = 1;
+    prov_static_oob_data = static_oob_data;
+    prov_static_oob_len  = btstack_min(static_oob_len, 16);
 }
 
 void provisioning_device_set_output_oob_actions(uint16_t supported_output_oob_action_types, uint8_t max_oob_output_size){
