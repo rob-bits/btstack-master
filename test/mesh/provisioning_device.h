@@ -49,7 +49,36 @@ extern "C"
 {
 #endif
 
+/**
+ * @brief Init Provisioning in Device Role with device UUID
+ * @param device_uuid
+ */
 void provisioning_device_init(const uint8_t * device_uuid);
+
+/**
+ * @brief Public Key OOB Available
+ * @note Requires ability to transmit public key out-of-band
+ */
+void provisioning_device_set_public_key_oob_available(void);
+
+/**
+ * @brief Static OOB Available
+ */
+void provisioning_device_set_static_oob_available(void);
+
+/**
+ * @brief Configure Output OOB Options
+ * @param supported_output_oob_action_types bitfield
+ * @param max_oob_output_size in bytes
+ */
+void provisioning_device_set_output_oob_actions(uint16_t supported_output_oob_action_types, uint8_t max_oob_output_size);
+
+/**
+ * @brief Configure Input OOB Options
+ * @param supported_input_oob_action_types bitfield
+ * @param max_oob_input_size in bytes
+ */
+void provisioning_device_set_input_oob_actions(uint16_t supported_input_oob_action_types, uint8_t max_oob_input_size);
 
 #ifdef __cplusplus
 } /* end of extern "C" */

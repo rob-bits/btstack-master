@@ -107,6 +107,17 @@ static uint8_t  prov_authentication_action;
 
 static uint8_t  prov_ec_q[64];
 
+// num elements
+static uint8_t  prov_num_elements = 1;
+
+// capabilites
+static uint16_t prov_output_oob_actions;
+static uint16_t prov_input_oob_actions;
+static uint8_t  prov_public_key_oob_available;
+static uint8_t  prov_static_oob_available;
+static uint8_t  prov_output_oob_size;
+static uint8_t  prov_input_oob_size;
+
 #ifdef ENABLE_ATTENTION_TIMER
 static btstack_timer_source_t       prov_attention_timer;
 #endif
@@ -120,7 +131,7 @@ static btstack_crypto_ccm_t         prov_ccm_request;
 
 static void provisiong_timer_handler(btstack_timer_source_t * ts){
     UNUSED(ts);
-    printf("provisiong_timer_handler!\n");
+    printf("Provisioning Protocol Timeout -> Close Link!\n");
     // TODO: use actual pb_adv_cid
     pb_adv_close_link(1, 1);
 }
@@ -143,14 +154,14 @@ static void provisioning_attention_timer_timeout(btstack_timer_source_t * ts){
 #endif
 }
 
-static void provisiong_error(uint8_t error_code){
+static void provisioning_send_provisioning_error(uint8_t error_code){
     // setup response 
     prov_buffer_out[0] = MESH_PROV_FAILED;
     prov_buffer_out[1] = error_code;
     provisioning_timer_stop();
     pb_adv_send_pdu(prov_buffer_out, 2);
-    // reset state
-    prov_next_command = MESH_PROV_INVITE;
+    // TODO: use actual pb_adv_cid
+    // pb_adv_close_link(1, 2);
 }
 
 static void provisioning_handle_invite(uint8_t *packet, uint16_t size){
@@ -171,30 +182,29 @@ static void provisioning_handle_invite(uint8_t *packet, uint16_t size){
     // setup response 
     prov_buffer_out[0] = MESH_PROV_CAPABILITIES;
 
-    // TOOD: get actual number
     /* Number of Elements supported */
-    prov_buffer_out[1] = 1;
+    prov_buffer_out[1] = prov_num_elements;
 
     /* Supported algorithms - FIPS P-256 Eliptic Curve */
     big_endian_store_16(prov_buffer_out, 2, 1);
 
     /* Public Key Type - Public Key OOB information available */
-    prov_buffer_out[4] = 0;
+    prov_buffer_out[4] = prov_public_key_oob_available;
 
     /* Static OOB Type - Static OOB information available */
-    prov_buffer_out[5] = 1; 
+    prov_buffer_out[5] = prov_static_oob_available; 
 
     /* Output OOB Size - max of 8 */
-    prov_buffer_out[6] = 8; 
+    prov_buffer_out[6] = prov_output_oob_size; 
 
     /* Output OOB Action */
-    big_endian_store_16(prov_buffer_out, 7, MESH_OUTPUT_OOB_NUMBER); //  | MESH_OUTPUT_OOB_STRING);
+    big_endian_store_16(prov_buffer_out, 7, prov_output_oob_actions);
 
     /* Input OOB Size - max of 8*/
-    prov_buffer_out[9] = 8; 
+    prov_buffer_out[9] = prov_input_oob_size; 
 
     /* Input OOB Action */
-    big_endian_store_16(prov_buffer_out, 10, MESH_INPUT_OOB_STRING | MESH_OUTPUT_OOB_NUMBER);
+    big_endian_store_16(prov_buffer_out, 10, prov_input_oob_actions);
 
     // store for confirmation inputs: len 11
     memcpy(&prov_confirmation_inputs[1], &prov_buffer_out[1], 11);
@@ -210,6 +220,39 @@ static void provisioning_handle_invite(uint8_t *packet, uint16_t size){
 static void provisioning_handle_start(uint8_t * packet, uint16_t size){
 
     if (size != 5) return;
+
+    // validate Algorithm
+    if (packet[0] > 0x00){
+        provisioning_send_provisioning_error(0x02);
+        return;
+    }
+    // validate Publik Key
+    if (packet[1] > 0x01){
+        provisioning_send_provisioning_error(0x02);
+        return;
+    }
+    // validate Authentication Method
+    switch (packet[2]){
+        case 0:
+        case 1:
+            if (packet[3] != 0 || packet[4] != 0){
+                provisioning_send_provisioning_error(0x02);
+                return;
+            }
+            break;
+        case 2:
+            if (packet[3] > 0x04 || packet[4] == 0 || packet[4] > 0x08){
+                provisioning_send_provisioning_error(0x02);
+                return;
+            }
+            break;
+        case 3:
+            if (packet[3] > 0x03 || packet[4] == 0 || packet[4] > 0x08){
+                provisioning_send_provisioning_error(0x02);
+                return;
+            }
+            break;
+    }
 
     // store for confirmation inputs: len 5
     memcpy(&prov_confirmation_inputs[12], packet, 5);
@@ -483,7 +526,7 @@ static void provisioning_handle_pdu(uint8_t packet_type, uint16_t channel, uint8
         case PROVISIONING_DATA_PACKET:
             // check expected
             if (packet[0] != prov_next_command){
-                provisiong_error(0x03); // unexpected command
+                provisioning_send_provisioning_error(0x03); // unexpected command
             }
             // dispatch msg
             switch (packet[0]){
@@ -556,4 +599,22 @@ void provisioning_device_init(const uint8_t * device_uuid){
 
     // generate public key
     btstack_crypto_ecc_p256_generate_key(&prov_ecc_p256_request, prov_ec_q, &prov_key_generated, NULL);
+}
+
+void provisioning_device_set_public_key_oob_available(void){
+    prov_public_key_oob_available = 1;
+}
+
+void provisioning_device_set_static_oob_available(void){
+    prov_static_oob_available = 1;
+}
+
+void provisioning_device_set_output_oob_actions(uint16_t supported_output_oob_action_types, uint8_t max_oob_output_size){
+    prov_output_oob_actions = supported_output_oob_action_types;
+    prov_output_oob_size    = max_oob_output_size;
+}
+
+void provisioning_device_set_input_oob_actions(uint16_t supported_input_oob_action_types, uint8_t max_oob_input_size){
+    prov_input_oob_actions = supported_input_oob_action_types;
+    prov_input_oob_size    = max_oob_input_size;
 }
