@@ -142,6 +142,9 @@ TEST_GROUP(Provisioning){
     void setup(void){
         btstack_crypto_init();
         provisioning_device_init(device_uuid);
+        provisioning_device_set_static_oob_available();
+        provisioning_device_set_output_oob_actions(0x08, 0x08);
+        provisioning_device_set_input_oob_actions(0x08, 0x08);
         perform_crypto_operations();
     }
 };
