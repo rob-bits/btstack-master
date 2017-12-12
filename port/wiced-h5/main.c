@@ -66,7 +66,7 @@ static const hci_transport_config_uart_t transport_config = {
     HCI_TRANSPORT_CONFIG_UART,
     115200,
     1000000,    // 200000+ didn't work reliably
-    0,
+    1,
     NULL,
 };
 
