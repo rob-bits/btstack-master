@@ -81,6 +81,9 @@ static enum {
 
 static wiced_result_t btstack_uart_wiced_rx_worker_receive_block(void * arg);
 
+static int                   btstack_uart_wiced_initialized;
+static int                   btstack_uart_wiced_opened;
+
 static wiced_worker_thread_t tx_worker_thread;
 static const uint8_t *       tx_worker_data_buffer;
 static uint16_t              tx_worker_data_size;
@@ -167,7 +170,15 @@ static wiced_result_t btstack_uart_wiced_rx_worker_receive_block(void * arg){
 }
 
 static int btstack_uart_wiced_init(const btstack_uart_config_t * config){
+
+    if (btstack_uart_wiced_initialized) {
+        log_info("init / already initialized");
+        return 0;
+    }
+    btstack_uart_wiced_initialized = 1;
+
     uart_config = config;
+    btstack_uart_wiced_opened = 0;
 
 #ifdef ENABLE_H5
     log_info("init / h5 supported");
@@ -189,6 +200,12 @@ static int btstack_uart_wiced_init(const btstack_uart_config_t * config){
 }
 
 static int btstack_uart_wiced_open(void){
+
+    if (btstack_uart_wiced_opened) {
+        log_info("open (already)");
+        return 0;
+    }
+    btstack_uart_wiced_opened = 1;
 
     log_info("open");
 
@@ -289,6 +306,7 @@ static int btstack_uart_wiced_open(void){
 
     // tx is ready
     tx_worker_data_size = 0;
+
     return 0;
 }
 
@@ -471,6 +489,7 @@ static wiced_result_t btstack_uart_wiced_rx_worker_receive_frame(void * arg){
 
 static void btstack_uart_wiced_receive_frame(uint8_t *buffer, uint16_t len){
     log_debug("receive frame, size %u", len);
+
     // setup SLIP decoder
     btstack_slip_decoder_init(buffer, len);
     // process bytes received in earlier read. might deliver packet, which in turn will call us again. 
