@@ -68,7 +68,6 @@ static void (*download_complete)(int result);
 static int baudrate;
 
 static void bcm_send_prepared_command(void){
-    uart_driver->receive_block(&response_buffer[0], hci_command_complete_len);
     int size = 1 + 3 + command_buffer[3];
     command_buffer[0] = 1;
     hci_dump_packet(HCI_COMMAND_DATA_PACKET, 0, &command_buffer[1], size-1);
@@ -112,6 +111,7 @@ static void bcm_send_next_init_script_command(void){
     int res = chipset->next_command(&command_buffer[1]);
     switch (res){
         case BTSTACK_CHIPSET_VALID_COMMAND:
+            uart_driver->receive_block(&response_buffer[0], hci_command_complete_len);
             bcm_send_prepared_command();
             break;
         case BTSTACK_CHIPSET_DONE:
