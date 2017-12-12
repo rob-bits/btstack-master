@@ -65,7 +65,7 @@ static btstack_uart_config_t uart_config;
 static const hci_transport_config_uart_t transport_config = {
     HCI_TRANSPORT_CONFIG_UART,
     115200,
-    0,    // 200000+ didn't work reliably
+    1000000,    // 200000+ didn't work reliably
     0,
     NULL,
 };
@@ -159,7 +159,7 @@ void application_start(void){
 
 static void phase2(int status){
 
-    hci_dump_open(NULL, HCI_DUMP_STDOUT);
+    // hci_dump_open(NULL, HCI_DUMP_STDOUT);
 
     if (status){
         printf("Download firmware failed\n");
