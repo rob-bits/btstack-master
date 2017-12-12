@@ -445,13 +445,11 @@ static uint16_t btstack_uart_wiced_process_buffer(void){
         frame_size = btstack_slip_decoder_frame_size();
     }
 
-#if 0
     // reset buffer if fully processed
     if (btstack_uart_slip_receive_pos == btstack_uart_slip_receive_len ){
         btstack_uart_slip_receive_len = 0;
         btstack_uart_slip_receive_pos = 0;
     }
-#endif
 
     return frame_size;
 }
@@ -471,8 +469,13 @@ static wiced_result_t btstack_uart_wiced_rx_worker_receive_frame(void * arg){
     // however, that's certainly not enough to receive a complete SLIP frame, now, try reading with low timeout
     uint16_t frame_size = 0;
     while (!frame_size){
-        btstack_uart_slip_receive_pos = 0;
+
+        // works correctly: read single byte and then process it
         btstack_uart_slip_receive_len = btstack_uart_wiced_read_bytes(btstack_uart_slip_receive_buffer, 1, WICED_NEVER_TIMEOUT);
+
+        // would be efficient, but doesn't work yet
+        // btstack_uart_slip_receive_len = btstack_uart_wiced_read_bytes(btstack_uart_slip_receive_buffer, sizeof(btstack_uart_slip_receive_buffer), 1);
+
         frame_size = btstack_uart_wiced_process_buffer();
     }
 
