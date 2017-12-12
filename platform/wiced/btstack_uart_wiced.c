@@ -457,31 +457,60 @@ static uint16_t btstack_uart_wiced_process_buffer(void){
 // executed on tx worker thread
 static wiced_result_t btstack_uart_wiced_rx_worker_receive_frame(void * arg){
     
-    // manual flow control, clear RTS
-    if (btstack_flow_control_mode == BTSTACK_FLOW_CONTROL_MANUAL && wiced_bt_uart_pins[WICED_BT_PIN_UART_CTS]){
-        platform_gpio_output_low(wiced_bt_uart_pins[WICED_BT_PIN_UART_RTS]);
-    }
-
-    // first time, we wait for a single byte to avoid polling until frame has started
-    btstack_uart_wiced_read_bytes(btstack_uart_slip_receive_buffer, 1, WICED_NEVER_TIMEOUT);
-    btstack_slip_decoder_process(btstack_uart_slip_receive_buffer[0]);
-
-    // however, that's certainly not enough to receive a complete SLIP frame, now, try reading with low timeout
     uint16_t frame_size = 0;
-    while (!frame_size){
 
-        // works correctly: read single byte and then process it
-        btstack_uart_slip_receive_len = btstack_uart_wiced_read_bytes(btstack_uart_slip_receive_buffer, 1, WICED_NEVER_TIMEOUT);
-
-        // would be efficient, but doesn't work yet
-        // btstack_uart_slip_receive_len = btstack_uart_wiced_read_bytes(btstack_uart_slip_receive_buffer, sizeof(btstack_uart_slip_receive_buffer), 1);
-
+#if 1
+    // process ring buffer
+    uint32_t bytes_available = ring_buffer_used_space( wiced_bt_uart_driver->rx_buffer );
+    if (bytes_available){
+        btstack_uart_slip_receive_len = btstack_uart_wiced_read_bytes(btstack_uart_slip_receive_buffer, bytes_available, WICED_NEVER_TIMEOUT);
         frame_size = btstack_uart_wiced_process_buffer();
     }
+#endif
 
-    // raise RTS again
-    if (btstack_flow_control_mode == BTSTACK_FLOW_CONTROL_MANUAL && wiced_bt_uart_pins[WICED_BT_PIN_UART_CTS]){
-        platform_gpio_output_high(wiced_bt_uart_pins[WICED_BT_PIN_UART_RTS]);
+    if (frame_size == 0){
+
+        // manual flow control, clear RTS
+        if (btstack_flow_control_mode == BTSTACK_FLOW_CONTROL_MANUAL && wiced_bt_uart_pins[WICED_BT_PIN_UART_CTS]){
+            platform_gpio_output_low(wiced_bt_uart_pins[WICED_BT_PIN_UART_RTS]);
+        }
+
+        // first time, we wait for a single byte to avoid polling until frame has started
+        btstack_uart_slip_receive_len = btstack_uart_wiced_read_bytes(btstack_uart_slip_receive_buffer, 1, WICED_NEVER_TIMEOUT);
+        frame_size = btstack_uart_wiced_process_buffer();
+
+        // however, that's probably not enough to receive a complete SLIP frame, now, try reading with low timeout
+        while (!frame_size){
+
+            // works correctly: read single byte and then process it
+            btstack_uart_slip_receive_len = btstack_uart_wiced_read_bytes(btstack_uart_slip_receive_buffer, 1, WICED_NEVER_TIMEOUT);
+
+            // would be efficient, but doesn't work yet
+            // btstack_uart_slip_receive_len = btstack_uart_wiced_read_bytes(btstack_uart_slip_receive_buffer, sizeof(btstack_uart_slip_receive_buffer), 1);
+
+            // alternative approach, simulating a 'bytes available' function (peeking below the covers) - better than the second one, but still not really working
+            // uint32_t bytes_available = ring_buffer_used_space( wiced_bt_uart_driver->rx_buffer );
+            // if (bytes_available){
+            //     btstack_uart_slip_receive_len = btstack_uart_wiced_read_bytes(btstack_uart_slip_receive_buffer, bytes_available, WICED_NEVER_TIMEOUT);
+            // } else {
+            //     btstack_uart_slip_receive_len = btstack_uart_wiced_read_bytes(btstack_uart_slip_receive_buffer, 1, WICED_NEVER_TIMEOUT);
+            // }
+
+            // polling approach - doesn't work either
+            // btstack_uart_slip_receive_len = btstack_uart_wiced_read_bytes(btstack_uart_slip_receive_buffer, sizeof(btstack_uart_slip_receive_buffer), 0);
+            // if (btstack_uart_slip_receive_len == 0){
+            //     wiced_rtos_delay_milliseconds(1);
+            //     continue;
+            // }
+
+            frame_size = btstack_uart_wiced_process_buffer();
+        }
+
+        // raise RTS again
+        if (btstack_flow_control_mode == BTSTACK_FLOW_CONTROL_MANUAL && wiced_bt_uart_pins[WICED_BT_PIN_UART_CTS]){
+            platform_gpio_output_high(wiced_bt_uart_pins[WICED_BT_PIN_UART_RTS]);
+        }
+
     }
 
     // let transport know
