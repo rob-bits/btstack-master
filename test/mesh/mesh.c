@@ -189,6 +189,11 @@ static uint8_t adv_prov_public_key_pdu[65];
 static uint8_t      prov_static_oob_data[16];
 static const char * prov_static_oob_string = "00000000000000000102030405060708";
 
+static uint8_t      prov_public_key_data[64];
+static const char * prov_public_key_string = "F465E43FF23D3F1B9DC7DFC04DA8758184DBC966204796ECCF0D6CF5E16500CC0201D048BCBBD899EEEFC424164E33C201C2B010CA6B4D43A8A155CAD8ECB279";
+static uint8_t      prov_private_key_data[32];
+static const char * prov_private_key_string = "529AA0670D72CD6497502ED473502B037E8803B5C60829A5A3CAA219505530BA";
+
 static btstack_crypto_aes128_cmac_t mesh_cmac_request;
 static uint8_t mesh_secure_network_beacon[22];
 static uint8_t mesh_secure_network_beacon_auth_value[16];
@@ -233,6 +238,12 @@ static void stdin_process(char cmd){
             adv_prov_public_key_pdu[0] = 0x03;
             memset(&adv_prov_public_key_pdu[1], 0x5a, 64);
             pb_adv_send_pdu(adv_prov_public_key_pdu, sizeof(adv_prov_public_key_pdu));
+            break;
+        case 'p':
+            printf("+ Public Key OOB Enabled\n");
+            btstack_parse_hex(prov_public_key_string, 64, prov_public_key_data);
+            btstack_parse_hex(prov_private_key_string, 32, prov_private_key_data);
+            provisioning_device_set_public_key_oob(prov_public_key_data, prov_private_key_data);
             break;
         case 'o':
             printf("+ Output OOB Enabled\n");

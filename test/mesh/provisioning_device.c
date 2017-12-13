@@ -214,6 +214,19 @@ static const uint8_t id128_tag[] = { 'i', 'd', '1', '2', '8', 0x01};
 static uint8_t network_id[8];
 static uint8_t beacon_key[16];
 
+static void dump_data(uint8_t * buffer, uint16_t size){
+    static int data_counter = 1;
+    char var_name[80];
+    sprintf(var_name, "test_data_%02u", data_counter);
+    printf("uint8_t %s[] = { ", var_name);
+    for (int i = 0; i < size ; i++){
+        if ((i % 16) == 0) printf("\n    ");
+        printf ("0x%02x, ", buffer[i]);
+    }
+    printf("};\n");
+    data_counter++;
+}
+
 static void provisioning_emit_event(uint8_t mesh_subevent, uint16_t pb_adv_cid){
     if (!prov_packet_handler) return;
     uint8_t event[5] = { HCI_EVENT_MESH_META, 3, mesh_subevent};
@@ -474,7 +487,7 @@ static void provisioning_handle_start(uint8_t * packet, uint16_t size){
             break;
     }
     if (!ok){
-        printf("PROV_START Args incorrect\n");
+        printf("PROV_START arguments incorrect\n");
         provisioning_handle_provisioning_error(0x02);
         return;
     }
@@ -522,7 +535,10 @@ static void provisioning_public_key_exchange_complete(void){
     // handle authentication method
     switch (prov_authentication_action){
         case 0x00:
+            prov_next_command = MESH_PROV_CONFIRM;
+            break;        
         case 0x01:
+            memcpy(&auth_value[16-prov_static_oob_len], prov_static_oob_data, prov_static_oob_len);
             prov_next_command = MESH_PROV_CONFIRM;
             break;
         case 0x02:
@@ -566,9 +582,14 @@ static void provisioning_handle_public_key(uint8_t *packet, uint16_t size){
 
     if (size != sizeof(remote_ec_q)) return;
 
-    // stop emit public OOK if specified
+    // stop emit public OOK if specified and send to crypto module
     if (prov_public_key_oob_available && prov_public_key_oob_used){
         provisioning_emit_event(MESH_PB_PROV_STOP_EMIT_PUBLIC_KEY_OOB, 1);
+
+        printf("Replace generated ECC with Public Key OOB:");
+        memcpy(prov_ec_q, prov_public_key_oob_q, 64);
+        dump_data(prov_ec_q, sizeof(prov_ec_q));
+        btstack_crypto_ecc_p256_set_key(prov_public_key_oob_q, prov_public_key_oob_d);
     }
 
     // store for confirmation inputs: len 64
@@ -774,6 +795,7 @@ static void provisioning_handle_pdu(uint8_t packet_type, uint16_t channel, uint8
         case HCI_EVENT_PACKET:
             if (packet[0] != HCI_EVENT_MESH_META)  break;
             if (packet[2] != MESH_PB_ADV_PDU_SENT) break;
+            printf("Outgoing packet acked\n");
             prov_waiting_for_outgoing_complete = 0;
             provisioning_send_pdu();
             break;
@@ -832,19 +854,6 @@ static void provisioning_handle_pdu(uint8_t packet_type, uint16_t channel, uint8
     }
 }
 
-static void dump_data(uint8_t * buffer, uint16_t size){
-    static int data_counter = 1;
-    char var_name[80];
-    sprintf(var_name, "test_data_%02u", data_counter);
-    printf("uint8_t %s[] = { ", var_name);
-    for (int i = 0; i < size ; i++){
-        if ((i % 16) == 0) printf("\n    ");
-        printf ("0x%02x, ", buffer[i]);
-    }
-    printf("};\n");
-    data_counter++;
-}
-
 static void prov_key_generated(void * arg){
     UNUSED(arg);
     printf("ECC-P256: ");
@@ -873,7 +882,7 @@ void provisioning_device_register_packet_handler(btstack_packet_handler_t packet
     prov_packet_handler = packet_handler;
 }
 
-void provisioning_device_set_public_key_oob_available(const uint8_t * public_key, const uint8_t * private_key){
+void provisioning_device_set_public_key_oob(const uint8_t * public_key, const uint8_t * private_key){
     prov_public_key_oob_q = public_key;
     prov_public_key_oob_d = private_key;
     prov_public_key_oob_available = 1;
