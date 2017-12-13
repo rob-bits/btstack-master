@@ -794,10 +794,17 @@ static void provisioning_handle_pdu(uint8_t packet_type, uint16_t channel, uint8
     switch (packet_type){
         case HCI_EVENT_PACKET:
             if (packet[0] != HCI_EVENT_MESH_META)  break;
-            if (packet[2] != MESH_PB_ADV_PDU_SENT) break;
-            printf("Outgoing packet acked\n");
-            prov_waiting_for_outgoing_complete = 0;
-            provisioning_send_pdu();
+            switch (packet[2]){
+                case MESH_PB_ADV_LINK_OPEN:
+                    printf("Link opened, reset state\n");
+                    provisioning_done();
+                    break;
+                case MESH_PB_ADV_PDU_SENT:
+                    printf("Outgoing packet acked\n");
+                    prov_waiting_for_outgoing_complete = 0;
+                    provisioning_send_pdu();
+                    break;                    
+            }
             break;
         case PROVISIONING_DATA_PACKET:
             // check state
