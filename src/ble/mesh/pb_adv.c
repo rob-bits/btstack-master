@@ -136,13 +136,11 @@ static void pb_adv_emit_pdu_sent(uint8_t status){
     pb_adv_packet_handler(HCI_EVENT_PACKET, 0, event, sizeof(event));
 }
 
-#ifdef ENABLE_MESH_PROVISIONER
 static void pb_adv_emit_link_open(uint8_t status, uint16_t pb_adv_cid){
     uint8_t event[6] = { HCI_EVENT_MESH_META, 6, MESH_PB_ADV_LINK_OPEN, status};
     little_endian_store_16(event, 4, pb_adv_cid);
     pb_adv_packet_handler(HCI_EVENT_PACKET, 0, event, sizeof(event));
 }
-#endif
 
 static void pb_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_nr, const uint8_t * pdu, uint16_t size){
     uint8_t bearer_opcode = pdu[0] >> 2;
@@ -160,7 +158,7 @@ static void pb_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_n
                     printf("PB-ADV: Link Open %08x\n", pb_adv_link_id);
                     link_state = LINK_STATE_W2_SEND_ACK;
                     adv_bearer_request_can_send_now_for_pb_adv();
-                    // pb_adv_emit_link_open(0, pb_adv_cid);
+                    pb_adv_emit_link_open(0, pb_adv_cid);
                     break;
                 case LINK_STATE_OPEN:
                     if (pb_adv_link_id != link_id) break;
