@@ -407,6 +407,7 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 default:
                     break;
             }
+            pb_adv_run();
             break;
         case HCI_EVENT_MESH_META:
             switch(packet[2]){
@@ -540,6 +541,8 @@ void pb_adv_register_packet_handler(btstack_packet_handler_t packet_handler){
 }
 
 void pb_adv_send_pdu(const uint8_t * pdu, uint16_t size){
+    printf("PB-ADV: Send packet ");
+    printf_hexdump(pdu, size);
     pb_adv_msg_out_buffer = pdu;
     pb_adv_msg_out_len    = size;
     pb_adv_msg_out_pos = 0;

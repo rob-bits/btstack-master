@@ -119,6 +119,7 @@ static void mesh_k3(btstack_crypto_aes128_cmac_t * request, const uint8_t * n, u
 #define MESH_PROV_FAILED            0x09
 // virtual commands
 #define MESH_PROV_USER_INPUT_OOB    0xF0
+#define MESH_PROV_INVALID           0xFF
 
 #define MESH_OUTPUT_OOB_BLINK       0x01
 #define MESH_OUTPUT_OOB_BEEP        0x02
@@ -161,6 +162,8 @@ static uint8_t   prov_static_oob_available;
 static uint8_t   prov_output_oob_size;
 static uint8_t   prov_input_oob_size;
 static uint8_t   prov_error_code;
+static uint8_t   prov_message_to_send;
+static uint8_t   prov_waiting_for_outgoing_complete;
 
 #ifdef ENABLE_ATTENTION_TIMER
 static btstack_timer_source_t       prov_attention_timer;
@@ -233,6 +236,8 @@ static void provisiong_timer_handler(btstack_timer_source_t * ts){
     pb_adv_close_link(1, 1);
 }
 
+// The provisioning protocol shall have a minimum timeout of 60 seconds that is reset
+// each time a provisioning protocol PDU is sent or received
 static void provisioning_timer_start(void){
     btstack_run_loop_remove_timer(&prov_protocol_timer);
     btstack_run_loop_set_timer_handler(&prov_protocol_timer, &provisiong_timer_handler);
@@ -325,7 +330,7 @@ static void provisioning_send_confirm(void){
     provisioning_timer_start();
 }
 
-static void provisioning_send_random_pdu(void){
+static void provisioning_send_random(void){
     // setup response 
     prov_buffer_out[0] = MESH_PROV_RANDOM;
     memcpy(&prov_buffer_out[1],  random_device, 16);
@@ -345,7 +350,48 @@ static void provisioning_send_complete(void){
     pb_adv_send_pdu(prov_buffer_out, 1);
 }
 
+static void provisioning_send_pdu(void){
+    int start_timer = 1;
+    switch (prov_message_to_send){
+        case MESH_PROV_FAILED:
+            start_timer = 0;    // game over
+            provisioning_send_provisioning_error();
+            break;
+        case MESH_PROV_CAPABILITIES:
+            provisioning_send_capabilites();
+            break;
+        case MESH_PROV_PUB_KEY:
+            provisioning_send_public_key();
+            break;
+        case MESH_PROV_CONFIRM:
+            provisioning_send_confirm();
+            break;
+        case MESH_PROV_RANDOM:
+            provisioning_send_random();
+            break;
+        case MESH_PROV_COMPLETE:
+            provisioning_send_complete();
+            break;
+        default:
+            return;
+    }
+    if (start_timer){
+        provisioning_timer_start();
+    }
+    printf("Send message 0x%0x\n", prov_message_to_send);
+    prov_waiting_for_outgoing_complete = 1;
+    prov_message_to_send = MESH_PROV_INVALID;
+}
+
 // End of outgoing PDUs
+
+static void provisioning_queue_pdu(uint8_t message){
+    printf("Queue message 0x%08x (outgoing active %u)\n", message, prov_waiting_for_outgoing_complete);
+    prov_message_to_send = message;
+    // wait for last msg ack
+    if (prov_waiting_for_outgoing_complete) return;
+    provisioning_send_pdu(); 
+}
 
 static void provisioning_done(void){
     if (prov_emit_public_key_oob_active){
@@ -356,14 +402,15 @@ static void provisioning_done(void){
         prov_emit_output_oob_active = 0;
         provisioning_emit_event(MESH_PB_PROV_STOP_EMIT_OUTPUT_OOB, 1);
     }
-    prov_next_command = MESH_PROV_INVITE;
+    prov_message_to_send = MESH_PROV_INVALID;
+    prov_next_command    = MESH_PROV_INVITE;
 }
 
 static void provisioning_handle_provisioning_error(uint8_t error_code){
     provisioning_timer_stop();
     prov_error_code = error_code;
+    provisioning_queue_pdu(MESH_PROV_FAILED);
 
-    provisioning_send_provisioning_error();
     // TODO: use actual pb_adv_cid
     // pb_adv_close_link(1, 2);
     provisioning_done();
@@ -384,9 +431,8 @@ static void provisioning_handle_invite(uint8_t *packet, uint16_t size){
     btstack_run_loop_add_timer(&prov_attention_timer);
 #endif
 
-    provisioning_send_capabilites();
-
-    provisioning_timer_start();
+    // queue capabilities pdu
+    provisioning_queue_pdu(MESH_PROV_CAPABILITIES);
 
     // next state
     prov_next_command = MESH_PROV_START;
@@ -397,36 +443,40 @@ static void provisioning_handle_start(uint8_t * packet, uint16_t size){
     if (size != 5) return;
 
     // validate Algorithm
+    int ok = 1;
     if (packet[0] > 0x00){
-        provisioning_handle_provisioning_error(0x02);
-        return;
+        ok = 0;
     }
     // validate Publik Key
     if (packet[1] > 0x01){
-        provisioning_handle_provisioning_error(0x02);
-        return;
+        ok = 0;
     }
     // validate Authentication Method
     switch (packet[2]){
         case 0:
         case 1:
             if (packet[3] != 0 || packet[4] != 0){
-                provisioning_handle_provisioning_error(0x02);
-                return;
+                ok = 0;
+                break;
             }
             break;
         case 2:
             if (packet[3] > 0x04 || packet[4] == 0 || packet[4] > 0x08){
-                provisioning_handle_provisioning_error(0x02);
-                return;
+                ok = 0;
+                break;
             }
             break;
         case 3:
             if (packet[3] > 0x03 || packet[4] == 0 || packet[4] > 0x08){
-                provisioning_handle_provisioning_error(0x02);
-                return;
+                ok = 0;
+                break;
             }
             break;
+    }
+    if (!ok){
+        printf("PROV_START Args incorrect\n");
+        provisioning_handle_provisioning_error(0x02);
+        return;
     }
 
     // store for confirmation inputs: len 5
@@ -505,7 +555,8 @@ static void provisioning_handle_public_key_dhkey(void * arg){
         // just copy key for confirmation inputs
         memcpy(&prov_confirmation_inputs[81], prov_ec_q, 64);
     } else {
-        provisioning_send_public_key();
+        // queue public key pdu
+        provisioning_queue_pdu(MESH_PROV_PUB_KEY);
     }
 
     provisioning_public_key_exchange_complete();
@@ -537,7 +588,8 @@ static void provisioning_handle_confirmation_device_calculated(void * arg){
     printf("ConfirmationDevice: ");
     printf_hexdump(confirmation_device, sizeof(confirmation_device));
 
-    provisioning_send_confirm();
+    // queue confirm pdu
+    provisioning_queue_pdu(MESH_PROV_CONFIRM);
 
     // next state
     prov_next_command = MESH_PROV_RANDOM;
@@ -593,11 +645,6 @@ static void provisioning_handle_confirmation(uint8_t *packet, uint16_t size){
     btstack_crypto_aes128_cmac_zero(&prov_cmac_request, sizeof(prov_confirmation_inputs), prov_confirmation_inputs, confirmation_salt, &provisioning_handle_confirmation_s1_calculated, NULL);
 }
 
-static void provisioning_send_random(void  *arg){
-    UNUSED(arg);
-    provisioning_send_random_pdu();
-}
-
 static void provisioning_handle_random_session_nonce_calculated(void * arg){
     UNUSED(arg);
 
@@ -608,8 +655,11 @@ static void provisioning_handle_random_session_nonce_calculated(void * arg){
     printf("SessionNonce:   ");
     printf_hexdump(session_nonce, sizeof(session_nonce));
 
-    // finally respond with our random
-    provisioning_send_random(NULL);
+    // queue random pdu
+    provisioning_queue_pdu(MESH_PROV_RANDOM);
+
+    // next state
+    prov_next_command = MESH_PROV_DATA;
 }
 
 static void provisioning_handle_random_session_key_calculated(void * arg){
@@ -650,13 +700,13 @@ static void provisioning_handle_random(uint8_t *packet, uint16_t size){
 }
 
 static void provisioning_handle_beacon_key_calculated(void *arg){
-
     printf("BeaconKey: ");
     printf_hexdump(beacon_key, 16);
 
     provisioning_timer_stop();
 
-    provisioning_send_complete();
+    // queue complete pdu
+    provisioning_queue_pdu(MESH_PROV_COMPLETE);
  
     // reset state
     provisioning_done();
@@ -716,10 +766,6 @@ static void provisioning_handle_data(uint8_t *packet, uint16_t size){
     btstack_crypto_ccm_decrypt_block(&prov_ccm_request, 25, enc_provisioning_data, provisioning_data, &provisioning_handle_data_ccm, NULL);
 }
 
-static void provisioning_send_next_pdu(void){
-    printf("provisioning_send_next_pdu\n");
-}
-
 static void provisioning_handle_pdu(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
 
     if (size < 1) return;
@@ -728,12 +774,20 @@ static void provisioning_handle_pdu(uint8_t packet_type, uint16_t channel, uint8
         case HCI_EVENT_PACKET:
             if (packet[0] != HCI_EVENT_MESH_META)  break;
             if (packet[2] != MESH_PB_ADV_PDU_SENT) break;
-            provisioning_send_next_pdu();
+            prov_waiting_for_outgoing_complete = 0;
+            provisioning_send_pdu();
             break;
         case PROVISIONING_DATA_PACKET:
+            // check state
+            if (prov_next_command == MESH_PROV_INVITE && packet[0] != MESH_PROV_INVITE){
+                printf("Ignoring message %u\n", packet[0]);
+                break;
+            }
             // check expected
             if (packet[0] != prov_next_command){
+                printf("Unexpected packet %u, expecting %u\n", packet[0], prov_next_command);
                 provisioning_handle_provisioning_error(0x03); // unexpected command
+                break;
             }
             // dispatch msg
             switch (packet[0]){
