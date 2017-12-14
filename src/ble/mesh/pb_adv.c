@@ -142,6 +142,12 @@ static void pb_adv_emit_link_open(uint8_t status, uint16_t pb_adv_cid){
     pb_adv_packet_handler(HCI_EVENT_PACKET, 0, event, sizeof(event));
 }
 
+static void pb_adv_emit_link_close(uint16_t pb_adv_cid, uint8_t reason){
+    uint8_t event[5] = { HCI_EVENT_MESH_META, 6, MESH_PB_ADV_LINK_CLOSE};
+    little_endian_store_16(event, 4, pb_adv_cid);
+    pb_adv_packet_handler(HCI_EVENT_PACKET, 0, event, sizeof(event));
+}
+
 static void pb_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_nr, const uint8_t * pdu, uint16_t size){
     uint8_t bearer_opcode = pdu[0] >> 2;
     uint8_t reason;
@@ -186,12 +192,12 @@ static void pb_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_n
             reason = pdu[1];
             link_state = LINK_STATE_W4_OPEN;
             log_info("link close, reason %x", reason);
+            pb_adv_emit_link_close(pb_adv_cid, reason);
             break;
         default:
             log_info("BearerOpcode %x reserved for future use\n", bearer_opcode);
             break;
     }
-
 }
 
 static void pb_adv_pdu_complete(void){
@@ -558,6 +564,7 @@ void pb_adv_close_link(uint16_t pb_adv_cid, uint8_t reason){
         case LINK_STATE_W4_ACK:
         case LINK_STATE_OPEN:
         case LINK_STATE_W2_SEND_ACK:
+            pb_adv_emit_link_close(pb_adv_cid, 0);
             link_state = LINK_STATE_CLOSING;
             pb_adv_link_close_countdown = 3;
             pb_adv_link_close_reason = reason;

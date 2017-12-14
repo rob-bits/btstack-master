@@ -1960,6 +1960,14 @@ typedef uint8_t sm_key_t[16];
 #define MESH_PB_ADV_LINK_OPEN                                               0x03
 
 /**
+ * @format 112
+ * @param subevent_code
+ * @param status
+ * @param pb_adv_cid
+ */
+#define MESH_PB_ADV_LINK_CLOSED                                             0x04
+
+/**
  * @format 12
  * @param subevent_code
  * @param pb_adv_cid
@@ -1994,5 +2002,13 @@ typedef uint8_t sm_key_t[16];
  * @param pb_adv_cid
  */
 #define MESH_PB_PROV_STOP_EMIT_OUTPUT_OOB                                   0x14
+
+/**
+ * @format 121
+ * @param subevent_code
+ * @param pb_adv_cid
+ * @param attention_time in seconds
+ */
+#define MESH_PB_PROV_ATTENTION_TIMER                                        0x15
 
 #endif
