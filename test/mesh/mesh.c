@@ -114,6 +114,9 @@ static void mesh_message_handler (uint8_t packet_type, uint16_t channel, uint8_t
                 case MESH_PB_ADV_LINK_OPEN:
                     printf("Provisioner link opened");
                     break;
+                case MESH_PB_PROV_ATTENTION_TIMER:
+                    printf("Attention Timer: %u\n", packet[3]);
+                    break;
                 case MESH_PB_PROV_INPUT_OOB_REQUEST:
                     printf("Enter passphrase: ");
                     fflush(stdout);
@@ -283,25 +286,15 @@ static void stdin_process(char cmd){
             break;
         case 'b':
             printf("+ Setup Secure Network Beacon\n");
-            
-#if 1
+
             mesh_flags      = provisioning_device_data_get_flags();
             mesh_network_id = provisioning_device_data_get_network_id();
             mesh_iv_index   = provisioning_device_data_get_iv_index();
             mesh_beacon_key = provisioning_device_data_get_beacon_key();
-#else
-            // test data from spec
-            static uint8_t network_id[8];
-            mesh_flags = 0;
-            btstack_parse_hex("3ecaff672f673370", 8, network_id);
-            mesh_network_id = network_id;
-            mesh_iv_index = 0x12345678;
-            static uint8_t network_beacon_key[16];
-            btstack_parse_hex("5423d967da639a99cb02231a83f7d254", 16, network_beacon_key);
-            mesh_beacon_key = network_beacon_key;
-#endif
+
             mesh_secure_network_beacon[0] = BEACON_TYPE_SECURE_NETWORK;
-            mesh_secure_network_beacon[1] = mesh_flags;
+            // mesh_secure_network_beacon[1] = mesh_flags;
+            mesh_secure_network_beacon[1] = 3;  // 
             memcpy(&mesh_secure_network_beacon[2], mesh_network_id, 8);
             big_endian_store_32(mesh_secure_network_beacon, 10, mesh_iv_index);
             printf("beacon key: "); printf_hexdump(mesh_beacon_key, 16);

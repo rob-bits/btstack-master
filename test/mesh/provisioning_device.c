@@ -45,6 +45,8 @@
 #include "classic/rfcomm.h" // for crc8
 #include "btstack.h"
 
+static void provisioning_attention_timer_set(void);
+
 #define PROVISIONING_PROTOCOL_TIMEOUT_MS 60000
 
 // remote ecc
@@ -165,9 +167,8 @@ static uint8_t   prov_error_code;
 static uint8_t   prov_message_to_send;
 static uint8_t   prov_waiting_for_outgoing_complete;
 
-#ifdef ENABLE_ATTENTION_TIMER
+static uint8_t                      prov_attention_timer_timeout;
 static btstack_timer_source_t       prov_attention_timer;
-#endif
 
 static btstack_timer_source_t       prov_protocol_timer;
 
@@ -242,6 +243,13 @@ static void provisioning_emit_output_oob_event(uint16_t pb_adv_cid, uint32_t num
     prov_packet_handler(HCI_EVENT_PACKET, 0, event, sizeof(event));
 }
 
+static void provisioning_emit_attention_timer_event(uint16_t pb_adv_cid, uint8_t timer_s){
+    if (!prov_packet_handler) return;
+    uint8_t event[4] = { HCI_EVENT_MESH_META, 7, MESH_PB_PROV_ATTENTION_TIMER};
+    event[3] = timer_s;
+    prov_packet_handler(HCI_EVENT_PACKET, 0, event, sizeof(event));
+}
+
 static void provisiong_timer_handler(btstack_timer_source_t * ts){
     UNUSED(ts);
     printf("Provisioning Protocol Timeout -> Close Link!\n");
@@ -264,9 +272,18 @@ static void provisioning_timer_stop(void){
 
 static void provisioning_attention_timer_timeout(btstack_timer_source_t * ts){
     UNUSED(ts);
-#ifdef ENABLE_ATTENTION_TIMER
-    // TODO: check if provisioning complete, stop attention
-#endif
+    if (prov_attention_timer_timeout == 0) return;
+    prov_attention_timer_timeout--;
+    provisioning_attention_timer_set();
+}
+
+static void provisioning_attention_timer_set(void){
+    provisioning_emit_attention_timer_event(1, prov_attention_timer_timeout);
+    if (prov_attention_timer_timeout){
+        btstack_run_loop_set_timer_handler(&prov_attention_timer, &provisioning_attention_timer_timeout);
+        btstack_run_loop_set_timer(&prov_attention_timer, 1000);
+        btstack_run_loop_add_timer(&prov_attention_timer);
+    }
 }
 
 // Outgoing Provisioning PDUs
@@ -413,6 +430,10 @@ static void provisioning_done(void){
         prov_emit_output_oob_active = 0;
         provisioning_emit_event(MESH_PB_PROV_STOP_EMIT_OUTPUT_OOB, 1);
     }
+    if (prov_attention_timer_timeout){
+        prov_attention_timer_timeout = 0;
+        provisioning_emit_attention_timer_event(1, 0);        
+    }
     prov_message_to_send = MESH_PROV_INVALID;
     prov_next_command    = MESH_PROV_INVITE;
 }
@@ -422,8 +443,6 @@ static void provisioning_handle_provisioning_error(uint8_t error_code){
     prov_error_code = error_code;
     provisioning_queue_pdu(MESH_PROV_FAILED);
 
-    // TODO: use actual pb_adv_cid
-    // pb_adv_close_link(1, 2);
     provisioning_done();
 }
 
@@ -435,12 +454,8 @@ static void provisioning_handle_invite(uint8_t *packet, uint16_t size){
     memcpy(&prov_confirmation_inputs[0], packet, 1);
 
     // handle invite message
-#ifdef ENABLE_ATTENTION_TIMER
-    uint32_t attention_timer_timeout_ms = packet[0] * 1000;
-    btstack_run_loop_set_timer_handler(&prov_attention_timer, &provisioning_attention_timer_timeout);
-    btstack_run_loop_set_timer(&prov_attention_timer, attention_timer_timeout_ms);
-    btstack_run_loop_add_timer(&prov_attention_timer);
-#endif
+    prov_attention_timer_timeout = packet[0];
+    provisioning_attention_timer_set();
 
     // queue capabilities pdu
     provisioning_queue_pdu(MESH_PROV_CAPABILITIES);
@@ -800,6 +815,10 @@ static void provisioning_handle_pdu(uint8_t packet_type, uint16_t channel, uint8
                     prov_waiting_for_outgoing_complete = 0;
                     provisioning_send_pdu();
                     break;                    
+                case MESH_PB_ADV_LINK_CLOSED:
+                    printf("Link close, reset state\n");
+                    provisioning_done();
+                    break;
             }
             break;
         case PROVISIONING_DATA_PACKET:
