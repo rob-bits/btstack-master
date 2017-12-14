@@ -2011,4 +2011,11 @@ typedef uint8_t sm_key_t[16];
  */
 #define MESH_PB_PROV_ATTENTION_TIMER                                        0x15
 
+/**
+ * @format 121
+ * @param subevent_code
+ * @param pb_adv_cid
+ */
+#define MESH_PB_PROV_COMPLETE                                              0x16
+
 #endif

@@ -46,6 +46,7 @@
 #include "ble/mesh/beacon.h"
 #include "provisioning_device.h"
 #include "btstack.h"
+#include "btstack_tlv.h"
 
 #define BEACON_TYPE_SECURE_NETWORK 1
 
@@ -57,16 +58,22 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
 
 static int counter = 'a';
 
+static mesh_provisioning_data provisioning_data;
+
 // pin entry
 static int ui_chars_for_pin; 
 static uint8_t ui_pin[17];
 static int ui_pin_offset;
+
+static const btstack_tlv_t * btstack_tlv_singleton_impl;
+static void *                btstack_tlv_singleton_context;
 
 static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     UNUSED(channel);
     UNUSED(size);
     bd_addr_t addr;
     int i;
+    int prov_len;
 
     switch (packet_type) {
         case HCI_EVENT_PACKET:
@@ -80,6 +87,11 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                         printf("%02x", addr[i]);
                     }
                     printf("\n");
+                    // get tlv
+                    btstack_tlv_get_instance(&btstack_tlv_singleton_impl, &btstack_tlv_singleton_context);
+                    // load provisioning data
+                    prov_len = btstack_tlv_singleton_impl->get_tag(btstack_tlv_singleton_context, 'PROV', (uint8_t *) &provisioning_data, sizeof(mesh_provisioning_data));
+                    printf("Provisioning data available: %u\n", prov_len ? 1 : 0);
                     // setup scanning
                     gap_set_scan_parameters(0, 0x300, 0x300);
                     gap_start_scan();
@@ -122,6 +134,14 @@ static void mesh_message_handler (uint8_t packet_type, uint16_t channel, uint8_t
                     fflush(stdout);
                     ui_chars_for_pin = 1;
                     ui_pin_offset = 0;
+                    break;
+                case MESH_PB_PROV_COMPLETE:
+                    printf("Provisioning complete\n");
+                    memcpy(provisioning_data.network_id, provisioning_device_data_get_network_id(), 8);
+                    memcpy(provisioning_data.beacon_key, provisioning_device_data_get_beacon_key(), 16);
+                    provisioning_data.iv_index = provisioning_device_data_get_iv_index();
+                    // store in TLV
+                    btstack_tlv_singleton_impl->store_tag(btstack_tlv_singleton_context, 'PROV', (uint8_t *) &provisioning_data, sizeof(mesh_provisioning_data));
                     break;
                 default:
                     break;
@@ -212,14 +232,10 @@ static btstack_crypto_aes128_cmac_t mesh_cmac_request;
 static uint8_t mesh_secure_network_beacon[22];
 static uint8_t mesh_secure_network_beacon_auth_value[16];
 
-static uint8_t mesh_flags;
-static const uint8_t * mesh_network_id;
-static uint32_t mesh_iv_index;
-static const uint8_t * mesh_beacon_key;
-
 static void mesh_secure_network_beacon_auth_value_calculated(void * arg){
     UNUSED(arg);
     memcpy(&mesh_secure_network_beacon[14], mesh_secure_network_beacon_auth_value, 8);
+    printf("Secure Network Beacon\n");
     printf("- ");
     printf_hexdump(mesh_secure_network_beacon, sizeof(mesh_secure_network_beacon));
     adv_bearer_send_mesh_beacon(mesh_secure_network_beacon, sizeof(mesh_secure_network_beacon));
@@ -286,19 +302,12 @@ static void stdin_process(char cmd){
             break;
         case 'b':
             printf("+ Setup Secure Network Beacon\n");
-
-            mesh_flags      = provisioning_device_data_get_flags();
-            mesh_network_id = provisioning_device_data_get_network_id();
-            mesh_iv_index   = provisioning_device_data_get_iv_index();
-            mesh_beacon_key = provisioning_device_data_get_beacon_key();
-
             mesh_secure_network_beacon[0] = BEACON_TYPE_SECURE_NETWORK;
             // mesh_secure_network_beacon[1] = mesh_flags;
             mesh_secure_network_beacon[1] = 3;  // 
-            memcpy(&mesh_secure_network_beacon[2], mesh_network_id, 8);
-            big_endian_store_32(mesh_secure_network_beacon, 10, mesh_iv_index);
-            printf("beacon key: "); printf_hexdump(mesh_beacon_key, 16);
-            btstack_crypto_aes128_cmac_message(&mesh_cmac_request, mesh_beacon_key, 13,
+            memcpy(&mesh_secure_network_beacon[2], provisioning_data.network_id, 8);
+            big_endian_store_32(mesh_secure_network_beacon, 10, provisioning_data.iv_index);
+            btstack_crypto_aes128_cmac_message(&mesh_cmac_request, provisioning_data.beacon_key, 13,
                 &mesh_secure_network_beacon[1], mesh_secure_network_beacon_auth_value, &mesh_secure_network_beacon_auth_value_calculated, NULL);
             break;
         default:

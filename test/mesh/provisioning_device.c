@@ -197,6 +197,7 @@ static uint8_t session_nonce[16];
 static uint8_t enc_provisioning_data[25];
 // ProvisioningData
 static uint8_t provisioning_data[25];
+
 // DeviceKey
 static uint8_t device_key[16];
 // NetKey
@@ -736,6 +737,9 @@ static void provisioning_handle_beacon_key_calculated(void *arg){
     printf_hexdump(beacon_key, 16);
 
     provisioning_timer_stop();
+
+    // notify client
+    provisioning_emit_event(MESH_PB_PROV_COMPLETE, 1);
 
     // queue complete pdu
     provisioning_queue_pdu(MESH_PROV_COMPLETE);

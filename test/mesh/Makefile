@@ -10,6 +10,7 @@ CORE += \
 	btstack_uart_block_posix_pty.c \
 	hci_transport_h2_libusb.c \
 	hci_transport_h4.c \
+	btstack_tlv_posix.c \
 	le_device_db_fs.c \
 	l2cap.c \
 	pb_adv.c \

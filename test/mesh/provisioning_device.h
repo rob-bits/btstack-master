@@ -50,6 +50,12 @@ extern "C"
 {
 #endif
 
+typedef struct {
+	uint8_t  network_id[8];
+	uint8_t  beacon_key[16];
+	uint32_t iv_index;
+} mesh_provisioning_data;
+
 /**
  * @brief Init Provisioning in Device Role with device UUID
  * @param device_uuid
