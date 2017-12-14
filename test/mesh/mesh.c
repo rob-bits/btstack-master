@@ -57,6 +57,11 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
 
 static int counter = 'a';
 
+// pin entry
+static int ui_chars_for_pin; 
+static uint8_t ui_pin[17];
+static int ui_pin_offset;
+
 static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     UNUSED(channel);
     UNUSED(size);
@@ -108,6 +113,12 @@ static void mesh_message_handler (uint8_t packet_type, uint16_t channel, uint8_t
                     break;
                 case MESH_PB_ADV_LINK_OPEN:
                     printf("Provisioner link opened");
+                    break;
+                case MESH_PB_PROV_INPUT_OOB_REQUEST:
+                    printf("Enter passphrase: ");
+                    fflush(stdout);
+                    ui_chars_for_pin = 1;
+                    ui_pin_offset = 0;
                     break;
                 default:
                     break;
@@ -212,6 +223,18 @@ static void mesh_secure_network_beacon_auth_value_calculated(void * arg){
 }
 
 static void stdin_process(char cmd){
+    if (ui_chars_for_pin){
+        printf("%c", cmd);
+        fflush(stdout);
+        if (cmd == '\n'){
+            printf("\nSending Pin '%s'\n", ui_pin);
+            provisioning_device_input_oob_complete_alphanumeric(1, ui_pin, ui_pin_offset);
+            ui_chars_for_pin = 0;
+        } else {
+            ui_pin[ui_pin_offset++] = cmd;
+        }
+        return;
+    }
     switch (cmd){
         case '1':
             adv_bearer_request_can_send_now_for_mesh_message();
@@ -316,6 +339,7 @@ int btstack_main(void)
     
     // Provisioning in device role
     provisioning_device_init(device_uuid);
+    provisioning_device_register_packet_handler(&mesh_message_handler);
 
     //
     btstack_parse_hex(pts_device_uuid_string, 16, pts_device_uuid);

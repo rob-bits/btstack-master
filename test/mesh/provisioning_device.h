@@ -93,11 +93,19 @@ void provisioning_device_set_output_oob_actions(uint16_t supported_output_oob_ac
 void provisioning_device_set_input_oob_actions(uint16_t supported_input_oob_action_types, uint8_t max_oob_input_size);
 
 /**
- * @brief Input OOB Complete
+ * @brief Input OOB Complete Numeric
  * @param pv_adv_cid
- * @Param input
+ * @Param input_oob number
  */
-void provisioning_device_input_oob_complete(uint16_t pb_adv_cid, uint32_t input_oob);
+void provisioning_device_input_oob_complete_numeric(uint16_t pb_adv_cid, uint32_t input_oob);
+
+/**
+ * @brief Input OOB Complete Alphanumeric
+ * @param pv_adv_cid
+ * @Param input_oob_data string
+ * @Param input_oob_len 
+ */
+void provisioning_device_input_oob_complete_alphanumeric(uint16_t pb_adv_cid, const uint8_t * input_oob_data, uint16_t input_oob_len);
 
 // Query provisioning data
 uint8_t provisioning_device_data_get_flags(void);

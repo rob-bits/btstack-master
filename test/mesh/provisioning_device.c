@@ -311,9 +311,6 @@ static void provisioning_send_capabilites(void){
 
     // send
     pb_adv_send_pdu(prov_buffer_out, 12);    
-
-    // start timer
-    provisioning_timer_start();
 }
 
 static void provisioning_send_public_key(void){
@@ -326,11 +323,15 @@ static void provisioning_send_public_key(void){
 
     // send
     pb_adv_send_pdu(prov_buffer_out, 65);
-
-    // start timer
-    provisioning_timer_start();
 }
 
+static void provisioning_send_input_complete(void){
+    // setup response 
+    prov_buffer_out[0] = MESH_PROV_INPUT_COMPLETE;
+
+    // send
+    pb_adv_send_pdu(prov_buffer_out, 17);
+}
 static void provisioning_send_confirm(void){
     // setup response 
     prov_buffer_out[0] = MESH_PROV_CONFIRM;
@@ -338,9 +339,6 @@ static void provisioning_send_confirm(void){
 
     // send
     pb_adv_send_pdu(prov_buffer_out, 17);
-
-    // start timer
-    provisioning_timer_start();
 }
 
 static void provisioning_send_random(void){
@@ -350,9 +348,6 @@ static void provisioning_send_random(void){
 
     // send pdu
     pb_adv_send_pdu(prov_buffer_out, 17);
-
-    // start timer
-    provisioning_timer_start();
 }
 
 static void provisioning_send_complete(void){
@@ -375,6 +370,9 @@ static void provisioning_send_pdu(void){
             break;
         case MESH_PROV_PUB_KEY:
             provisioning_send_public_key();
+            break;
+        case MESH_PROV_INPUT_COMPLETE:
+            provisioning_send_input_complete();
             break;
         case MESH_PROV_CONFIRM:
             provisioning_send_confirm();
@@ -548,6 +546,7 @@ static void provisioning_public_key_exchange_complete(void){
             break;
         case 0x03:
             // Input OOB
+            printf("Input OOB requested\n");
             provisioning_emit_event(MESH_PB_PROV_INPUT_OOB_REQUEST, 1);
             // expect virtual command
             prov_next_command = MESH_PROV_USER_INPUT_OOB;
@@ -555,9 +554,6 @@ static void provisioning_public_key_exchange_complete(void){
         default:
             break;
     }
-
-    // next state
-    prov_next_command = MESH_PROV_CONFIRM;
 }
 
 static void provisioning_handle_public_key_dhkey(void * arg){
@@ -912,22 +908,35 @@ void provisioning_device_set_input_oob_actions(uint16_t supported_input_oob_acti
     prov_input_oob_size    = max_oob_input_size;
 }
 
-void provisioning_device_input_oob_complete(uint16_t pb_adv_cid, uint32_t input_oob){
+static void provisioning_device_input_complete(void){
+    printf("Input Complete\n");
+    provisioning_queue_pdu(MESH_PROV_INPUT_COMPLETE);
+    prov_next_command = MESH_PROV_CONFIRM;
+}
+
+void provisioning_device_input_oob_complete_numeric(uint16_t pb_adv_cid, uint32_t input_oob){
     UNUSED(pb_adv_cid);
     if (prov_next_command != MESH_PROV_USER_INPUT_OOB) return;
 
     // store input_oob as auth value
     big_endian_store_32(auth_value, 12, input_oob);
 
-    // setup response 
-    prov_buffer_out[0] = MESH_PROV_INPUT_COMPLETE;
-
-    // send
-    provisioning_timer_start();
-    pb_adv_send_pdu(prov_buffer_out, 1);
-
-    prov_next_command = MESH_PROV_CONFIRM;
+    provisioning_device_input_complete();
 }
+
+void provisioning_device_input_oob_complete_alphanumeric(uint16_t pb_adv_cid, const uint8_t * input_oob_data, uint16_t input_oob_len){
+    UNUSED(pb_adv_cid);
+    printf("provisioning_device_input_oob_complete_alphanumeric, next %u, expect %u\n", prov_next_command, MESH_PROV_USER_INPUT_OOB);
+    if (prov_next_command != MESH_PROV_USER_INPUT_OOB) return;
+
+    // store input_oob and fillup with zeros
+    input_oob_len = btstack_min(input_oob_len, 16);
+    memset(auth_value, 0, 16);
+    memcpy(auth_value, input_oob_data, input_oob_len);
+
+    provisioning_device_input_complete();
+}
+
 
 uint8_t provisioning_device_data_get_flags(void){
     return flags;
