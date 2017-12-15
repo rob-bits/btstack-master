@@ -143,7 +143,7 @@ static void pb_adv_emit_link_open(uint8_t status, uint16_t pb_adv_cid){
 }
 
 static void pb_adv_emit_link_close(uint16_t pb_adv_cid, uint8_t reason){
-    uint8_t event[5] = { HCI_EVENT_MESH_META, 6, MESH_PB_ADV_LINK_CLOSE};
+    uint8_t event[5] = { HCI_EVENT_MESH_META, 6, MESH_PB_ADV_LINK_CLOSED};
     little_endian_store_16(event, 4, pb_adv_cid);
     pb_adv_packet_handler(HCI_EVENT_PACKET, 0, event, sizeof(event));
 }
@@ -154,6 +154,7 @@ static void pb_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_n
     switch (bearer_opcode){
         case MESH_GENERIC_PROVISIONING_LINK_OPEN: // Open a session on a bearer with a device
             // does it match our device_uuid?
+            if (!pb_adv_own_device_uuid) break;
             if (memcmp(&pdu[1], pb_adv_own_device_uuid, 16) != 0) break;
             switch(link_state){
                 case LINK_STATE_W4_OPEN:
@@ -536,7 +537,7 @@ static void pb_adv_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 void pb_adv_init(uint8_t * device_uuid){
     pb_adv_own_device_uuid = device_uuid;
     adv_bearer_register_for_pb_adv(&pb_adv_handler);
-    pb_adv_lfsr = little_endian_read_32(device_uuid, 0);
+    pb_adv_lfsr = 0x12345678;
     pb_adv_random();
 }
 
