@@ -36,69 +36,53 @@
  */
 
 /*
- *  provisioning.h
+ *  provisioning_device.h
  */
 
-#ifndef __PROVISIONING_H
-#define __PROVISIONING_H
+#ifndef __PROVISIONING_PROVISIONER_H
+#define __PROVISIONING_PROVISIONER_H
 
 #include <stdint.h>
 #include "btstack_defines.h"
-#include "btstack_crypto.h"
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
-#define PROVISIONING_PROTOCOL_TIMEOUT_MS 60000
-
-// Provisioning Bearer Control
-
-#define MESH_PROV_INVITE            0x00
-#define MESH_PROV_CAPABILITIES      0x01
-#define MESH_PROV_START             0x02
-#define MESH_PROV_PUB_KEY           0x03
-#define MESH_PROV_INPUT_COMPLETE    0x04
-#define MESH_PROV_CONFIRM           0x05
-#define MESH_PROV_RANDOM            0x06
-#define MESH_PROV_DATA              0x07
-#define MESH_PROV_COMPLETE          0x08
-#define MESH_PROV_FAILED            0x09
-
-// virtual commands // internal use
-#define MESH_PROV_USER_INPUT_OOB    0xF0
-#define MESH_PROV_INVALID           0xFF
-
-// Provisioning Output OOB Actions
-#define MESH_OUTPUT_OOB_BLINK       0x01
-#define MESH_OUTPUT_OOB_BEEP        0x02
-#define MESH_OUTPUT_OOB_VIBRATE     0x04
-#define MESH_OUTPUT_OOB_NUMBER      0x08
-#define MESH_OUTPUT_OOB_STRING      0x10
-
-// Provisioning Input OOB Actions
-#define MESH_INPUT_OOB_PUSH         0x01
-#define MESH_INPUT_OOB_TWIST        0x02
-#define MESH_INPUT_OOB_NUMBER       0x04
-#define MESH_INPUT_OOB_STRING       0x08
-
-typedef struct {
-	uint8_t  network_id[8];
-	uint8_t  beacon_key[16];
-	uint32_t iv_index;
-} mesh_provisioning_data;
+/**
+ * @brief Init Provisioning in Provisioner Role 
+ */
+void provisioning_provisioner_init(void);
 
 /**
- * Calculate mesh k1 function
+ * @brief Register packet handler
+ * @param packet_handler
  */
-void mesh_k1(btstack_crypto_aes128_cmac_t * request, const uint8_t * n, uint16_t n_len, const uint8_t * salt,
-    const uint8_t * p, const uint16_t p_len, uint8_t * result, void (* callback)(void * arg), void * callback_arg);
+void provisioning_provisioner_register_packet_handler(btstack_packet_handler_t packet_handler);
 
 /**
- * Calculate mesh k3 function
+ * @brief Start Provisioning device with provided device_uuid
+ * @param device_uuid
+ * @returns pb_adv_cid or 0
  */
-void mesh_k3(btstack_crypto_aes128_cmac_t * request, const uint8_t * n, uint8_t * result, void (* callback)(void * arg), void * callback_arg);
+uint16_t provisioning_provisioner_start_provisioning(const uint8_t * device_uuid);
+
+/**
+ * @brief Input OOB Complete Numeric
+ * @param pv_adv_cid
+ * @Param input_oob number
+ */
+void provisioning_provisioner_input_oob_complete_numeric(uint16_t pb_adv_cid, uint32_t input_oob);
+
+/**
+ * @brief Input OOB Complete Alphanumeric
+ * @param pv_adv_cid
+ * @Param input_oob_data string
+ * @Param input_oob_len 
+ */
+void provisioning_provisioner_input_oob_complete_alphanumeric(uint16_t pb_adv_cid, const uint8_t * input_oob_data, uint16_t input_oob_len);
+
 
 #ifdef __cplusplus
 } /* end of extern "C" */

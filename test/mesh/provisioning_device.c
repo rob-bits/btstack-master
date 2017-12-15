@@ -52,33 +52,6 @@ static void provisioning_attention_timer_set(void);
 static uint8_t remote_ec_q[64];
 static uint8_t dhkey[32];
 
-// Provisioning Bearer Control
-
-#define MESH_PROV_INVITE            0x00
-#define MESH_PROV_CAPABILITIES      0x01
-#define MESH_PROV_START             0x02
-#define MESH_PROV_PUB_KEY           0x03
-#define MESH_PROV_INPUT_COMPLETE    0x04
-#define MESH_PROV_CONFIRM           0x05
-#define MESH_PROV_RANDOM            0x06
-#define MESH_PROV_DATA              0x07
-#define MESH_PROV_COMPLETE          0x08
-#define MESH_PROV_FAILED            0x09
-// virtual commands
-#define MESH_PROV_USER_INPUT_OOB    0xF0
-#define MESH_PROV_INVALID           0xFF
-
-#define MESH_OUTPUT_OOB_BLINK       0x01
-#define MESH_OUTPUT_OOB_BEEP        0x02
-#define MESH_OUTPUT_OOB_VIBRATE     0x04
-#define MESH_OUTPUT_OOB_NUMBER      0x08
-#define MESH_OUTPUT_OOB_STRING      0x10
-
-#define MESH_INPUT_OOB_PUSH         0x01
-#define MESH_INPUT_OOB_TWIST        0x02
-#define MESH_INPUT_OOB_NUMBER       0x04
-#define MESH_INPUT_OOB_STRING       0x08
-
 static btstack_packet_handler_t prov_packet_handler;
 
 static uint8_t  prov_next_command;
@@ -628,11 +601,13 @@ static void provisioning_handle_random_session_nonce_calculated(void * arg){
     UNUSED(arg);
 
     // The nonce shall be the 13 least significant octets == zero most significant octets
-    memset(session_nonce, 0, 3);
+    uint8_t temp[13];
+    memcpy(temp, &session_nonce[3], 13);
+    memcpy(session_nonce, temp, 13);
 
     // SessionNonce
     printf("SessionNonce:   ");
-    printf_hexdump(session_nonce, sizeof(session_nonce));
+    printf_hexdump(session_nonce, 13);
 
     // queue random pdu
     provisioning_queue_pdu(MESH_PROV_RANDOM);
@@ -672,10 +647,10 @@ static void provisioning_handle_random(uint8_t *packet, uint16_t size){
     // TODO: validate Confirmation
 
     // calc ProvisioningSalt = s1(ConfirmationSalt || RandomProvisioner || RandomDevice)
-    memcpy(prov_confirmation_inputs, confirmation_salt, 16);
-    memcpy(prov_confirmation_inputs, packet, 16);
-    memcpy(prov_confirmation_inputs, random_device, 16);
-    btstack_crypto_aes128_cmac_zero(&prov_cmac_request, sizeof(prov_confirmation_inputs), prov_confirmation_inputs, provisioning_salt, &provisioning_handle_random_s1_calculated, NULL);
+    memcpy(&prov_confirmation_inputs[0], confirmation_salt, 16);
+    memcpy(&prov_confirmation_inputs[16], packet, 16);
+    memcpy(&prov_confirmation_inputs[32], random_device, 16);
+    btstack_crypto_aes128_cmac_zero(&prov_cmac_request, 48, prov_confirmation_inputs, provisioning_salt, &provisioning_handle_random_s1_calculated, NULL);
 }
 
 static void provisioning_handle_beacon_key_calculated(void *arg){
@@ -722,6 +697,10 @@ static void provisioning_handle_data_ccm(void * arg){
     UNUSED(arg);
 
     // validate MIC?
+    uint8_t mic[8];
+    btstack_crypo_ccm_get_authentication_value(&prov_ccm_request, mic);
+    printf("MIC: ");
+    printf_hexdump(mic, 8);
 
     // sort provisoning data
     memcpy(net_key, provisioning_data, 16);
@@ -730,13 +709,6 @@ static void provisioning_handle_data_ccm(void * arg){
     iv_index = big_endian_read_32(provisioning_data, 19);
     unicast_address = big_endian_read_16(provisioning_data, 23);
 
-#if 0
-    uint8_t net_key_test[] = { 0x7d, 0xd7, 0x36, 0x4c, 0xd8, 0x42, 0xad, 0x18, 0xc1, 0x7c, 0x2b, 0x82, 0x0c, 0x84, 0xc3, 0xd6 };
-    memcpy(net_key, net_key_test, 16);
-    iv_index = 0x12345678;
-    flags = 0;
-#endif
-
     // dump
     printf("NetKey: ");
     printf_hexdump(net_key, 16);
@@ -744,7 +716,6 @@ static void provisioning_handle_data_ccm(void * arg){
     printf("Flags: %02x\n", flags);
     printf("IVIndex: %04x\n", iv_index);
     printf("UnicastAddress: %02x\n", unicast_address);
-
 
     // DeviceKey
     mesh_k1(&prov_cmac_request, dhkey, sizeof(dhkey), provisioning_salt, (const uint8_t*) "prdk", 4, device_key, &provisioning_handle_data_device_key, NULL);

@@ -40,7 +40,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "ble/mesh/pb_adv.h"
-#include "provisioning_device.h"
+#include "provisioning_provisioner.h"
 #include "btstack.h"
 
 #include "CppUTest/TestHarness.h"
@@ -89,8 +89,6 @@ static int parse_hex(uint8_t * buffer, const char * hex_string){
 // returns if anything was done
 extern "C" int mock_process_hci_cmd(void);
 
-const static uint8_t device_uuid[] = { 0x00, 0x1B, 0xDC, 0x08, 0x10, 0x21, 0x0B, 0x0E, 0x0A, 0x0C, 0x00, 0x0B, 0x0E, 0x0A, 0x0C, 0x00 };
-
 // pb-adv mock for testing
 
 static btstack_packet_handler_t pb_adv_packet_handler;
@@ -98,10 +96,17 @@ static btstack_packet_handler_t pb_adv_packet_handler;
 static uint8_t * pdu_data;
 static uint16_t  pdu_size;
 
-/**
- * Initialize Provisioning Bearer using Advertisement Bearer
- * @param DeviceUUID
- */
+static void pb_adv_emit_link_open(uint8_t status, uint16_t pb_adv_cid){
+    uint8_t event[6] = { HCI_EVENT_MESH_META, 6, MESH_PB_ADV_LINK_OPEN, status};
+    little_endian_store_16(event, 4, pb_adv_cid);
+    pb_adv_packet_handler(HCI_EVENT_PACKET, 0, event, sizeof(event));
+}
+
+static void pb_adv_emit_pdu_sent(uint8_t status){
+    uint8_t event[] = { HCI_EVENT_MESH_META, 2, MESH_PB_ADV_PDU_SENT, status};
+    pb_adv_packet_handler(HCI_EVENT_PACKET, 0, event, sizeof(event));
+}
+
 void pb_adv_init(const uint8_t * device_uuid){
     printf("pb_adv_init\n");
 }
@@ -109,23 +114,24 @@ void pb_adv_init(const uint8_t * device_uuid){
 void pb_adv_close_link(uint16_t pb_adv_cid, uint8_t reason){
 }
 
-/**
- * Register listener for Provisioning PDUs and MESH_PBV_ADV_SEND_COMPLETE
- */
 void pb_adv_register_packet_handler(btstack_packet_handler_t packet_handler){
     pb_adv_packet_handler = packet_handler;
 }
 
-/** 
- * Send Provisioning PDU
- */
 void pb_adv_send_pdu(const uint8_t * pdu, uint16_t size){
     pdu_data = (uint8_t*) pdu;
     pdu_size = size;
     // dump_data((uint8_t*)pdu,size);
     // printf_hexdump(pdu, size);
 }
- 
+
+uint16_t pb_adv_create_link(const uint8_t * device_uuid){
+    // just simluate opened
+    pb_adv_emit_link_open(0, 1);
+    return 1;
+}
+
+//
 static void perform_crypto_operations(void){
     int more = 1;
     while (more){
@@ -138,10 +144,6 @@ static void send_prov_pdu(const uint8_t * packet, uint16_t size){
     perform_crypto_operations();
 }
 
-static void pb_adv_emit_pdu_sent(uint8_t status){
-    uint8_t event[] = { HCI_EVENT_MESH_META, 2, MESH_PB_ADV_PDU_SENT, status};
-    pb_adv_packet_handler(HCI_EVENT_PACKET, 0, event, sizeof(event));
-}
 
 static int scan_hex_byte(const char * byte_string){
     int upper_nibble = nibble_for_char(*byte_string++);
@@ -177,60 +179,73 @@ static const char * prov_static_oob_string = "00000000000000000102030405060708";
 TEST_GROUP(Provisioning){
     void setup(void){
         btstack_crypto_init();
-        provisioning_device_init(device_uuid);
+        provisioning_provisioner_init();
         btstack_parse_hex(prov_static_oob_string, 16, prov_static_oob_data);
-        provisioning_device_set_static_oob(16, prov_static_oob_data);
-        provisioning_device_set_output_oob_actions(0x08, 0x08);
-        provisioning_device_set_input_oob_actions(0x08, 0x08);
+        // provisioning_device_set_static_oob(16, prov_static_oob_data);
+        // provisioning_device_set_output_oob_actions(0x08, 0x08);
+        // provisioning_device_set_input_oob_actions(0x08, 0x08);
         perform_crypto_operations();
     }
 };
 
+const static uint8_t device_uuid[] = { 0x00, 0x1B, 0xDC, 0x08, 0x10, 0x21, 0x0B, 0x0E, 0x0A, 0x0C, 0x00, 0x0B, 0x0E, 0x0A, 0x0C, 0x00 };
+
 uint8_t prov_invite[] = { 0x00, 0x00 };
 uint8_t prov_capabilities[] = { 0x01, 0x01, 0x00, 0x01, 0x00, 0x01, 0x08, 0x00, 0x08, 0x08, 0x00, 0x08, };
-uint8_t prov_start[] = { 0x02, 0x00, 0x00, 0x02, 0x00, 0x01 };
+uint8_t prov_start[] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x00 };
 uint8_t prov_public_key[] = { 0x03,
     0xf0, 0xc8, 0x63, 0xf8, 0xe5, 0x55, 0x11, 0x4b, 0xf4, 0x88, 0x2c, 0xc7, 0x87, 0xb9, 0x5c, 0x27,
     0x2a, 0x7f, 0xe4, 0xdc, 0xdd, 0xf1, 0x92, 0x2f, 0x4f, 0x18, 0xa4, 0x94, 0xe1, 0xc3, 0x57, 0xa1,
     0xa6, 0xc3, 0x2d, 0x07, 0xbe, 0xb5, 0x76, 0xab, 0x60, 0x10, 0x68, 0x06, 0x8f, 0x0a, 0x9e, 0x01,
     0x60, 0xc3, 0xa1, 0x41, 0x19, 0xf5, 0xd4, 0x26, 0xa7, 0x95, 0x5d, 0xa3, 0xe6, 0xed, 0x3e, 0x81, };
-uint8_t prov_confirm[] = { 0x05, 0x80, 0x4d, 0xdc, 0x3b, 0xba, 0x60, 0xd5, 0x93, 0x5b, 0x56, 0xef, 0xb5, 0xcb, 0x59, 0x31, 0xfa, };
-uint8_t prov_random[]  = { 0x06, 0x9b, 0x4d, 0x39, 0xf6, 0xf7, 0xe8, 0xa1, 0x05, 0xd3, 0xfe, 0xed, 0xa5, 0xd5, 0xf3, 0xd9, 0xe4, };
+uint8_t prov_confirm[] = {   0x05, 0x3d, 0x0d, 0x55, 0xc4, 0x83, 0xb9, 0x49, 0x6f, 0xab, 0x05, 0xdd, 0xb2, 0x3b, 0x5b, 0xc2, 0x9d};
+uint8_t prov_random[]  = {   0x06, 0xe9, 0xc5, 0xf1, 0xb0, 0xc4, 0x15, 0x8a, 0xe5, 0x9b, 0x4d, 0x39, 0xf6, 0xf7, 0xe8, 0xa1, 0x05};
 uint8_t prov_data[] = {
-    0x07,
-    0x85, 0x66, 0xac, 0x46, 0x37, 0x34, 0x86, 0xe1, 0x3e, 0x4c, 0x13, 0x52, 0xd0, 0x6d, 0x34, 0x7d,
-    0xce, 0xf1, 0xd1, 0x7d, 0xbd, 0xbe, 0xcc, 0x99, 0xc3, 
-    0x93, 0x87, 0xfc, 0xb0, 0x72, 0x0f, 0xd8, 0x8d };
+    0x07, 0x47, 0x1a, 0x19, 0xcc, 0x17, 0x5c, 0xd0, 0xe8, 0x10, 0x3c, 0x85,
+    0x0a, 0x36, 0x10, 0x07, 0x35, 0x17, 0x41, 0x6a, 0xc3, 0x1e, 0x07, 0xe7,
+    0x90, 0x77, 0x3b, 0xab, 0xbb, 0x40, 0x37, 0x75, 0xb7
+};
 uint8_t prov_complete[] = { 0x08, };
 
+static void expect_packet(const char * packet_name, const uint8_t * packet_data, uint16_t packet_len){
+    printf("Expect '%s'\n", packet_name);
+    CHECK(pdu_data != NULL);
+    CHECK_EQUAL_ARRAY((uint8_t*)packet_data, pdu_data, packet_len);
+}
+
+#define EXPECT_PACKET(packet) expect_packet(#packet, packet, sizeof(packet))
+
 TEST(Provisioning, Prov1){
-    // send prov inviate
-    send_prov_pdu(prov_invite, sizeof(prov_invite));        
-    // check for prov cap
-    CHECK_EQUAL_ARRAY(prov_capabilities, pdu_data, sizeof(prov_capabilities));
+    // simulate unprovisioned device beacon
+    provisioning_provisioner_start_provisioning(device_uuid);
+    // wait for prov invite
+    EXPECT_PACKET(prov_invite);
     pb_adv_emit_pdu_sent(0);
-    // send prov start
-    send_prov_pdu(prov_start, sizeof(prov_start));        
+    // send capabilities
+    send_prov_pdu(prov_capabilities, sizeof(prov_capabilities));
+    // wait for start
+    EXPECT_PACKET(prov_start);
+    pb_adv_emit_pdu_sent(0);
+    // wait for public key
+    EXPECT_PACKET(prov_public_key);
+    pb_adv_emit_pdu_sent(0);
     // send public key
     send_prov_pdu(prov_public_key, sizeof(prov_public_key));
-    // check for public key
-    CHECK_EQUAL_ARRAY(prov_public_key, pdu_data, sizeof(prov_public_key));
+    // wait for confirm
+    EXPECT_PACKET(prov_confirm);
     pb_adv_emit_pdu_sent(0);
     // send prov confirm
     send_prov_pdu(prov_confirm, sizeof(prov_confirm));
-    // check for prov confirm
-    CHECK_EQUAL_ARRAY(prov_confirm, pdu_data, sizeof(prov_confirm));
+    // wait for random
+    CHECK_EQUAL_ARRAY(prov_random, pdu_data, sizeof(prov_random));
     pb_adv_emit_pdu_sent(0);
     // send prov random
     send_prov_pdu(prov_random, sizeof(prov_random));
-    // check for prov random
-    CHECK_EQUAL_ARRAY(prov_random, pdu_data, sizeof(prov_random));
+    // wait for prov data
+    EXPECT_PACKET(prov_data);
     pb_adv_emit_pdu_sent(0);
-    // send prov data
-    send_prov_pdu(prov_data, sizeof(prov_data));
-    // check prov complete
-    CHECK_EQUAL_ARRAY(prov_complete, pdu_data, sizeof(prov_complete));
-    pb_adv_emit_pdu_sent(0);
+    // send prov complete
+    send_prov_pdu(prov_complete, sizeof(prov_complete));
 }
 
 int main (int argc, const char * argv[]){

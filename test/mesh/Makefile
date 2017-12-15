@@ -43,13 +43,19 @@ LDFLAGS += $(shell pkg-config libusb-1.0 --libs)
 mesh: ${CORE_OBJ} ${COMMON_OBJ} ${SM_OBJ} provisioning.o provisioning_device.o mesh.o
 	${CC} $^ ${CFLAGS} ${LDFLAGS} -o $@
 
+provisioner: ${CORE_OBJ} ${COMMON_OBJ} ${SM_OBJ} provisioning.o provisioning_provisioner.o provisioner.o
+	${CC} $^ ${CFLAGS} ${LDFLAGS} -o $@
+
 sniffer: ${CORE_OBJ} ${COMMON_OBJ} ${SM_OBJ} sniffer.c 
 	${CC} $^ ${CFLAGS} ${LDFLAGS} -o $@
 
 provisioning_device_test: provisioning_device_test.cpp uECC.o provisioning.o provisioning_device.o btstack_crypto.o btstack_util.o btstack_linked_list.o mock.o rijndael.o hci_cmd.o hci_dump.o
 	${CC_UNIT} ${CFLAGS} ${LDFLAGS} $^ -lCppUTest -lCppUTestExt -o $@	
 
-EXAMPLES= mesh sniffer provisioning_device_test
+provisioning_provisioner_test: provisioning_provisioner_test.cpp uECC.o provisioning.o provisioning_provisioner.o btstack_crypto.o btstack_util.o btstack_linked_list.o mock.o rijndael.o hci_cmd.o hci_dump.o
+	${CC_UNIT} ${CFLAGS} ${LDFLAGS} $^ -lCppUTest -lCppUTestExt -o $@	
+
+EXAMPLES = mesh provisioner sniffer provisioning_device_test provisioning_provisioner_test
 
 all: ${EXAMPLES}
 
