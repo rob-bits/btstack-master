@@ -138,6 +138,11 @@ static void send_prov_pdu(const uint8_t * packet, uint16_t size){
     perform_crypto_operations();
 }
 
+static void pb_adv_emit_pdu_sent(uint8_t status){
+    uint8_t event[] = { HCI_EVENT_MESH_META, 2, MESH_PB_ADV_PDU_SENT, status};
+    pb_adv_packet_handler(HCI_EVENT_PACKET, 0, event, sizeof(event));
+}
+
 static int scan_hex_byte(const char * byte_string){
     int upper_nibble = nibble_for_char(*byte_string++);
     if (upper_nibble < 0) return -1;
@@ -202,27 +207,32 @@ TEST(Provisioning, Prov1){
     send_prov_pdu(prov_invite, sizeof(prov_invite));        
     // check for prov cap
     CHECK_EQUAL_ARRAY(prov_capabilities, pdu_data, sizeof(prov_capabilities));
+    pb_adv_emit_pdu_sent(0);
     // send prov start
     send_prov_pdu(prov_start, sizeof(prov_start));        
     // send public key
     send_prov_pdu(prov_public_key, sizeof(prov_public_key));
     // check for public key
     CHECK_EQUAL_ARRAY(prov_public_key, pdu_data, sizeof(prov_public_key));
+    pb_adv_emit_pdu_sent(0);
     // send prov confirm
     send_prov_pdu(prov_confirm, sizeof(prov_confirm));
     // check for prov confirm
     CHECK_EQUAL_ARRAY(prov_confirm, pdu_data, sizeof(prov_confirm));
+    pb_adv_emit_pdu_sent(0);
     // send prov random
     send_prov_pdu(prov_random, sizeof(prov_random));
     // check for prov random
     CHECK_EQUAL_ARRAY(prov_random, pdu_data, sizeof(prov_random));
+    pb_adv_emit_pdu_sent(0);
     // send prov data
     send_prov_pdu(prov_data, sizeof(prov_data));
     // check prov complete
     CHECK_EQUAL_ARRAY(prov_complete, pdu_data, sizeof(prov_complete));
+    pb_adv_emit_pdu_sent(0);
 }
 
 int main (int argc, const char * argv[]){
-    // hci_dump_open("hci_dump.pklg", HCI_DUMP_PACKETLOGGER);
+    hci_dump_open("hci_dump.pklg", HCI_DUMP_PACKETLOGGER);
     return CommandLineTestRunner::RunAllTests(argc, argv);
 }
