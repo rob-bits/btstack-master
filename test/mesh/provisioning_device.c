@@ -44,68 +44,13 @@
 #include "ble/mesh/pb_adv.h"
 #include "classic/rfcomm.h" // for crc8
 #include "btstack.h"
+#include "provisioning.h"
 
 static void provisioning_attention_timer_set(void);
-
-#define PROVISIONING_PROTOCOL_TIMEOUT_MS 60000
 
 // remote ecc
 static uint8_t remote_ec_q[64];
 static uint8_t dhkey[32];
-
-// mesh k1 - might get moved to btstack_crypto and all vars go into btstack_crypto_mesh_k1_t struct
-static uint8_t         mesh_k1_temp[16];
-static void (*         mesh_k1_callback)(void * arg);
-static void *          mesh_k1_arg;
-static const uint8_t * mesh_k1_p;
-static uint16_t        mesh_k1_p_len;
-static uint8_t *       mesh_k1_result;
-
-static void mesh_k1_temp_calculated(void * arg){
-    btstack_crypto_aes128_cmac_t * request = (btstack_crypto_aes128_cmac_t*) arg;
-    btstack_crypto_aes128_cmac_message(request, mesh_k1_temp, mesh_k1_p_len, mesh_k1_p, mesh_k1_result, mesh_k1_callback, mesh_k1_arg);
-}
-
-static void mesh_k1(btstack_crypto_aes128_cmac_t * request, const uint8_t * n, uint16_t n_len, const uint8_t * salt,
-    const uint8_t * p, const uint16_t p_len, uint8_t * result, void (* callback)(void * arg), void * callback_arg){
-    mesh_k1_callback = callback;
-    mesh_k1_arg      = callback_arg;
-    mesh_k1_p        = p;
-    mesh_k1_p_len    = p_len;
-    mesh_k1_result   = result;
-    btstack_crypto_aes128_cmac_message(request, salt, n_len, n, mesh_k1_temp, mesh_k1_temp_calculated, request);
-}
-
-// mesh k3 - might get moved to btstack_crypto and all vars go into btstack_crypto_mesh_k3_t struct
-static const uint8_t   mesh_k3_tag[5] = { 'i', 'd', '6', '4', 0x01}; 
-static uint8_t         mesh_k3_salt[16];
-static uint8_t         mesh_k3_temp[16];
-static uint8_t         mesh_k3_result128[16];
-static void (*         mesh_k3_callback)(void * arg);
-static void *          mesh_k3_arg;
-static const uint8_t * mesh_k3_n;
-static uint8_t       * mesh_k3_result;
-
-static void mesh_k3_result128_calculated(void * arg){
-    UNUSED(arg);
-    memcpy(mesh_k3_result, &mesh_k3_result128[8], 8);
-    (*mesh_k3_callback)(mesh_k3_arg);        
-}
-static void mesh_k3_temp_callback(void * arg){
-    btstack_crypto_aes128_cmac_t * request = (btstack_crypto_aes128_cmac_t*) arg;
-    btstack_crypto_aes128_cmac_message(request, mesh_k3_temp, sizeof(mesh_k3_tag), mesh_k3_tag, mesh_k3_result128, mesh_k3_result128_calculated, request);
-}
-static void mesh_k3_salt_calculated(void * arg){
-    btstack_crypto_aes128_cmac_t * request = (btstack_crypto_aes128_cmac_t*) arg;
-    btstack_crypto_aes128_cmac_message(request, mesh_k3_salt, 16, mesh_k3_n, mesh_k3_temp, mesh_k3_temp_callback, request);
-}
-static void mesh_k3(btstack_crypto_aes128_cmac_t * request, const uint8_t * n, uint8_t * result, void (* callback)(void * arg), void * callback_arg){
-    mesh_k3_callback = callback;
-    mesh_k3_arg      = callback_arg;
-    mesh_k3_n        = n;
-    mesh_k3_result   = result;
-    btstack_crypto_aes128_cmac_zero(request, 4, (const uint8_t *) "smk3", mesh_k3_salt, mesh_k3_salt_calculated, request);
-}
 
 // Provisioning Bearer Control
 

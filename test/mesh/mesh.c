@@ -44,6 +44,7 @@
 #include "ble/mesh/adv_bearer.h"
 #include "ble/mesh/pb_adv.h"
 #include "ble/mesh/beacon.h"
+#include "provisioning.h"
 #include "provisioning_device.h"
 #include "btstack.h"
 #include "btstack_tlv.h"
@@ -304,7 +305,7 @@ static void stdin_process(char cmd){
             printf("+ Setup Secure Network Beacon\n");
             mesh_secure_network_beacon[0] = BEACON_TYPE_SECURE_NETWORK;
             // mesh_secure_network_beacon[1] = mesh_flags;
-            mesh_secure_network_beacon[1] = 3;  // 
+            mesh_secure_network_beacon[1] = 0;  // 
             memcpy(&mesh_secure_network_beacon[2], provisioning_data.network_id, 8);
             big_endian_store_32(mesh_secure_network_beacon, 10, provisioning_data.iv_index);
             btstack_crypto_aes128_cmac_message(&mesh_cmac_request, provisioning_data.beacon_key, 13,
