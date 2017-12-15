@@ -88,7 +88,7 @@ static uint8_t       * mesh_k3_result;
 
 static void mesh_k3_result128_calculated(void * arg){
     UNUSED(arg);
-    memcpy(mesh_k3_result, mesh_k3_result128, 8);
+    memcpy(mesh_k3_result, &mesh_k3_result128[8], 8);
     (*mesh_k3_callback)(mesh_k3_arg);        
 }
 static void mesh_k3_temp_callback(void * arg){
@@ -678,6 +678,7 @@ static void provisioning_handle_confirmation(uint8_t *packet, uint16_t size){
     btstack_crypto_aes128_cmac_zero(&prov_cmac_request, sizeof(prov_confirmation_inputs), prov_confirmation_inputs, confirmation_salt, &provisioning_handle_confirmation_s1_calculated, NULL);
 }
 
+// PROV_RANDOM
 static void provisioning_handle_random_session_nonce_calculated(void * arg){
     UNUSED(arg);
 
@@ -752,6 +753,7 @@ static void provisioning_handle_s1_for_beacon_key_calculated(void *arg){
     mesh_k1(&prov_cmac_request, net_key, 16, provisioning_salt, id128_tag, sizeof(id128_tag), beacon_key, &provisioning_handle_beacon_key_calculated, NULL);
 }
 
+// PROV_DATA
 static void provisioning_handle_data_network_id_calculated(void * arg){
     // dump
     printf("Network ID: ");
@@ -762,6 +764,10 @@ static void provisioning_handle_data_network_id_calculated(void * arg){
 }
 
 static void provisioning_handle_data_device_key(void * arg){
+    // dump
+    printf("DeviceKey: ");
+    printf_hexdump(device_key, 16);
+
     // calculate Network ID
     mesh_k3(&prov_cmac_request, net_key, network_id, provisioning_handle_data_network_id_calculated, NULL);
 }
@@ -779,13 +785,21 @@ static void provisioning_handle_data_ccm(void * arg){
     iv_index = big_endian_read_32(provisioning_data, 19);
     unicast_address = big_endian_read_16(provisioning_data, 23);
 
+#if 0
+    uint8_t net_key_test[] = { 0x7d, 0xd7, 0x36, 0x4c, 0xd8, 0x42, 0xad, 0x18, 0xc1, 0x7c, 0x2b, 0x82, 0x0c, 0x84, 0xc3, 0xd6 };
+    memcpy(net_key, net_key_test, 16);
+    iv_index = 0x12345678;
+    flags = 0;
+#endif
+
     // dump
     printf("NetKey: ");
-    printf_hexdump(provisioning_data, 16);
+    printf_hexdump(net_key, 16);
     printf("NetKeyIndex: %04x\n", net_key_index);
     printf("Flags: %02x\n", flags);
     printf("IVIndex: %04x\n", iv_index);
     printf("UnicastAddress: %02x\n", unicast_address);
+
 
     // DeviceKey
     mesh_k1(&prov_cmac_request, dhkey, sizeof(dhkey), provisioning_salt, (const uint8_t*) "prdk", 4, device_key, &provisioning_handle_data_device_key, NULL);
