@@ -60,6 +60,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
 static int counter = 'a';
 
 static mesh_provisioning_data provisioning_data;
+static uint8_t mesh_flags;
 
 // pin entry
 static int ui_chars_for_pin; 
@@ -141,6 +142,7 @@ static void mesh_message_handler (uint8_t packet_type, uint16_t channel, uint8_t
                     memcpy(provisioning_data.network_id, provisioning_device_data_get_network_id(), 8);
                     memcpy(provisioning_data.beacon_key, provisioning_device_data_get_beacon_key(), 16);
                     provisioning_data.iv_index = provisioning_device_data_get_iv_index();
+                    mesh_flags = provisioning_device_data_get_flags();
                     // store in TLV
                     btstack_tlv_singleton_impl->store_tag(btstack_tlv_singleton_context, 'PROV', (uint8_t *) &provisioning_data, sizeof(mesh_provisioning_data));
                     break;
@@ -304,8 +306,7 @@ static void stdin_process(char cmd){
         case 'b':
             printf("+ Setup Secure Network Beacon\n");
             mesh_secure_network_beacon[0] = BEACON_TYPE_SECURE_NETWORK;
-            // mesh_secure_network_beacon[1] = mesh_flags;
-            mesh_secure_network_beacon[1] = 0;  // 
+            mesh_secure_network_beacon[1] = mesh_flags;
             memcpy(&mesh_secure_network_beacon[2], provisioning_data.network_id, 8);
             big_endian_store_32(mesh_secure_network_beacon, 10, provisioning_data.iv_index);
             btstack_crypto_aes128_cmac_message(&mesh_cmac_request, provisioning_data.beacon_key, 13,
