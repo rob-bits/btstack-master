@@ -116,13 +116,13 @@ static void beacon_timer_handler(btstack_timer_source_t * ts){
 void beacon_init(const uint8_t * device_uuid, uint16_t oob_information){
     
     beacon_oob_information = oob_information;
+    adv_bearer_register_for_mesh_beacon(&beacon_packet_handler);
 
-    if (beacon_device_uuid){
+    if (device_uuid){
         beacon_device_uuid = device_uuid;
         beacon_timer.process = &beacon_timer_handler;
         beacon_timer_handler(&beacon_timer);
     }
-    adv_bearer_register_for_mesh_beacon(&beacon_packet_handler);
 }
 
 void beacon_register_for_unprovisioned_device_beacons(btstack_packet_handler_t packet_handler){
