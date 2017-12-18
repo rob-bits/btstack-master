@@ -77,6 +77,7 @@ static uint8_t  prov_attention_timer;
 static uint8_t  prov_buffer_out[100];   // TODO: how large are prov messages?
 static uint8_t  prov_waiting_for_outgoing_complete;
 static uint8_t  prov_error_code;
+static uint8_t  prov_start_algorithm;
 static uint8_t  prov_start_public_key_used;
 static uint8_t  prov_start_authentication_method;
 static uint8_t  prov_start_authentication_action;
@@ -118,13 +119,6 @@ static uint8_t   prov_input_oob_size;
 static uint8_t network_id[8];
 static uint8_t beacon_key[16];
 
-static void provisioning_emit_event(uint8_t mesh_subevent, uint16_t pb_adv_cid){
-    if (!prov_packet_handler) return;
-    uint8_t event[5] = { HCI_EVENT_MESH_META, 3, mesh_subevent};
-    little_endian_store_16(event, 3, pb_adv_cid);
-    prov_packet_handler(HCI_EVENT_PACKET, 0, event, sizeof(event));
-}
-
 static void provisioning_emit_output_oob_event(uint16_t pb_adv_cid, uint32_t number){
     if (!prov_packet_handler) return;
     uint8_t event[9] = { HCI_EVENT_MESH_META, 7, MESH_PB_PROV_START_EMIT_OUTPUT_OOB};
@@ -149,6 +143,13 @@ static void provisioning_attention_timer_set(void){
     }
 }
 #endif 
+
+static void provisioning_emit_event(uint8_t mesh_subevent, uint16_t pb_adv_cid){
+    if (!prov_packet_handler) return;
+    uint8_t event[5] = { HCI_EVENT_MESH_META, 3, mesh_subevent};
+    little_endian_store_16(event, 3, pb_adv_cid);
+    prov_packet_handler(HCI_EVENT_PACKET, 0, event, sizeof(event));
+}
 
 static void dump_data(uint8_t * buffer, uint16_t size){
     static int data_counter = 1;
@@ -195,7 +196,7 @@ static void provisioning_send_invite(uint16_t pb_adv_cid){
 
 static void provisioning_send_start(uint16_t pb_adv_cid){
     prov_buffer_out[0] = MESH_PROV_START;
-    prov_buffer_out[1] = 0; // ECC P-256
+    prov_buffer_out[1] = prov_start_algorithm;
     prov_buffer_out[2] = prov_start_public_key_used;
     prov_buffer_out[3] = prov_start_authentication_method;
     prov_buffer_out[4] = prov_start_authentication_action;
@@ -242,6 +243,7 @@ typedef enum {
     PROVISIONER_IDLE,
     PROVISIONER_SEND_INVITE,
     PROVISIONER_W4_CAPABILITIES,
+    PROVISIONER_W4_AUTH_CONFIGURATION,
     PROVISIONER_SEND_START,
     PROVISIONER_W4_INPUT_OOK,
     PROVISIONER_SEND_PUB_KEY,
@@ -331,9 +333,20 @@ static void provisioning_handle_capabilities(uint16_t pb_adv_cid, const uint8_t 
     // collect confirmation_inputs
     memcpy(&prov_confirmation_inputs[1], packet_data, packet_len);
 
-    // TODO: notify client
-    // TODO: client picks authentication method
-    provisioner_state = PROVISIONER_SEND_START;
+    provisioner_state = PROVISIONER_W4_AUTH_CONFIGURATION; 
+
+    // notify client and wait for auth method selection
+    uint8_t event[16] = { HCI_EVENT_MESH_META, 3, MESH_PB_PROV_CAPABILITIES};
+    little_endian_store_16(event, 3, pb_adv_cid);
+    event[5] = packet_data[0];
+    little_endian_store_16(event, 6, big_endian_read_16(packet_data, 1));
+    event[8] = packet_data[3];
+    event[9] = packet_data[4];
+    event[10] = packet_data[5];
+    little_endian_store_16(event, 11, big_endian_read_16(packet_data, 6));
+    event[13] = packet_data[8];
+    little_endian_store_16(event, 14, big_endian_read_16(packet_data, 9));
+    prov_packet_handler(HCI_EVENT_PACKET, 0, event, sizeof(event));
 }
 
 static void provisioning_handle_confirmation_provisioner_calculated(void * arg){
@@ -390,34 +403,32 @@ static void provisioning_public_key_exchange_complete(void){
     // reset auth_value
     memset(auth_value, 0, sizeof(auth_value));
 
-#if 0
     // handle authentication method
-    switch (prov_start_authentication_action){
+    switch (prov_start_authentication_method){
         case 0x00:
-            provisioner_state = PROVISIONER_SEND_CONFIRM;
+            provisioning_handle_auth_value_ready();
             break;        
         case 0x01:
             // memcpy(&auth_value[16-prov_static_oob_len], prov_static_oob_data, prov_static_oob_len);
-            // prov_next_command = MESH_PROV_CONFIRM;
+            // provisioning_handle_auth_value_ready();
             break;
         case 0x02:
-            // printf("Generate random for auth_value\n");
-            // // generate single byte of random data to use for authentication
-            // btstack_crypto_random_generate(&prov_random_request, &auth_value[15], 1, &provisioning_handle_auth_value_output_oob, NULL);
+            // Output OOB
+            printf("Output OOB requested (and we're in Provisioniner role)\n");
+            provisioner_state = PROVISIONER_W4_INPUT_OOK;
+            provisioning_emit_event(MESH_PB_PROV_INPUT_OOB_REQUEST, 1);
             break;
         case 0x03:
             // Input OOB
-            // printf("Input OOB requested\n");
+            printf("Input OOB requested\n");
+            printf("Generate random for auth_value\n");
+            // generate single byte of random data to use for authentication
+            // btstack_crypto_random_generate(&prov_random_request, &auth_value[15], 1, &provisioning_handle_auth_value_output_oob, NULL);
             // provisioning_emit_event(MESH_PB_PROV_INPUT_OOB_REQUEST, 1);
-            // // expect virtual command
-            // prov_next_command = MESH_PROV_USER_INPUT_OOB;
             break;
         default:
             break;
     }
-#endif
-
-    provisioning_handle_auth_value_ready();
 }
 
 static void provisioning_handle_public_key_dhkey(void * arg){
@@ -671,8 +682,18 @@ void provisioning_provisioner_set_public_key_oob(const uint8_t * public_key, con
     btstack_crypto_ecc_p256_set_key(prov_public_key_oob_q, prov_public_key_oob_d);
 }
 
-static void provisioning_provisioner_input_complete(void){
-    printf("Input Complete\n");
+uint8_t provisioning_provisioner_select_authentication_method(uint16_t pb_adv_cid, uint8_t algorithm, uint8_t public_key_used, uint8_t authentication_method, uint8_t authentication_action, uint8_t authentication_size){
+
+    if (provisioner_state != PROVISIONER_W4_AUTH_CONFIGURATION) return ERROR_CODE_COMMAND_DISALLOWED;
+
+    prov_start_algorithm = algorithm;
+    prov_start_public_key_used = public_key_used;
+    prov_start_authentication_method = authentication_method;
+    prov_start_authentication_action = authentication_action;
+    prov_start_authentication_size   = authentication_size;
+    provisioner_state = PROVISIONER_SEND_START;
+
+    return ERROR_CODE_SUCCESS;
 }
 
 void provisioning_provisioner_input_oob_complete_numeric(uint16_t pb_adv_cid, uint32_t input_oob){
@@ -681,8 +702,7 @@ void provisioning_provisioner_input_oob_complete_numeric(uint16_t pb_adv_cid, ui
 
     // store input_oob as auth value
     big_endian_store_32(auth_value, 12, input_oob);
-
-    provisioning_provisioner_input_complete();
+    provisioning_handle_auth_value_ready();
 }
 
 void provisioning_provisioner_input_oob_complete_alphanumeric(uint16_t pb_adv_cid, const uint8_t * input_oob_data, uint16_t input_oob_len){
@@ -693,6 +713,6 @@ void provisioning_provisioner_input_oob_complete_alphanumeric(uint16_t pb_adv_ci
     input_oob_len = btstack_min(input_oob_len, 16);
     memset(auth_value, 0, 16);
     memcpy(auth_value, input_oob_data, input_oob_len);
-
-    provisioning_provisioner_input_complete();
+    provisioning_handle_auth_value_ready();
 }
+

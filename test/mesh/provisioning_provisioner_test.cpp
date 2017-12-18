@@ -176,11 +176,29 @@ static int btstack_parse_hex(const char * string, uint16_t len, uint8_t * buffer
 static uint8_t      prov_static_oob_data[16];
 static const char * prov_static_oob_string = "00000000000000000102030405060708";
 
+static void provisioning_handle_pdu(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
+    if (packet_type != HCI_EVENT_PACKET) return;
+    switch(packet[0]){
+        case HCI_EVENT_MESH_META:
+            switch(packet[2]){
+                case MESH_PB_PROV_CAPABILITIES:
+                    printf("Provisioner capabilities\n");
+                    provisioning_provisioner_select_authentication_method(1, 0, 0, 0, 0, 0);
+                    break;
+                default:
+                    break;
+            }
+        default:
+            break;
+    }
+}
+
 TEST_GROUP(Provisioning){
     void setup(void){
         btstack_crypto_init();
         provisioning_provisioner_init();
         btstack_parse_hex(prov_static_oob_string, 16, prov_static_oob_data);
+        provisioning_provisioner_register_packet_handler(&provisioning_handle_pdu);
         // provisioning_device_set_static_oob(16, prov_static_oob_data);
         // provisioning_device_set_output_oob_actions(0x08, 0x08);
         // provisioning_device_set_input_oob_actions(0x08, 0x08);

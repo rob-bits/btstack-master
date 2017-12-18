@@ -91,7 +91,6 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                     gap_set_scan_parameters(0, 0x300, 0x300);
                     gap_start_scan();
                     break;
-
                 default:
                     break;
             }
@@ -101,11 +100,37 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
 
 static void mesh_message_handler (uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     if (packet_type != HCI_EVENT_PACKET) return;
+
+    uint8_t public_oob  = 0;
+    uint8_t auth_method = 0;
+    uint8_t auth_action = 0;
+    uint8_t auth_size   = 0;
+    uint16_t auth_output_oob_action;
+
     switch(packet[0]){
         case HCI_EVENT_MESH_META:
             switch(packet[2]){
                 case MESH_PB_ADV_LINK_OPEN:
                     printf("Provisioner link opened");
+                    break;
+                case MESH_PB_PROV_CAPABILITIES:
+                    printf("Provisioner capabilities\n");
+                    public_oob = mesh_pb_prov_capabilities_event_get_public_key(packet);
+                    auth_output_oob_action = mesh_pb_prov_capabilities_event_get_output_oob_action(packet);   
+                    if (auth_output_oob_action){
+                        auth_method = 0x02; // Output OOB
+                        // find output action
+                        int i;
+                        for (i=0;i<5;i++){
+                            if (auth_output_oob_action & (1<<i)){
+                                auth_action = i;
+                                auth_size   = mesh_pb_prov_capabilities_event_get_output_oob_size(packet);
+                                printf("Pick Output OOB Action with index %u, size %u\n", i, auth_size);
+                                break;
+                            }
+                        }
+                    }
+                    provisioning_provisioner_select_authentication_method(1, 0, public_oob, auth_method, auth_action, auth_size);
                     break;
                 case MESH_PB_PROV_INPUT_OOB_REQUEST:
                     printf("Enter passphrase: ");
@@ -220,8 +245,10 @@ static void stdin_process(char cmd){
         printf("%c", cmd);
         fflush(stdout);
         if (cmd == '\n'){
+            ui_pin[ui_pin_offset] = 0;
             printf("\nSending Pin '%s'\n", ui_pin);
-            provisioning_provisioner_input_oob_complete_alphanumeric(1, ui_pin, ui_pin_offset);
+            // provisioning_provisioner_input_oob_complete_alphanumeric(1, ui_pin, ui_pin_offset);
+            provisioning_provisioner_input_oob_complete_numeric(1, btstack_atoi((char*)ui_pin));
             ui_chars_for_pin = 0;
         } else {
             ui_pin[ui_pin_offset++] = cmd;
@@ -229,53 +256,6 @@ static void stdin_process(char cmd){
         return;
     }
     switch (cmd){
-#if 0
-        case '1':
-            adv_bearer_request_can_send_now_for_mesh_message();
-            break;
-        case '2':
-            printf("Creating link to device uuid: ");
-            printf_hexdump(pts_device_uuid, 16);
-            pb_adv_create_link(pts_device_uuid);
-            break;
-        case '3':
-            printf("Close link\n");
-            pb_adv_close_link(1, 0);
-            break;
-        case '4':
-            printf("Send invite with attention timer = 0\n");
-            pb_adv_send_pdu(adv_prov_invite_pdu, sizeof(adv_prov_invite_pdu));
-            break;
-        case '5':
-            printf("Send Start\n");
-            pb_adv_send_pdu(adv_prov_start_pdu, sizeof(adv_prov_start_pdu));
-            break;
-        case '6':
-            printf("Send Public key\n");
-            adv_prov_public_key_pdu[0] = 0x03;
-            memset(&adv_prov_public_key_pdu[1], 0x5a, 64);
-            pb_adv_send_pdu(adv_prov_public_key_pdu, sizeof(adv_prov_public_key_pdu));
-            break;
-        case 'p':
-            printf("+ Public Key OOB Enabled\n");
-            btstack_parse_hex(prov_public_key_string, 64, prov_public_key_data);
-            btstack_parse_hex(prov_private_key_string, 32, prov_private_key_data);
-            provisioning_device_set_public_key_oob(prov_public_key_data, prov_private_key_data);
-            break;
-        case 'o':
-            printf("+ Output OOB Enabled\n");
-            provisioning_device_set_output_oob_actions(0x08, 0x08);
-            break;
-        case 'i':
-            printf("+ Input OOB Enabled\n");
-            provisioning_device_set_input_oob_actions(0x08, 0x08);
-            break;
-        case 's':
-            printf("+ Static OOB Enabled\n");
-            btstack_parse_hex(prov_static_oob_string, 16, prov_static_oob_data);
-            provisioning_device_set_static_oob(16, prov_static_oob_data);
-            break;
-#endif
         default:
             printf("Command: '%c'\n", cmd);
             break;
