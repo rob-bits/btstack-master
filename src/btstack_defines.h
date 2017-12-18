@@ -1968,25 +1968,33 @@ typedef uint8_t sm_key_t[16];
 #define MESH_PB_ADV_LINK_CLOSED                                             0x04
 
 /**
- * @format 12
+ * @format 121
  * @param subevent_code
  * @param pb_adv_cid
+ * @param attention_time in seconds
  */
-#define MESH_PB_PROV_START_EMIT_PUBLIC_KEY_OOB                              0x10
+#define MESH_PB_PROV_ATTENTION_TIMER                                        0x10
 
 /**
  * @format 12
  * @param subevent_code
  * @param pb_adv_cid
  */
-#define MESH_PB_PROV_STOP_EMIT_PUBLIC_KEY_OOB                               0x11
+#define MESH_PB_PROV_START_EMIT_PUBLIC_KEY_OOB                              0x11
 
 /**
  * @format 12
  * @param subevent_code
  * @param pb_adv_cid
  */
-#define MESH_PB_PROV_INPUT_OOB_REQUEST                                      0x12
+#define MESH_PB_PROV_STOP_EMIT_PUBLIC_KEY_OOB                               0x12
+
+/**
+ * @format 12
+ * @param subevent_code
+ * @param pb_adv_cid
+ */
+#define MESH_PB_PROV_INPUT_OOB_REQUEST                                      0x13
 
 /**
  * @format 124
@@ -1994,28 +2002,35 @@ typedef uint8_t sm_key_t[16];
  * @param pb_adv_cid
  * @param output_oob number
  */
-#define MESH_PB_PROV_START_EMIT_OUTPUT_OOB                                  0x13
+#define MESH_PB_PROV_START_EMIT_OUTPUT_OOB                                  0x15
 
 /**
  * @format 12
  * @param subevent_code
  * @param pb_adv_cid
  */
-#define MESH_PB_PROV_STOP_EMIT_OUTPUT_OOB                                   0x14
+#define MESH_PB_PROV_STOP_EMIT_OUTPUT_OOB                                   0x16
 
 /**
- * @format 121
+ * @format 1212111212
  * @param subevent_code
  * @param pb_adv_cid
- * @param attention_time in seconds
+ * @param num_elements
+ * @param algorithms
+ * @param public_key
+ * @param static_oob_type
+ * @param output_oob_size
+ * @param output_oob_action
+ * @param input_oob_size
+ * @param input_oob_action
  */
-#define MESH_PB_PROV_ATTENTION_TIMER                                        0x15
+#define MESH_PB_PROV_CAPABILITIES                                           0x17
 
 /**
- * @format 121
+ * @format 12
  * @param subevent_code
  * @param pb_adv_cid
  */
-#define MESH_PB_PROV_COMPLETE                                              0x16
+#define MESH_PB_PROV_COMPLETE                                               0x18
 
 #endif
