@@ -57,6 +57,7 @@ static btstack_packet_handler_t prov_packet_handler;
 static uint8_t  prov_buffer_out[100];   // TODO: how large are prov messages?
 // ConfirmationInputs = ProvisioningInvitePDUValue || ProvisioningCapabilitiesPDUValue || ProvisioningStartPDUValue || PublicKeyProvisioner || PublicKeyDevice
 static uint8_t  prov_confirmation_inputs[1 + 11 + 5 + 64 + 64];
+static uint8_t  prov_authentication_method;
 static uint8_t  prov_authentication_action;
 static uint8_t  prov_public_key_oob_used;
 static uint8_t  prov_emit_public_key_oob_active;
@@ -343,7 +344,7 @@ static void provisioning_public_key_exchange_complete(void){
     memset(auth_value, 0, sizeof(auth_value));
 
     // handle authentication method
-    switch (prov_authentication_action){
+    switch (prov_authentication_method){
         case 0x00:
             device_state = DEVICE_W4_CONFIRM;
             break;        
@@ -480,8 +481,8 @@ static void provisioning_handle_start(uint8_t * packet, uint16_t size){
     // public key oob
     prov_public_key_oob_used = packet[1];
 
-    // output authentication action
-    prov_authentication_action = packet[2];
+    // authentication method
+    prov_authentication_method = packet[2];
 
     // start emit public OOK if specified
     if (prov_public_key_oob_available && prov_public_key_oob_used){
@@ -489,7 +490,7 @@ static void provisioning_handle_start(uint8_t * packet, uint16_t size){
     }
 
     printf("PublicKey:  %02x\n", prov_public_key_oob_used);
-    printf("AuthAction: %02x\n", prov_authentication_action);
+    printf("AuthMethod: %02x\n", prov_authentication_method);
 
     device_state = DEVICE_W4_PUB_KEY;
     provisioning_run();
