@@ -99,11 +99,11 @@ static uint16_t unicast_address;
 static uint8_t provisioning_data[25];
 static uint8_t enc_provisioning_data[25];
 static uint8_t provisioning_data_mic[8];
+static uint8_t  prov_emit_output_oob_active;
 
 #if 0
 static uint8_t  prov_public_key_oob_used;
 static uint8_t  prov_emit_public_key_oob_active;
-static uint8_t  prov_emit_output_oob_active;
 
 // capabilites
 static const uint8_t * prov_static_oob_data;
@@ -118,14 +118,6 @@ static uint8_t   prov_input_oob_size;
 // derived
 static uint8_t network_id[8];
 static uint8_t beacon_key[16];
-
-static void provisioning_emit_output_oob_event(uint16_t pb_adv_cid, uint32_t number){
-    if (!prov_packet_handler) return;
-    uint8_t event[9] = { HCI_EVENT_MESH_META, 7, MESH_PB_PROV_START_EMIT_OUTPUT_OOB};
-    little_endian_store_16(event, 3, pb_adv_cid);
-    little_endian_store_16(event, 5, number);
-    prov_packet_handler(HCI_EVENT_PACKET, 0, event, sizeof(event));
-}
 
 static void provisioning_attention_timer_timeout(btstack_timer_source_t * ts){
     UNUSED(ts);
@@ -143,6 +135,14 @@ static void provisioning_attention_timer_set(void){
     }
 }
 #endif 
+
+static void provisioning_emit_output_oob_event(uint16_t pb_adv_cid, uint32_t number){
+    if (!prov_packet_handler) return;
+    uint8_t event[9] = { HCI_EVENT_MESH_META, 7, MESH_PB_PROV_START_EMIT_OUTPUT_OOB};
+    little_endian_store_16(event, 3, pb_adv_cid);
+    little_endian_store_16(event, 5, number);
+    prov_packet_handler(HCI_EVENT_PACKET, 0, event, sizeof(event));
+}
 
 static void provisioning_emit_event(uint8_t mesh_subevent, uint16_t pb_adv_cid){
     if (!prov_packet_handler) return;
@@ -248,6 +248,7 @@ typedef enum {
     PROVISIONER_W4_INPUT_OOK,
     PROVISIONER_SEND_PUB_KEY,
     PROVISIONER_W4_PUB_KEY,
+    PROVISIONER_W4_INPUT_COMPLETE,
     PROVISIONER_SEND_CONFIRM,
     PROVISIONER_W4_CONFIRM,
     PROVISIONER_SEND_RANDOM,
@@ -307,10 +308,10 @@ static void provisioning_done(void){
     //     prov_emit_public_key_oob_active = 0;
     //     provisioning_emit_event(MESH_PB_PROV_STOP_EMIT_PUBLIC_KEY_OOB, 1);
     // }
-    // if (prov_emit_output_oob_active){
-    //     prov_emit_output_oob_active = 0;
-    //     provisioning_emit_event(MESH_PB_PROV_STOP_EMIT_OUTPUT_OOB, 1);
-    // }
+    if (prov_emit_output_oob_active){
+        prov_emit_output_oob_active = 0;
+        provisioning_emit_event(MESH_PB_PROV_STOP_EMIT_OUTPUT_OOB, 1);
+    }
     provisioner_state = PROVISIONER_IDLE;
 }
 
@@ -399,6 +400,23 @@ static void provisioning_handle_auth_value_ready(void){
     btstack_crypto_aes128_cmac_zero(&prov_cmac_request, sizeof(prov_confirmation_inputs), prov_confirmation_inputs, confirmation_salt, &provisioning_handle_confirmation_salt, NULL);
 }
 
+static void provisioning_handle_auth_value_output_oob(void * arg){
+    // limit auth value to single digit
+    auth_value[15] = auth_value[15] % 9 + 1;
+
+    printf("Output OOB: %u\n", auth_value[15]);
+
+    // emit output oob value
+    provisioning_emit_output_oob_event(1, auth_value[15]);
+    prov_emit_output_oob_active = 1;
+
+    provisioner_state = PROVISIONER_W4_INPUT_COMPLETE;
+}
+
+static void provisioning_handle_input_complete(uint16_t pb_adv_cid){
+    provisioning_handle_auth_value_ready();
+}
+
 static void provisioning_public_key_exchange_complete(void){
     // reset auth_value
     memset(auth_value, 0, sizeof(auth_value));
@@ -423,8 +441,8 @@ static void provisioning_public_key_exchange_complete(void){
             printf("Input OOB requested\n");
             printf("Generate random for auth_value\n");
             // generate single byte of random data to use for authentication
-            // btstack_crypto_random_generate(&prov_random_request, &auth_value[15], 1, &provisioning_handle_auth_value_output_oob, NULL);
-            // provisioning_emit_event(MESH_PB_PROV_INPUT_OOB_REQUEST, 1);
+            btstack_crypto_random_generate(&prov_random_request, &auth_value[15], 1, &provisioning_handle_auth_value_output_oob, NULL);
+            provisioning_emit_event(MESH_PB_PROV_INPUT_OOB_REQUEST, 1);
             break;
         default:
             break;
@@ -482,13 +500,13 @@ static void provisioning_handle_confirmation(uint16_t pb_adv_cid, const uint8_t 
     UNUSED(packet_data);
     UNUSED(packet_len);
 
-#if 0
     // 
     if (prov_emit_output_oob_active){
         prov_emit_output_oob_active = 0;
         provisioning_emit_event(MESH_PB_PROV_STOP_EMIT_OUTPUT_OOB, 1);
     }
 
+#if 0
     // CalculationInputs
     printf("ConfirmationInputs: ");
     printf_hexdump(prov_confirmation_inputs, sizeof(prov_confirmation_inputs));
@@ -614,6 +632,12 @@ static void provisioning_handle_pdu(uint8_t packet_type, uint16_t channel, uint8
                     printf("MESH_PROV_PUB_KEY: ");
                     printf_hexdump(&packet[1], size-1);
                     provisioning_handle_public_key(pb_adv_cid, &packet[1], size-1);
+                    break;
+                case PROVISIONER_W4_INPUT_COMPLETE:
+                    if (packet[0] != MESH_PROV_INPUT_COMPLETE) provisioning_handle_provisioning_error(0x03);
+                    printf("MESH_PROV_INPUT_COMPLETE: ");
+                    printf_hexdump(&packet[1], size-1);
+                    provisioning_handle_input_complete(pb_adv_cid);
                     break;
                 case PROVISIONER_W4_CONFIRM:
                     if (packet[0] != MESH_PROV_CONFIRM) provisioning_handle_provisioning_error(0x03);

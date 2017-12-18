@@ -106,6 +106,7 @@ static void mesh_message_handler (uint8_t packet_type, uint16_t channel, uint8_t
     uint8_t auth_action = 0;
     uint8_t auth_size   = 0;
     uint16_t auth_output_oob_action;
+    uint16_t auth_input_oob_action;
 
     switch(packet[0]){
         case HCI_EVENT_MESH_META:
@@ -116,6 +117,7 @@ static void mesh_message_handler (uint8_t packet_type, uint16_t channel, uint8_t
                 case MESH_PB_PROV_CAPABILITIES:
                     printf("Provisioner capabilities\n");
                     public_oob = mesh_pb_prov_capabilities_event_get_public_key(packet);
+                    auth_input_oob_action  = mesh_pb_prov_capabilities_event_get_input_oob_action(packet);   
                     auth_output_oob_action = mesh_pb_prov_capabilities_event_get_output_oob_action(packet);   
                     if (auth_output_oob_action){
                         auth_method = 0x02; // Output OOB
@@ -126,6 +128,18 @@ static void mesh_message_handler (uint8_t packet_type, uint16_t channel, uint8_t
                                 auth_action = i;
                                 auth_size   = mesh_pb_prov_capabilities_event_get_output_oob_size(packet);
                                 printf("Pick Output OOB Action with index %u, size %u\n", i, auth_size);
+                                break;
+                            }
+                        }
+                    } else if(auth_input_oob_action){
+                        auth_method = 0x03; // Input OOB
+                        // find output action
+                        int i;
+                        for (i=0;i<5;i++){
+                            if (auth_input_oob_action & (1<<i)){
+                                auth_action = i;
+                                auth_size   = mesh_pb_prov_capabilities_event_get_input_oob_size(packet);
+                                printf("Pick Input OOB Action with index %u, size %u\n", i, auth_size);
                                 break;
                             }
                         }
