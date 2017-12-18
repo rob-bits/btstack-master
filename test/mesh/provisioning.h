@@ -66,10 +66,6 @@ extern "C"
 #define MESH_PROV_COMPLETE          0x08
 #define MESH_PROV_FAILED            0x09
 
-// virtual commands // internal use
-#define MESH_PROV_USER_INPUT_OOB    0xF0
-#define MESH_PROV_INVALID           0xFF
-
 // Provisioning Output OOB Actions
 #define MESH_OUTPUT_OOB_BLINK       0x01
 #define MESH_OUTPUT_OOB_BEEP        0x02
