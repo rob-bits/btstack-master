@@ -154,19 +154,6 @@ static void provisioning_emit_event(uint8_t mesh_subevent, uint16_t pb_adv_cid){
     prov_packet_handler(HCI_EVENT_PACKET, 0, event, sizeof(event));
 }
 
-static void dump_data(uint8_t * buffer, uint16_t size){
-    static int data_counter = 1;
-    char var_name[80];
-    sprintf(var_name, "test_data_%02u", data_counter);
-    printf("uint8_t %s[] = { ", var_name);
-    for (int i = 0; i < size ; i++){
-        if ((i % 16) == 0) printf("\n    ");
-        printf ("0x%02x, ", buffer[i]);
-    }
-    printf("};\n");
-    data_counter++;
-}
-
 static void provisiong_timer_handler(btstack_timer_source_t * ts){
     UNUSED(ts);
     printf("Provisioning Protocol Timeout -> Close Link!\n");
@@ -514,7 +501,7 @@ static void provisioning_handle_public_key(uint16_t pb_adv_cid, const uint8_t *p
 
         printf("Replace generated ECC with Public Key OOB:");
         memcpy(prov_ec_q, prov_public_key_oob_q, 64);
-        dump_data(prov_ec_q, sizeof(prov_ec_q));
+        printf_hexdump(prov_ec_q, sizeof(prov_ec_q));
         btstack_crypto_ecc_p256_set_key(prov_public_key_oob_q, prov_public_key_oob_d);
     }
 #endif
@@ -703,12 +690,12 @@ static void provisioning_handle_pdu(uint8_t packet_type, uint16_t channel, uint8
 static void prov_key_generated(void * arg){
     UNUSED(arg);
     printf("ECC-P256: ");
-    dump_data(prov_ec_q, sizeof(prov_ec_q));
+    printf_hexdump(prov_ec_q, sizeof(prov_ec_q));
     // allow override
     if (prov_public_key_oob_available){
         printf("Replace generated ECC with Public Key OOB:");
         memcpy(prov_ec_q, prov_public_key_oob_q, 64);
-        dump_data(prov_ec_q, sizeof(prov_ec_q));
+        printf_hexdump(prov_ec_q, sizeof(prov_ec_q));
         btstack_crypto_ecc_p256_set_key(prov_public_key_oob_q, prov_public_key_oob_d);
     }
 }

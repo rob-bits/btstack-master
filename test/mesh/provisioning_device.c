@@ -155,19 +155,6 @@ static device_state_t device_state;
 static uint8_t network_id[8];
 static uint8_t beacon_key[16];
 
-static void dump_data(uint8_t * buffer, uint16_t size){
-    static int data_counter = 1;
-    char var_name[80];
-    sprintf(var_name, "test_data_%02u", data_counter);
-    printf("uint8_t %s[] = { ", var_name);
-    for (int i = 0; i < size ; i++){
-        if ((i % 16) == 0) printf("\n    ");
-        printf ("0x%02x, ", buffer[i]);
-    }
-    printf("};\n");
-    data_counter++;
-}
-
 static void provisioning_emit_event(uint16_t pb_adv_cid, uint8_t mesh_subevent){
     if (!prov_packet_handler) return;
     uint8_t event[5] = { HCI_EVENT_MESH_META, 3, mesh_subevent};
@@ -527,7 +514,7 @@ static void provisioning_handle_public_key(uint8_t *packet, uint16_t size){
 
         printf("Replace generated ECC with Public Key OOB:");
         memcpy(prov_ec_q, prov_public_key_oob_q, 64);
-        dump_data(prov_ec_q, sizeof(prov_ec_q));
+        printf_hexdump(prov_ec_q, sizeof(prov_ec_q));
         btstack_crypto_ecc_p256_set_key(prov_public_key_oob_q, prov_public_key_oob_d);
     }
 
@@ -805,12 +792,12 @@ static void provisioning_handle_pdu(uint8_t packet_type, uint16_t channel, uint8
 static void prov_key_generated(void * arg){
     UNUSED(arg);
     printf("ECC-P256: ");
-    dump_data(prov_ec_q, sizeof(prov_ec_q));
+    printf_hexdump(prov_ec_q, sizeof(prov_ec_q));
     // allow override
     if (prov_public_key_oob_available){
         printf("Replace generated ECC with Public Key OOB:");
         memcpy(prov_ec_q, prov_public_key_oob_q, 64);
-        dump_data(prov_ec_q, sizeof(prov_ec_q));
+        printf_hexdump(prov_ec_q, sizeof(prov_ec_q));
         btstack_crypto_ecc_p256_set_key(prov_public_key_oob_q, prov_public_key_oob_d);
     }
 }
