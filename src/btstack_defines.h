@@ -1976,6 +1976,7 @@ typedef uint8_t sm_key_t[16];
 #define MESH_PB_PROV_ATTENTION_TIMER                                        0x10
 
 /**
+ * Device Role
  * @format 12
  * @param subevent_code
  * @param pb_adv_cid
@@ -1983,6 +1984,7 @@ typedef uint8_t sm_key_t[16];
 #define MESH_PB_PROV_START_EMIT_PUBLIC_KEY_OOB                              0x11
 
 /**
+ * Device Role
  * @format 12
  * @param subevent_code
  * @param pb_adv_cid
@@ -1990,6 +1992,7 @@ typedef uint8_t sm_key_t[16];
 #define MESH_PB_PROV_STOP_EMIT_PUBLIC_KEY_OOB                               0x12
 
 /**
+ * Device Role
  * @format 12
  * @param subevent_code
  * @param pb_adv_cid
@@ -1997,6 +2000,7 @@ typedef uint8_t sm_key_t[16];
 #define MESH_PB_PROV_INPUT_OOB_REQUEST                                      0x13
 
 /**
+ * Device Role
  * @format 124
  * @param subevent_code
  * @param pb_adv_cid
@@ -2005,6 +2009,7 @@ typedef uint8_t sm_key_t[16];
 #define MESH_PB_PROV_START_EMIT_OUTPUT_OOB                                  0x15
 
 /**
+ * Device Role
  * @format 12
  * @param subevent_code
  * @param pb_adv_cid
@@ -2012,6 +2017,48 @@ typedef uint8_t sm_key_t[16];
 #define MESH_PB_PROV_STOP_EMIT_OUTPUT_OOB                                   0x16
 
 /**
+ * Provisioner Role
+ * @format 12
+ * @param subevent_code
+ * @param pb_adv_cid
+ */
+#define MESH_PB_PROV_START_RECEIVE_PUBLIC_KEY_OOB                           0x17
+
+/**
+ * Provisioner Role
+ * @format 12
+ * @param subevent_code
+ * @param pb_adv_cid
+ */
+#define MESH_PB_PROV_STOP_RECEIVE_PUBLIC_KEY_OOB                            0x18
+
+/**
+ * Provisioner Role
+ * @format 12
+ * @param subevent_code
+ * @param pb_adv_cid
+ */
+#define MESH_PB_PROV_OUTPUT_OOB_REQUEST                                     0x19
+
+/**
+ * Provisioner Role
+ * @format 124
+ * @param subevent_code
+ * @param pb_adv_cid
+ * @param output_oob number
+ */
+#define MESH_PB_PROV_START_EMIT_INPUT_OOB                                   0x1a
+
+/**
+ * Provisioner Role
+ * @format 12
+ * @param subevent_code
+ * @param pb_adv_cid
+ */
+#define MESH_PB_PROV_STOP_EMIT_INPUT_OOB                                    0x1b
+
+/**
+ * Provisioner Role
  * @format 1212111212
  * @param subevent_code
  * @param pb_adv_cid
@@ -2024,13 +2071,13 @@ typedef uint8_t sm_key_t[16];
  * @param input_oob_size
  * @param input_oob_action
  */
-#define MESH_PB_PROV_CAPABILITIES                                           0x17
+#define MESH_PB_PROV_CAPABILITIES                                           0x1c
 
 /**
  * @format 12
  * @param subevent_code
  * @param pb_adv_cid
  */
-#define MESH_PB_PROV_COMPLETE                                               0x18
+#define MESH_PB_PROV_COMPLETE                                               0x1d
 
 #endif

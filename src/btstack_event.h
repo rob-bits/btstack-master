@@ -3188,6 +3188,65 @@ static inline uint16_t mesh_pb_prov_stop_emit_output_oob_event_get_pb_adv_cid(co
 }
 
 /**
+ * @brief Get field pb_adv_cid from event MESH_PB_PROV_START_RECEIVE_PUBLIC_KEY_OOB_EVENT
+ * @param event packet
+ * @return pb_adv_cid
+ * @note: btstack_type 2
+ */
+static inline uint16_t mesh_pb_prov_start_receive_public_key_oob_event_get_pb_adv_cid(const uint8_t * event){
+    return little_endian_read_16(event, 3);
+}
+
+/**
+ * @brief Get field pb_adv_cid from event MESH_PB_PROV_STOP_RECEIVE_PUBLIC_KEY_OOB_EVENT
+ * @param event packet
+ * @return pb_adv_cid
+ * @note: btstack_type 2
+ */
+static inline uint16_t mesh_pb_prov_stop_receive_public_key_oob_event_get_pb_adv_cid(const uint8_t * event){
+    return little_endian_read_16(event, 3);
+}
+
+/**
+ * @brief Get field pb_adv_cid from event MESH_PB_PROV_OUTPUT_OOB_REQUEST_EVENT
+ * @param event packet
+ * @return pb_adv_cid
+ * @note: btstack_type 2
+ */
+static inline uint16_t mesh_pb_prov_output_oob_request_event_get_pb_adv_cid(const uint8_t * event){
+    return little_endian_read_16(event, 3);
+}
+
+/**
+ * @brief Get field pb_adv_cid from event MESH_PB_PROV_START_EMIT_INPUT_OOB_EVENT
+ * @param event packet
+ * @return pb_adv_cid
+ * @note: btstack_type 2
+ */
+static inline uint16_t mesh_pb_prov_start_emit_input_oob_event_get_pb_adv_cid(const uint8_t * event){
+    return little_endian_read_16(event, 3);
+}
+/**
+ * @brief Get field output_oob from event MESH_PB_PROV_START_EMIT_INPUT_OOB_EVENT
+ * @param event packet
+ * @return output_oob
+ * @note: btstack_type 4
+ */
+static inline uint32_t mesh_pb_prov_start_emit_input_oob_event_get_output_oob(const uint8_t * event){
+    return little_endian_read_32(event, 5);
+}
+
+/**
+ * @brief Get field pb_adv_cid from event MESH_PB_PROV_STOP_EMIT_INPUT_OOB_EVENT
+ * @param event packet
+ * @return pb_adv_cid
+ * @note: btstack_type 2
+ */
+static inline uint16_t mesh_pb_prov_stop_emit_input_oob_event_get_pb_adv_cid(const uint8_t * event){
+    return little_endian_read_16(event, 3);
+}
+
+/**
  * @brief Get field pb_adv_cid from event MESH_PB_PROV_CAPABILITIES_EVENT
  * @param event packet
  * @return pb_adv_cid
