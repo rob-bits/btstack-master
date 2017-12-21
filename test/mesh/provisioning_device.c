@@ -128,6 +128,10 @@ static uint16_t unicast_address;
 
 static const uint8_t id128_tag[] = { 'i', 'd', '1', '2', '8', 0x01};
 
+// AES-CMAC_ZERO('nhbk')
+static const uint8_t mesh_salt_nhbk[] = {
+    0x2c, 0x24, 0x61, 0x9a, 0xb7, 0x93, 0xc1, 0x23, 0x3f, 0x6e, 0x22, 0x67, 0x38, 0x39, 0x3d, 0xec, };
+
 typedef enum {
     DEVICE_W4_INVITE,
     DEVICE_SEND_CAPABILITIES,
@@ -665,18 +669,13 @@ static void provisioning_handle_beacon_key_calculated(void *arg){
     provisioning_run();
 }
 
-static void provisioning_handle_s1_for_beacon_key_calculated(void *arg){
-    mesh_k1(&prov_cmac_request, net_key, 16, provisioning_salt, id128_tag, sizeof(id128_tag), beacon_key, &provisioning_handle_beacon_key_calculated, NULL);
-}
-
 // PROV_DATA
 static void provisioning_handle_data_network_id_calculated(void * arg){
     // dump
     printf("Network ID: ");
     printf_hexdump(network_id, 8);
-
-    // calculate s1 for network beacon
-    btstack_crypto_aes128_cmac_zero(&prov_cmac_request, 4, (const uint8_t *) "nkbk", provisioning_salt, &provisioning_handle_s1_for_beacon_key_calculated, NULL);
+    // calc k1 using 
+    mesh_k1(&prov_cmac_request, net_key, 16, mesh_salt_nhbk, id128_tag, sizeof(id128_tag), beacon_key, &provisioning_handle_beacon_key_calculated, NULL);
 }
 
 static void provisioning_handle_data_device_key(void * arg){

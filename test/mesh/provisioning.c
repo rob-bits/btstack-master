@@ -66,13 +66,15 @@ void mesh_k1(btstack_crypto_aes128_cmac_t * request, const uint8_t * n, uint16_t
 
 // mesh k3 - might get moved to btstack_crypto and all vars go into btstack_crypto_mesh_k3_t struct
 static const uint8_t   mesh_k3_tag[5] = { 'i', 'd', '6', '4', 0x01}; 
-static uint8_t         mesh_k3_salt[16];
 static uint8_t         mesh_k3_temp[16];
 static uint8_t         mesh_k3_result128[16];
 static void (*         mesh_k3_callback)(void * arg);
 static void *          mesh_k3_arg;
 static const uint8_t * mesh_k3_n;
 static uint8_t       * mesh_k3_result;
+
+// AES-CMAC_ZERO('smk3')
+static const uint8_t mesh_salt_smk3[] = { 0x00, 0x36, 0x44, 0x35, 0x03, 0xf1, 0x95, 0xcc, 0x8a, 0x71, 0x6e, 0x13, 0x62, 0x91, 0xc3, 0x02, };
 
 static void mesh_k3_result128_calculated(void * arg){
     UNUSED(arg);
@@ -83,15 +85,10 @@ static void mesh_k3_temp_callback(void * arg){
     btstack_crypto_aes128_cmac_t * request = (btstack_crypto_aes128_cmac_t*) arg;
     btstack_crypto_aes128_cmac_message(request, mesh_k3_temp, sizeof(mesh_k3_tag), mesh_k3_tag, mesh_k3_result128, mesh_k3_result128_calculated, request);
 }
-static void mesh_k3_salt_calculated(void * arg){
-    btstack_crypto_aes128_cmac_t * request = (btstack_crypto_aes128_cmac_t*) arg;
-    btstack_crypto_aes128_cmac_message(request, mesh_k3_salt, 16, mesh_k3_n, mesh_k3_temp, mesh_k3_temp_callback, request);
-}
-
 void mesh_k3(btstack_crypto_aes128_cmac_t * request, const uint8_t * n, uint8_t * result, void (* callback)(void * arg), void * callback_arg){
     mesh_k3_callback = callback;
     mesh_k3_arg      = callback_arg;
     mesh_k3_n        = n;
     mesh_k3_result   = result;
-    btstack_crypto_aes128_cmac_zero(request, 4, (const uint8_t *) "smk3", mesh_k3_salt, mesh_k3_salt_calculated, request);
+    btstack_crypto_aes128_cmac_message(request, mesh_salt_smk3, 16, mesh_k3_n, mesh_k3_temp, mesh_k3_temp_callback, request);
 }
