@@ -93,6 +93,7 @@ static uint8_t  pb_adv_msg_in_buffer[MESH_PB_ADV_MAX_PDU_SIZE];   // TODO: how l
 
 // single adv link
 static uint16_t pb_adv_cid = 1;
+static uint8_t  pb_adv_provisioner_role;
 
 // link state
 static uint32_t pb_adv_link_id;
@@ -159,6 +160,7 @@ static void pb_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_n
             switch(link_state){
                 case LINK_STATE_W4_OPEN:
                     pb_adv_link_id = link_id;
+                    pb_adv_provisioner_role = 0;
                     pb_adv_msg_in_transaction_nr = 0xff;  // first transaction nr will be 0x00 
                     pb_adv_msg_in_transaction_nr_prev = 0xff;
                     log_info("link open, id %08x", pb_adv_link_id);
@@ -181,6 +183,9 @@ static void pb_adv_handle_bearer_control(uint32_t link_id, uint8_t transaction_n
         case MESH_GENERIC_PROVISIONING_LINK_ACK:   // Acknowledge a session on a bearer
             if (link_state != LINK_STATE_W4_ACK) break;
             link_state = LINK_STATE_OPEN;
+            pb_adv_msg_out_transaction_nr = 0;
+            pb_adv_msg_in_transaction_nr = 0x7f;    // first transaction nr will be 0x80
+            pb_adv_msg_in_transaction_nr_prev = 0x7f;
             btstack_run_loop_remove_timer(&pb_adv_random_delay_timer);
             log_info("link open, id %08x", pb_adv_link_id);
             printf("PB-ADV: Link Open %08x\n", pb_adv_link_id);
@@ -214,7 +219,11 @@ static void pb_adv_pdu_complete(void){
 
     // transaction complete
     pb_adv_msg_in_transaction_nr_prev = pb_adv_msg_in_transaction_nr;
-    pb_adv_msg_in_transaction_nr = 0xff;    // invalid
+    if (pb_adv_provisioner_role){
+        pb_adv_msg_in_transaction_nr = 0x7f;    // invalid
+    } else {
+        pb_adv_msg_in_transaction_nr = 0xff;    // invalid
+    }
 
     // Ack Transaction
     pb_adv_msg_in_send_ack = 1;
@@ -329,7 +338,12 @@ static void pb_adv_outgoing_transation_complete(uint8_t status){
     // increment outgoing transaction nr
     pb_adv_msg_out_transaction_nr++;
     if (pb_adv_msg_out_transaction_nr == 0x00){
+        // Device role
         pb_adv_msg_out_transaction_nr = 0x80;
+    }
+    if (pb_adv_msg_out_transaction_nr == 0x80){
+        // Provisioner role
+        pb_adv_msg_out_transaction_nr = 0x00;
     }
 }
 
@@ -583,6 +597,7 @@ uint16_t pb_adv_create_link(const uint8_t * device_uuid){
     if (link_state != LINK_STATE_W4_OPEN) return 0;
     
     pb_adv_peer_device_uuid = device_uuid;
+    pb_adv_provisioner_role = 1;
 
     // create new 32-bit link id
     pb_adv_link_id = pb_adv_random();
