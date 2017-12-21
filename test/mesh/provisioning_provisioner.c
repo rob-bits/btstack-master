@@ -46,6 +46,8 @@
 #include "btstack.h"
 #include "provisioning.h"
 
+static void provisioning_public_key_ready(void);
+
 // global
 static uint8_t         prov_ec_q[64];
 static const uint8_t * prov_public_key_oob_q;
@@ -82,6 +84,7 @@ static uint8_t  prov_start_public_key_used;
 static uint8_t  prov_start_authentication_method;
 static uint8_t  prov_start_authentication_action;
 static uint8_t  prov_start_authentication_size;
+static uint8_t  prov_authentication_string;
 static uint8_t  prov_confirmation_inputs[1 + 11 + 5 + 64 + 64];
 static uint8_t  confirmation_provisioner[16];
 static uint8_t  random_provisioner[16];
@@ -101,17 +104,17 @@ static uint8_t enc_provisioning_data[25];
 static uint8_t provisioning_data_mic[8];
 static uint8_t  prov_emit_output_oob_active;
 
+static const uint8_t * prov_static_oob_data;
+static uint16_t  prov_static_oob_len;
+
 #if 0
 static uint8_t  prov_public_key_oob_used;
 static uint8_t  prov_emit_public_key_oob_active;
 
 // capabilites
-static const uint8_t * prov_static_oob_data;
 
-static uint16_t  prov_static_oob_len;
 static uint16_t  prov_output_oob_actions;
 static uint16_t  prov_input_oob_actions;
-static uint8_t   prov_static_oob_available;
 static uint8_t   prov_output_oob_size;
 static uint8_t   prov_input_oob_size;
 
@@ -245,9 +248,11 @@ typedef enum {
     PROVISIONER_W4_CAPABILITIES,
     PROVISIONER_W4_AUTH_CONFIGURATION,
     PROVISIONER_SEND_START,
-    PROVISIONER_W4_INPUT_OOK,
+    PROVISIONED_W2_EMIT_READ_PUB_KEY_OOB,
     PROVISIONER_SEND_PUB_KEY,
     PROVISIONER_W4_PUB_KEY,
+    PROVISIONER_W4_PUB_KEY_OOB,
+    PROVISIONER_W4_INPUT_OOK,
     PROVISIONER_W4_INPUT_COMPLETE,
     PROVISIONER_SEND_CONFIRM,
     PROVISIONER_W4_CONFIRM,
@@ -274,11 +279,24 @@ static void provisioning_run(void){
             break;
         case PROVISIONER_SEND_START:
             provisioning_send_start(pb_adv_cid);
-            provisioner_state = PROVISIONER_SEND_PUB_KEY;
+            if (prov_start_public_key_used){
+                provisioner_state = PROVISIONED_W2_EMIT_READ_PUB_KEY_OOB;
+            } else {
+                provisioner_state = PROVISIONER_SEND_PUB_KEY;
+            }
+            break;
+        case PROVISIONED_W2_EMIT_READ_PUB_KEY_OOB:
+            printf("Public OOB: please read OOB from remote device\n");
+            provisioner_state = PROVISIONER_W4_PUB_KEY_OOB;
+            provisioning_emit_event(MESH_PB_PROV_START_RECEIVE_PUBLIC_KEY_OOB, 1);
             break;
         case PROVISIONER_SEND_PUB_KEY:
             provisioning_send_public_key();
-            provisioner_state = PROVISIONER_W4_PUB_KEY;
+            if (prov_start_public_key_used){
+                provisioning_public_key_ready();
+            } else {
+                provisioner_state = PROVISIONER_W4_PUB_KEY;
+            }
             break;
         case PROVISIONER_SEND_CONFIRM:
             provisioning_send_confirm();
@@ -400,11 +418,20 @@ static void provisioning_handle_auth_value_ready(void){
     btstack_crypto_aes128_cmac_zero(&prov_cmac_request, sizeof(prov_confirmation_inputs), prov_confirmation_inputs, confirmation_salt, &provisioning_handle_confirmation_salt, NULL);
 }
 
-static void provisioning_handle_auth_value_output_oob(void * arg){
+static void provisioning_handle_auth_value_input_oob(void * arg){
+
     // limit auth value to single digit
     auth_value[15] = auth_value[15] % 9 + 1;
+    printf("Input OOB: %u\n", auth_value[15]);
 
-    printf("Output OOB: %u\n", auth_value[15]);
+    if (prov_authentication_string){
+        // strings start at 0 while numbers are stored as 16-byte big endian
+        auth_value[0] = auth_value[15] + '0';
+        auth_value[15] = 0;
+    }
+
+    printf("AuthValue: ");
+    printf_hexdump(auth_value, sizeof(auth_value));
 
     // emit output oob value
     provisioning_emit_output_oob_event(1, auth_value[15]);
@@ -427,22 +454,24 @@ static void provisioning_public_key_exchange_complete(void){
             provisioning_handle_auth_value_ready();
             break;        
         case 0x01:
-            // memcpy(&auth_value[16-prov_static_oob_len], prov_static_oob_data, prov_static_oob_len);
-            // provisioning_handle_auth_value_ready();
+            memcpy(&auth_value[16-prov_static_oob_len], prov_static_oob_data, prov_static_oob_len);
+            provisioning_handle_auth_value_ready();
             break;
         case 0x02:
             // Output OOB
-            printf("Output OOB requested (and we're in Provisioniner role)\n");
+            prov_authentication_string = prov_start_authentication_action == 0x04;
+            printf("Output OOB requested (and we're in Provisioniner role), string %u\n", prov_authentication_string);
             provisioner_state = PROVISIONER_W4_INPUT_OOK;
-            provisioning_emit_event(MESH_PB_PROV_INPUT_OOB_REQUEST, 1);
+            provisioning_emit_event(MESH_PB_PROV_OUTPUT_OOB_REQUEST, 1);
             break;
         case 0x03:
             // Input OOB
-            printf("Input OOB requested\n");
+            prov_authentication_string = prov_start_authentication_action == 0x03;
+            printf("Input OOB requested, string %u\n", prov_authentication_string);
             printf("Generate random for auth_value\n");
             // generate single byte of random data to use for authentication
-            btstack_crypto_random_generate(&prov_random_request, &auth_value[15], 1, &provisioning_handle_auth_value_output_oob, NULL);
-            provisioning_emit_event(MESH_PB_PROV_INPUT_OOB_REQUEST, 1);
+            btstack_crypto_random_generate(&prov_random_request, &auth_value[15], 1, &provisioning_handle_auth_value_input_oob, NULL);
+            provisioning_emit_event(MESH_PB_PROV_START_EMIT_INPUT_OOB, 1);
             break;
         default:
             break;
@@ -469,6 +498,11 @@ static void provisioning_handle_public_key_dhkey(void * arg){
     provisioning_public_key_exchange_complete();
 }
 
+static void provisioning_public_key_ready(void){
+    // calculate DHKey
+    btstack_crypto_ecc_p256_calculate_dhkey(&prov_ecc_p256_request, remote_ec_q, dhkey, provisioning_handle_public_key_dhkey, NULL);
+}
+
 static void provisioning_handle_public_key(uint16_t pb_adv_cid, const uint8_t *packet_data, uint16_t packet_len){
 
     if (packet_len != sizeof(remote_ec_q)) return;
@@ -491,8 +525,7 @@ static void provisioning_handle_public_key(uint16_t pb_adv_cid, const uint8_t *p
     // store remote q
     memcpy(remote_ec_q, packet_data, sizeof(remote_ec_q));
 
-    // calculate DHKey
-    btstack_crypto_ecc_p256_calculate_dhkey(&prov_ecc_p256_request, remote_ec_q, dhkey, provisioning_handle_public_key_dhkey, NULL);
+    provisioning_public_key_ready();
 }
 
 static void provisioning_handle_confirmation(uint16_t pb_adv_cid, const uint8_t *packet_data, uint16_t packet_len){
@@ -699,11 +732,10 @@ uint16_t provisioning_provisioner_start_provisioning(const uint8_t * device_uuid
     return pb_adv_cid;
 }
 
-void provisioning_provisioner_set_public_key_oob(const uint8_t * public_key, const uint8_t * private_key){
-    prov_public_key_oob_q = public_key;
-    prov_public_key_oob_d = private_key;
-    prov_public_key_oob_available = 1;
-    btstack_crypto_ecc_p256_set_key(prov_public_key_oob_q, prov_public_key_oob_d);
+void provisioning_provisioner_set_static_oob(uint16_t pb_adv_cid, uint16_t static_oob_len, const uint8_t * static_oob_data){
+    UNUSED(pb_adv_cid);
+    prov_static_oob_data = static_oob_data;
+    prov_static_oob_len  = btstack_min(static_oob_len, 16);
 }
 
 uint8_t provisioning_provisioner_select_authentication_method(uint16_t pb_adv_cid, uint8_t algorithm, uint8_t public_key_used, uint8_t authentication_method, uint8_t authentication_action, uint8_t authentication_size){
@@ -716,6 +748,23 @@ uint8_t provisioning_provisioner_select_authentication_method(uint16_t pb_adv_ci
     prov_start_authentication_action = authentication_action;
     prov_start_authentication_size   = authentication_size;
     provisioner_state = PROVISIONER_SEND_START;
+
+    return ERROR_CODE_SUCCESS;
+}
+
+uint8_t provisioning_provisioner_public_key_oob_received(uint16_t pb_adv_cid, const uint8_t * public_key){
+
+    if (provisioner_state != PROVISIONER_W4_PUB_KEY_OOB) return ERROR_CODE_COMMAND_DISALLOWED;
+
+    // store for confirmation inputs: len 64
+    memcpy(&prov_confirmation_inputs[81], public_key, 64);
+
+    // store remote q
+    memcpy(remote_ec_q, public_key, sizeof(remote_ec_q));
+
+    // continue procedure
+    provisioner_state = PROVISIONER_SEND_PUB_KEY;
+    provisioning_run();
 
     return ERROR_CODE_SUCCESS;
 }

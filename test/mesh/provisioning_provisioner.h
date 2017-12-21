@@ -80,6 +80,22 @@ uint16_t provisioning_provisioner_start_provisioning(const uint8_t * device_uuid
 uint8_t provisioning_provisioner_select_authentication_method(uint16_t pb_adv_cid, uint8_t algorithm, uint8_t public_key_used, uint8_t authentication_method, uint8_t authentication_action, uint8_t authentication_size);
 
 /**
+ * @brief Public Key OOB Available
+ * @param pv_adv_cid
+ * @param public_key  (64 bytes)
+ * @note Requires ability to transmit public key out-of-band
+ */
+void provisioning_provisioner_public_key_oob_received(uint16_t pb_adv_cid, const uint8_t * public_key);
+
+/**
+ * @brief Set data for Static OOB Authentication
+ * @param pv_adv_cid
+ * @param static_oob_len
+ * @param static_oob_data
+ */
+void provisioning_provisioner_set_static_oob(uint16_t pb_adv_cid, uint16_t static_oob_len, const uint8_t * static_oob_data);
+
+/**
  * @brief Input OOB Complete Numeric
  * @param pv_adv_cid
  * @Param input_oob number

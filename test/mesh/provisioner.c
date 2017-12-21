@@ -63,6 +63,54 @@ static int ui_pin_offset;
 static const btstack_tlv_t * btstack_tlv_singleton_impl;
 static void *                btstack_tlv_singleton_context;
 
+static uint16_t pb_adv_cid;
+
+// PTS defaults
+static uint8_t      prov_static_oob_data[16];
+static const char * prov_static_oob_string = "00000000000000000102030405060708";
+
+static uint8_t      prov_public_key_data[64];
+static const char * prov_public_key_string = "F465E43FF23D3F1B9DC7DFC04DA8758184DBC966204796ECCF0D6CF5E16500CC0201D048BCBBD899EEEFC424164E33C201C2B010CA6B4D43A8A155CAD8ECB279";
+
+static int scan_hex_byte(const char * byte_string){
+    int upper_nibble = nibble_for_char(*byte_string++);
+    if (upper_nibble < 0) return -1;
+    int lower_nibble = nibble_for_char(*byte_string);
+    if (lower_nibble < 0) return -1;
+    return (upper_nibble << 4) | lower_nibble;
+}
+
+static int btstack_parse_hex(const char * string, uint16_t len, uint8_t * buffer){
+    int i;
+    for (i = 0; i < len; i++) {
+        int single_byte = scan_hex_byte(string);
+        if (single_byte < 0) return 0;
+        string += 2;
+        buffer[i] = (uint8_t)single_byte;
+        // don't check seperator after last byte
+        if (i == len - 1) {
+            return 1;
+        }
+        // optional seperator
+        char separator = *string;
+        if (separator == ':' && separator == '-' && separator == ' ') {
+            string++;
+        }
+    }
+    return 1;
+}
+
+static void btstack_print_hex(const uint8_t * data, uint16_t len, char separator){
+    int i;
+    for (i=0;i<len;i++){
+        printf("%02x", data[i]);
+        if (separator){
+            printf("%c", separator);
+        }
+    }
+    printf("\n");
+}
+
 static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     UNUSED(channel);
     UNUSED(size);
@@ -105,6 +153,8 @@ static void mesh_message_handler (uint8_t packet_type, uint16_t channel, uint8_t
     uint8_t auth_method = 0;
     uint8_t auth_action = 0;
     uint8_t auth_size   = 0;
+
+    uint8_t  auth_static_oob = 0;
     uint16_t auth_output_oob_action;
     uint16_t auth_input_oob_action;
 
@@ -115,10 +165,16 @@ static void mesh_message_handler (uint8_t packet_type, uint16_t channel, uint8_t
                     printf("Provisioner link opened");
                     break;
                 case MESH_PB_PROV_CAPABILITIES:
-                    printf("Provisioner capabilities\n");
+                    printf("// Provisioner capabilities\n");
                     public_oob = mesh_pb_prov_capabilities_event_get_public_key(packet);
+                    if (public_oob){
+                        printf("PTS supports Public OOB, select Public OOB\n");
+                    } else {
+                        printf("PTS does not supports Public OOB, select No Public OOB\n");
+                    }
+                    auth_static_oob        = mesh_pb_prov_capabilities_event_get_static_oob_type(packet);
                     auth_input_oob_action  = mesh_pb_prov_capabilities_event_get_input_oob_action(packet);   
-                    auth_output_oob_action = mesh_pb_prov_capabilities_event_get_output_oob_action(packet);   
+                    auth_output_oob_action = mesh_pb_prov_capabilities_event_get_output_oob_action(packet);
                     if (auth_output_oob_action){
                         auth_method = 0x02; // Output OOB
                         // find output action
@@ -127,7 +183,7 @@ static void mesh_message_handler (uint8_t packet_type, uint16_t channel, uint8_t
                             if (auth_output_oob_action & (1<<i)){
                                 auth_action = i;
                                 auth_size   = mesh_pb_prov_capabilities_event_get_output_oob_size(packet);
-                                printf("Pick Output OOB Action with index %u, size %u\n", i, auth_size);
+                                printf("// - Pick Output OOB Action with index %u, size %u\n", i, auth_size);
                                 break;
                             }
                         }
@@ -139,18 +195,32 @@ static void mesh_message_handler (uint8_t packet_type, uint16_t channel, uint8_t
                             if (auth_input_oob_action & (1<<i)){
                                 auth_action = i;
                                 auth_size   = mesh_pb_prov_capabilities_event_get_input_oob_size(packet);
-                                printf("Pick Input OOB Action with index %u, size %u\n", i, auth_size);
+                                printf("// - Pick Input OOB Action with index %u, size %u\n", i, auth_size);
                                 break;
                             }
                         }
+                    } else if (auth_static_oob & 1){
+                        // set static oob - used for PTS
+                        btstack_parse_hex(prov_static_oob_string, 16, prov_static_oob_data);
+                        provisioning_provisioner_set_static_oob(pb_adv_cid, 16, prov_static_oob_data);
+                        // pick Static OOB method
+                        printf("// - Pick Static OOB\n");
+                        auth_method = 0x01;
                     }
                     provisioning_provisioner_select_authentication_method(1, 0, public_oob, auth_method, auth_action, auth_size);
                     break;
-                case MESH_PB_PROV_INPUT_OOB_REQUEST:
+                case MESH_PB_PROV_START_RECEIVE_PUBLIC_KEY_OOB:
+                    printf("Simulate Read Public Key OOB\n");
+                    btstack_parse_hex(prov_public_key_string, 64, prov_public_key_data);
+                    provisioning_provisioner_public_key_oob_received(pb_adv_cid, prov_public_key_data);
+                    break;
+                case MESH_PB_PROV_OUTPUT_OOB_REQUEST:
                     printf("Enter passphrase: ");
                     fflush(stdout);
                     ui_chars_for_pin = 1;
                     ui_pin_offset = 0;
+                    break;
+                case MESH_PB_PROV_START_EMIT_INPUT_OOB:
                     break;
                 case MESH_PB_PROV_COMPLETE:
                     printf("Provisioning complete\n");
@@ -167,9 +237,10 @@ static void mesh_message_handler (uint8_t packet_type, uint16_t channel, uint8_t
     }
 }
 
+static uint8_t device_uuid[16];
+
 static void mesh_unprovisioned_beacon_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     if (packet_type != HCI_EVENT_PACKET) return;
-    uint8_t device_uuid[16];
     uint16_t oob;
     const uint8_t * data;
     switch(packet[0]){
@@ -179,7 +250,7 @@ static void mesh_unprovisioned_beacon_handler(uint8_t packet_type, uint16_t chan
             oob = big_endian_read_16(data, 31);
             printf("received unprovisioned device beacon, oob data %x, device uuid: ", oob);
             printf_hexdump(device_uuid, 16);
-            pb_adv_create_link(device_uuid);
+            pb_adv_cid = pb_adv_create_link(device_uuid);
             break;
         default:
             break;
@@ -189,57 +260,9 @@ static void mesh_unprovisioned_beacon_handler(uint8_t packet_type, uint16_t chan
 uint8_t      pts_device_uuid[16];
 const char * pts_device_uuid_string = "001BDC0810210B0E0A0C000B0E0A0C00";
 
-static int scan_hex_byte(const char * byte_string){
-    int upper_nibble = nibble_for_char(*byte_string++);
-    if (upper_nibble < 0) return -1;
-    int lower_nibble = nibble_for_char(*byte_string);
-    if (lower_nibble < 0) return -1;
-    return (upper_nibble << 4) | lower_nibble;
-}
-
-static int btstack_parse_hex(const char * string, uint16_t len, uint8_t * buffer){
-    int i;
-    for (i = 0; i < len; i++) {
-        int single_byte = scan_hex_byte(string);
-        if (single_byte < 0) return 0;
-        string += 2;
-        buffer[i] = (uint8_t)single_byte;
-        // don't check seperator after last byte
-        if (i == len - 1) {
-            return 1;
-        }
-        // optional seperator
-        char separator = *string;
-        if (separator == ':' && separator == '-' && separator == ' ') {
-            string++;
-        }
-    }
-    return 1;
-}
-
-static void btstack_print_hex(const uint8_t * data, uint16_t len, char separator){
-    int i;
-    for (i=0;i<len;i++){
-        printf("%02x", data[i]);
-        if (separator){
-            printf("%c", separator);
-        }
-    }
-    printf("\n");
-}
-
 static uint8_t adv_prov_invite_pdu[] = { 0x00, 0x00 };
 static uint8_t adv_prov_start_pdu[] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x00}; 
 static uint8_t adv_prov_public_key_pdu[65];
-
-#if 0
-static uint8_t      prov_static_oob_data[16];
-static const char * prov_static_oob_string = "00000000000000000102030405060708";
-static uint8_t      prov_public_key_data[64];
-static const char * prov_public_key_string = "F465E43FF23D3F1B9DC7DFC04DA8758184DBC966204796ECCF0D6CF5E16500CC0201D048BCBBD899EEEFC424164E33C201C2B010CA6B4D43A8A155CAD8ECB279";
-static uint8_t      prov_private_key_data[32];
-static const char * prov_private_key_string = "529AA0670D72CD6497502ED473502B037E8803B5C60829A5A3CAA219505530BA";
-#endif
 
 static btstack_crypto_aes128_cmac_t mesh_cmac_request;
 static uint8_t mesh_secure_network_beacon[22];
