@@ -445,19 +445,31 @@ static void btstack_uart_windows_set_block_sent( void (*block_handler)(void)){
 // static void btstack_uart_windows_set_csr_irq_handler( void (*csr_irq_handler)(void)){
 // }
 
+#ifdef ENABLE_H5
+#error "ENABLE_H5 defined but not implemented yet. See platform/posix/btstack_uart_posix.c as reference"
+#endif
+
 static const btstack_block_t btstack_uart_windows = {
     /* int  (*init)(hci_transport_config_uart_t * config); */         &btstack_uart_windows_init,
     /* int  (*open)(void); */                                         &btstack_uart_windows_open,
     /* int  (*close)(void); */                                        &btstack_uart_windows_close_new,
     /* void (*set_block_received)(void (*handler)(void)); */          &btstack_uart_windows_set_block_received,
     /* void (*set_block_sent)(void (*handler)(void)); */              &btstack_uart_windows_set_block_sent,
+#ifdef ENABLE_H5
+    /* void (*set_frame_received)(void (*handler)(uint16_t frame_size); */ &btstack_uart_slip_windows_set_frame_received,
+    /* void (*set_fraae_sent)(void (*handler)(void)); */                   &btstack_uart_slip_windows_set_frame_sent,
+#endif
     /* int  (*set_baudrate)(uint32_t baudrate); */                    &btstack_uart_windows_set_baudrate,
     /* int  (*set_parity)(int parity); */                             &btstack_uart_windows_set_parity,
     /* int  (*set_flowcontrol)(int flowcontrol); */                   &btstack_uart_windows_set_flowcontrol,
     /* void (*receive_block)(uint8_t *buffer, uint16_t len); */       &btstack_uart_windows_receive_block,
     /* void (*send_block)(const uint8_t *buffer, uint16_t length); */ &btstack_uart_windows_send_block,
+#ifdef ENABLE_H5
+    /* void (*receive_block)(uint8_t *buffer, uint16_t len); */            &btstack_uart_slip_windows_receive_frame,
+    /* void (*send_block)(const uint8_t *buffer, uint16_t length); */      &btstack_uart_slip_windows_send_frame,    
+#endif
     /* int (*get_supported_sleep_modes); */                           NULL,
-    /* void (*set_sleep)(btstack_sleep_mode_t sleep_mode); */    NULL,
+    /* void (*set_sleep)(btstack_sleep_mode_t sleep_mode); */         NULL,
     /* void (*set_wakeup_handler)(void (*handler)(void)); */          NULL,
 };
 
