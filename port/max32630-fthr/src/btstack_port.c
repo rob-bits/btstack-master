@@ -54,6 +54,10 @@
 
 #include "btstack_port.h"
 
+#ifdef ENABLE_H5
+#include "btstack_slip.h"
+#endif
+
 #define CC256X_UART_ID             0
 #define UART_RXFIFO_USABLE     (MXC_UART_FIFO_DEPTH-3)
 
@@ -78,7 +82,11 @@ static void dummy_handler(void) {};
 static void (*rx_done_handler)(void) = dummy_handler;
 static void (*tx_done_handler)(void) = dummy_handler;
 
-
+#ifdef ENABLE_H5
+// slip receive frame state
+uint8_t receive_frame_active;
+static void (*frame_received_handler)(uint16_t frame_size);
+#endif
 
 void hal_cpu_disable_irqs(void)
 {
@@ -107,6 +115,15 @@ void hal_uart_dma_receive_block(uint8_t *buffer, uint16_t len)
 	bytes_to_read = len;
 }
 
+#ifdef ENABLE_H5
+void hal_uart_dma_receive_frame(uint8_t *buffer, uint16_t len)
+{
+	receive_frame_active = 1;
+	// setup SLIP decoder
+    btstack_slip_decoder_init(buffer, len);
+}
+#endif
+
 void hal_btstack_run_loop_execute_once(void)
 {
 	int rx_avail;
@@ -115,6 +132,22 @@ void hal_btstack_run_loop_execute_once(void)
 	int rx_bytes;
 	int tx_bytes;
 	int ret;
+
+#ifdef ENABLE_H5
+	uint8_t data;
+	while (receive_frame_active){
+		rx_avail = UART_NumReadAvail(MXC_UART_GET_UART(CC256X_UART_ID));
+		if (!rx_avail) break;
+		ret = UART_Read(MXC_UART_GET_UART(CC256X_UART_ID), &data, 1, &rx_bytes);
+		if (ret < 0) break;
+ 		btstack_slip_decoder_process(data);
+		uint16_t frame_size = btstack_slip_decoder_frame_size();
+		if (frame_size){
+			receive_frame_active = 0;
+			(*frame_received_handler)(frame_size);
+		}
+	}
+#endif
 
     while (bytes_to_read) {
 		rx_avail = UART_NumReadAvail(MXC_UART_GET_UART(CC256X_UART_ID));
@@ -226,6 +259,12 @@ void hal_uart_dma_set_block_sent( void (*block_handler)(void)){
 
 	tx_done_handler = block_handler;
 }
+
+#ifdef ENABLE_H5
+void hal_uart_dma_set_frame_received( void (*frame_handler)(uint16_t frame_size)){
+    frame_received_handler = frame_handler;
+}
+#endif
 
 void hal_uart_dma_set_csr_irq_handler( void (*csr_irq_handler)(void)){
 
@@ -395,10 +434,14 @@ int bluetooth_main(void)
 	btstack_run_loop_init(btstack_run_loop_embedded_get_instance());
 
 	// enable packet logger
-	//hci_dump_open(NULL, HCI_DUMP_STDOUT);
+	// hci_dump_open(NULL, HCI_DUMP_STDOUT);
 
 	/* Init HCI */
+#ifdef ENABLE_H5
+	const hci_transport_t * transport = hci_transport_h5_instance(btstack_uart_embedded_instance());
+#else
 	const hci_transport_t * transport = hci_transport_h4_instance(btstack_uart_embedded_instance());
+#endif
 	hci_init(transport, &config);
 	hci_set_chipset(btstack_chipset_cc256x_instance());
 
