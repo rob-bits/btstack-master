@@ -49,7 +49,6 @@
 #include <stdint.h>
 #include "btstack_em9304_spi.h"
 #include "btstack_uart.h"
-#include "btstack_uart_slip.h"
 #include "btstack_run_loop.h"
 
 #if defined __cplusplus

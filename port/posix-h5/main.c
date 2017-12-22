@@ -61,7 +61,6 @@
 #include "hci.h"
 #include "hci_dump.h"
 #include "btstack_stdin.h"
-#include "btstack_uart_slip.h"
 
 #include "btstack_chipset_csr.h"
 #include "btstack_chipset_cc256x.h"
