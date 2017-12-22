@@ -73,6 +73,14 @@ void hal_uart_dma_set_block_received( void (*callback)(void));
  */
 void hal_uart_dma_set_block_sent( void (*callback)(void));
 
+#ifdef ENABLE_H5
+/**
+ * @brief Set callback for SLIP rame received - can be called from ISR context
+ * @param callback
+ */
+void hal_uart_dma_set_frame_received( void (*callback)(uint16_t frame_size));
+#endif
+
 /**
  * @brief Set baud rate
  * @note During baud change, TX line should stay high and no data should be received on RX accidentally
@@ -101,6 +109,15 @@ void hal_uart_dma_send_block(const uint8_t *buffer, uint16_t length);
  * @param lengh
  */
 void hal_uart_dma_receive_block(uint8_t *buffer, uint16_t len);
+
+#ifdef ENABLE_H5
+/**
+ * @brief Receive SLIP frame. When done, callback set by hal_uart_dma_set_frame_received must be called with the length of the received frame
+ * @param buffer
+ * @param lengh
+ */
+void hal_uart_dma_receive_frame(uint8_t *buffer, uint16_t len);
+#endif
 
 /**
  * @brief Set or clear callback for CSR pulse - can be called from ISR context
