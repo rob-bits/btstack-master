@@ -97,7 +97,8 @@ btstack_ring_buffer.c \
 btstack_run_loop.c \
 btstack_run_loop_embedded.c \
 btstack_tlv.c \
-btstack_uart_block_embedded.c \
+btstack_uart_embedded.c \
+btstack_slip.c \
 btstack_util.c \
 device_information_service_server.c \
 hids_device.c \

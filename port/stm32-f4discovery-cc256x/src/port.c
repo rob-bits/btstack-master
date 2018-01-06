@@ -14,6 +14,7 @@
 #include "classic/btstack_link_key_db_static.h"
 #include "classic/btstack_link_key_db_tlv.h"
 #include "hal_flash_bank_stm32.h"
+#include "btstack_slip.h"
 
 #ifdef ENABLE_SEGGER_RTT
 #include "SEGGER_RTT.h"
@@ -22,6 +23,7 @@
 //
 extern UART_HandleTypeDef huart2;
 extern UART_HandleTypeDef huart3;
+extern DMA_HandleTypeDef hdma_usart3_rx;
 
 //
 static btstack_packet_callback_registration_t hci_event_callback_registration;
@@ -81,12 +83,19 @@ static void stdin_rx_complete(void){
 static void dummy_handler(void);
 
 // handlers
-static void (*rx_done_handler)(void) = &dummy_handler;
+static void (*rx_block_done_handler)(void) = &dummy_handler;
 static void (*tx_done_handler)(void) = &dummy_handler;
 static void (*cts_irq_handler)(void) = &dummy_handler;
+static void (*rx_frame_done_handler)(uint16_t frame_size);
 
 static void dummy_handler(void){};
 static int hal_uart_needed_during_sleep;
+static int hal_uart_slip_active;
+
+#define HAL_UART_SLIP_RING_BUFFER_SIZE 32
+static uint8_t hal_uart_slip_ringbuffer_storage[HAL_UART_SLIP_RING_BUFFER_SIZE];
+static volatile uint16_t hal_uart_slip_ringbuffer_pos;
+static volatile uint8_t decoder_ready;
 
 void hal_uart_dma_set_sleep(uint8_t sleep){
 
@@ -121,6 +130,26 @@ static void bluetooth_power_cycle(void){
 	HAL_Delay( 500 );
 }
 
+// returns framesize
+static void hal_uart_slip_receive_process_dma_data(void){
+	if (!decoder_ready) return;
+
+	// process all bytes in buffer
+	uint16_t frame_size = 0;
+	while (frame_size == 0 && (hal_uart_slip_ringbuffer_pos != (HAL_UART_SLIP_RING_BUFFER_SIZE - __HAL_DMA_GET_COUNTER(&hdma_usart3_rx)))){
+		uint8_t data = hal_uart_slip_ringbuffer_storage[hal_uart_slip_ringbuffer_pos++];
+ 		btstack_slip_decoder_process(data);
+	    frame_size = btstack_slip_decoder_frame_size();
+	    if (hal_uart_slip_ringbuffer_pos == HAL_UART_SLIP_RING_BUFFER_SIZE){
+	    	hal_uart_slip_ringbuffer_pos = 0;
+	    }
+	}
+	if (frame_size){
+		decoder_ready = 0;
+		(*rx_frame_done_handler)(frame_size);
+	}
+}
+
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){
 	if (huart == &huart3){
 		(*tx_done_handler)();
@@ -129,18 +158,42 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
 	if (huart == &huart3){
-		(*rx_done_handler)();
+		if (hal_uart_slip_active){
+			hal_uart_slip_receive_process_dma_data();
+		} else {
+			(*rx_block_done_handler)();
+		}
 	}
     if (huart == &huart2){
         stdin_rx_complete();
     }
 }
 
+void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *huart){
+	if (huart == &huart3){
+		if (hal_uart_slip_active){
+			hal_uart_slip_receive_process_dma_data();
+		}
+	}
+}
+
+void HAL_UART_RxIdleCallback(UART_HandleTypeDef *huart){
+	if (huart == &huart3){
+		if (hal_uart_slip_active){
+			hal_uart_slip_receive_process_dma_data();
+		}
+	}
+}
+
 void hal_uart_dma_init(void){
 	bluetooth_power_cycle();
 }
 void hal_uart_dma_set_block_received( void (*the_block_handler)(void)){
-    rx_done_handler = the_block_handler;
+    rx_block_done_handler = the_block_handler;
+}
+
+void hal_uart_dma_set_frame_received( void (*the_block_handler)(uint16_t frame_size)){
+    rx_frame_done_handler = the_block_handler;
 }
 
 void hal_uart_dma_set_block_sent( void (*the_block_handler)(void)){
@@ -194,6 +247,34 @@ void hal_uart_dma_send_block(const uint8_t *data, uint16_t size){
 
 void hal_uart_dma_receive_block(uint8_t *data, uint16_t size){
 	HAL_UART_Receive_DMA( &huart3, data, size );
+}
+
+ // from stm32f4_hal_dma
+ #define __HAL_DMA_CIRCULAR(__HANDLE__)    ((__HANDLE__)->Instance->CR |=   DMA_SxCR_CIRC)
+
+void hal_uart_dma_receive_frame(uint8_t *data, uint16_t size){
+	if (hal_uart_slip_active == 0){
+		hal_uart_slip_active = 1;
+
+		// configure DMA for circular buffer
+	    __HAL_DMA_CIRCULAR(&hdma_usart3_rx);
+
+		// enable Line Idle Interrupt
+		__HAL_UART_ENABLE_IT(&huart3, UART_IT_IDLE);
+
+		// start reading
+		HAL_UART_Receive_DMA(&huart3, &hal_uart_slip_ringbuffer_storage[0], HAL_UART_SLIP_RING_BUFFER_SIZE);
+	}
+
+	// init SLIP decoder
+    btstack_slip_decoder_init(data, size);
+
+	// process data in buffer without IRQs
+	// TODO: IRQs could be disable/enabled after each byte read
+	hal_cpu_disable_irqs();
+	decoder_ready = 1;
+	hal_uart_slip_receive_process_dma_data();
+	hal_cpu_enable_irqs();
 }
 
 #ifndef ENABLE_SEGGER_RTT
