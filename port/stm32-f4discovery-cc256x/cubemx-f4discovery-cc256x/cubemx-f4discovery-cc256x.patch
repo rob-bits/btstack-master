@@ -75,3 +75,18 @@ diff -ur cubemx-f4discovery-cc256x-orig/Src/main.c cubemx-f4discovery-cc256x/Src
  
  /** System Clock Configuration
 Only in cubemx-f4discovery-cc256x: cubemx-f4discovery-cc256x.patch
+--- example/le_counter/system/src/stm32f4xx/stm32f4xx_hal_uart.c	2018-01-05 22:48:21.000000000 +0100
++++ example/spp_counter/system/src/stm32f4xx/stm32f4xx_hal_uart.c	2017-10-05 10:45:47.000000000 +0200
+@@ -1645,12 +1645,6 @@
+     UART_EndTransmit_IT(huart);
+     return;
+   }
+-
+-  // BK: IDLE Callback
+-  if (((isrflags & USART_SR_IDLE) != RESET) && ((cr1its & USART_CR1_IDLEIE) != RESET)){
+-    __HAL_UART_CLEAR_IDLEFLAG(huart);
+-    HAL_UART_RxIdleCallback(huart);
+-  }
+ }
+ 
+ /**
