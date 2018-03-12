@@ -133,6 +133,7 @@ EXAMPLES = 					\
 	le_data_channel_client  \
 	le_data_channel_server  \
 	le_streamer				\
+	le_streamer_and_counter_client \
 	le_streamer_client      \
 	led_counter				\
 	pbap_client_demo		\
@@ -223,6 +224,9 @@ sm_pairing_central: sm_pairing_central.h ${CORE_OBJ} ${COMMON_OBJ} ${ATT_OBJ} ${
 
 le_streamer: le_streamer.h ${CORE_OBJ} ${COMMON_OBJ} ${ATT_OBJ} ${GATT_SERVER_OBJ} ${SM_OBJ} le_streamer.c
 	${CC} $(filter-out le_streamer.h,$^) ${CFLAGS} ${LDFLAGS} -o $@
+
+le_streamer_and_counter_client: le_streamer_and_counter_client.h ${CORE_OBJ} ${COMMON_OBJ} ${ATT_OBJ} ${GATT_SERVER_OBJ} ${GATT_CLIENT_OBJ} ${SM_OBJ} le_streamer_and_counter_client.c
+	${CC} $(filter-out le_streamer_and_counter_client.h,$^) ${CFLAGS} ${LDFLAGS} -o $@
 
 le_streamer_client: ${CORE_OBJ} ${COMMON_OBJ} ${ATT_OBJ} ${GATT_CLIENT_OBJ} ${SM_OBJ} le_streamer_client.c
 	${CC} $^ ${CFLAGS} ${LDFLAGS} -o $@
