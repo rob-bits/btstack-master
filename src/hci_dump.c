@@ -271,6 +271,15 @@ void hci_dump_packet(uint8_t packet_type, uint8_t in, uint8_t *packet, uint16_t 
     }
 #else
 
+    if (packet_type == HCI_ACL_DATA_PACKET) return;
+    if (packet_type == HCI_EVENT_PACKET){
+        switch (packet[0]){
+            case 0x13:
+            case 0x6e:
+            case 0x78:
+                return;
+        }
+    }
     printf_timestamp();
     printf_packet(packet_type, in, packet, len);
 
