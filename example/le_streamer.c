@@ -202,6 +202,12 @@ static void test_track_sent(le_streamer_connection_t * context, int bytes_sent){
  * in the commented code block.
  */
 
+static int state = 0;
+// Sets local Bluetooth name
+static const hci_cmd_t hci_vendor_em_patchquery = {
+    0xFC34, "1"
+};
+
 /* LISTING_START(packetHandler): Packet Handler */
 static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     UNUSED(channel);
@@ -214,11 +220,12 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
         case HCI_EVENT_PACKET:
             switch (hci_event_packet_get_type(packet)) {
                 case BTSTACK_EVENT_STATE:
-                // BTstack activated, get started
-                if (btstack_event_state_get_state(packet) == HCI_STATE_WORKING) {
-                    printf("To start the streaming, please run the le_streamer_client example on other device, or use some GATT Explorer, e.g. LightBlue, BLExplr.\n");
-                } 
-                break;
+                    // BTstack activated, get started
+                    if (btstack_event_state_get_state(packet) == HCI_STATE_WORKING) {
+                        printf("To start the streaming, please run the le_streamer_client example on other device, or use some GATT Explorer, e.g. LightBlue, BLExplr.\n");
+                        state = 1;
+                    } 
+                    break;
                 case HCI_EVENT_DISCONNECTION_COMPLETE:
                     context = connection_for_conn_handle(hci_event_disconnection_complete_get_connection_handle(packet));
                     if (!context) break;
@@ -257,6 +264,10 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                     streamer();
                     break;
             }
+    }
+    if (state == 1 && hci_can_send_command_packet_now()){
+        state = 0;
+        hci_send_cmd(&hci_vendor_em_patchquery, 0);
     }
 }
 
