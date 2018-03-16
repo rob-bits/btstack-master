@@ -448,7 +448,7 @@ int btstack_main(int argc, const char * argv[]){
     sm_set_io_capabilities(IO_CAPABILITY_NO_INPUT_NO_OUTPUT);
 
     // use different connection parameters: conn interval min/max (* 1.25 ms), slave latency, supervision timeout, CE len min/max (* 0.6125 ms) 
-    // gap_set_connection_parameters(0x06, 0x06, 4, 1000, 0x01, 0x06 * 2);
+    gap_set_connection_parameters(0x60, 0x30, 0x18, 0x18, 0, 1000, 0x01, 0x18 * 2);
 
     // turn on!
     hci_power_control(HCI_POWER_ON);
