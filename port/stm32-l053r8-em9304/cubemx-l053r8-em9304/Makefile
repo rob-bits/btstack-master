@@ -213,23 +213,25 @@ LDFLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) $(LIBDIR) $(LIBS) -Wl,-Map=$(BU
 #	ancs_client_demo \
 
 LE_EXAMPLES = \
-	gap_le_advertisements \
-	gatt_battery_query \
-	gatt_browser \
-	le_counter \
 	le_streamer \
 	le_streamer_client \
-	sm_pairing_peripheral \
-	sm_pairing_central 
+
+	# gap_le_advertisements \
+	# gatt_battery_query \
+	# gatt_browser \
+	# le_counter \
+	# sm_pairing_peripheral \
+	# sm_pairing_central 
 
 GATT_FILES = \
-	ancs_client_demo.gatt \
-	le_counter.gatt \
 	le_streamer.gatt \
-	gatt_browser.gatt \
-	gatt_battery_query.gatt \
-	sm_pairing_peripheral.gatt \
-	sm_pairing_central.gatt \
+
+	# ancs_client_demo.gatt \
+	# le_counter.gatt \
+	# gatt_browser.gatt \
+	# gatt_battery_query.gatt \
+	# sm_pairing_peripheral.gatt \
+	# sm_pairing_central.gatt \
 
 
 #######################################
