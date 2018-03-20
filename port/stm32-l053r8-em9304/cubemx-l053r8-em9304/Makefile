@@ -109,7 +109,7 @@ Src/stm32l0xx_it.c \
 	le_device_db_memory.c \
 	sm.c \
 	uECC.c \
-	0000000_META_hci_patches_v7rc4_withPMI.c \
+	0000000_META_hci_patches_v7rc2a.c \
 SEGGER_RTT.c \
 SEGGER_RTT_Syscalls_GCC.c \
 
