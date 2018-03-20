@@ -203,9 +203,15 @@ static void test_track_sent(le_streamer_connection_t * context, int bytes_sent){
  */
 
 static int state = 0;
-// Sets local Bluetooth name
-static const hci_cmd_t hci_vendor_em_patchquery = {
+
+static const hci_cmd_t hci_vendor_em_patch_query = {
     0xFC34, "2"
+};
+static const hci_cmd_t hci_vendor_em_set_memory_mode = {
+    0xFC2B, "1"
+};
+static const hci_cmd_t hci_vendor_em_set_sleep_options = {
+    0xFC2D, "1"
 };
 
 /* LISTING_START(packetHandler): Packet Handler */
@@ -265,9 +271,33 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                     break;
             }
     }
-    if (state == 1 && hci_can_send_command_packet_now()){
-        state = 0;
-        hci_send_cmd(&hci_vendor_em_patchquery, 0);
+
+    if (!hci_can_send_command_packet_now()) return;
+    static int patch_index = 0;
+    switch (state){
+        case 0:
+            // wait for power up
+            break;
+        case 1:
+            log_info("Disable Sleep Mode");
+            hci_send_cmd(&hci_vendor_em_set_sleep_options, 0);
+            state++;
+            break;
+        case 2:
+            log_info("Enable OTP");
+            hci_send_cmd(&hci_vendor_em_set_memory_mode, 1);
+            state++;
+            break;
+        case 3:
+            // query patches 0-7
+            if (patch_index < 8){
+                log_info("Query patch %u", patch_index);
+                hci_send_cmd(&hci_vendor_em_patch_query, patch_index);
+                patch_index++;
+            }
+            break;
+        default:
+            break;
     }
 }
 
