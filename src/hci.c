@@ -1260,7 +1260,7 @@ static void hci_initializing_run(void){
                     //   -> Work around: wait a few milliseconds here.
                     log_info("BCM delay after init script");
                     hci_stack->substate = HCI_INIT_W4_CUSTOM_INIT_BCM_DELAY;
-                    btstack_run_loop_set_timer(&hci_stack->timeout, 10);
+                    btstack_run_loop_set_timer(&hci_stack->timeout, 100);
                     btstack_run_loop_set_timer_handler(&hci_stack->timeout, hci_initialization_timeout_handler);
                     btstack_run_loop_add_timer(&hci_stack->timeout);
                     break;
