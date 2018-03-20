@@ -205,7 +205,7 @@ static void test_track_sent(le_streamer_connection_t * context, int bytes_sent){
 static int state = 0;
 // Sets local Bluetooth name
 static const hci_cmd_t hci_vendor_em_patchquery = {
-    0xFC34, "1"
+    0xFC34, "2"
 };
 
 /* LISTING_START(packetHandler): Packet Handler */
