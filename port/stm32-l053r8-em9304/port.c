@@ -464,7 +464,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
             printf("BTstack up and running.\n");
             break;
         case HCI_EVENT_COMMAND_COMPLETE:
-            if (packet[3]!=0x34 && packet[4] != 0xfc) break;
+            if (packet[3]!=0x34 || packet[4] != 0xfc) break;
             printf("Container Address 0x%08x, Size %04u, CRC 0x%08x, Build Number 0x%04x, User Build Number 0x%04x, Flags 0x%02x, Format Version 0x%02x, type 0x%02x, id 0x%02x\n",
                 little_endian_read_32(packet, 14),
                 little_endian_read_32(packet, 18),
