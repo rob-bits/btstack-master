@@ -188,6 +188,9 @@ static void le_streamer_setup(void){
     gap_advertisements_set_data(adv_data_len, (uint8_t*) adv_data);
     // gap_advertisements_enable(1);
 
+    // use different connection parameters: conn interval min/max (* 1.25 ms), slave latency, supervision timeout, CE len min/max (* 0.6125 ms) 
+    gap_set_connection_parameters(0x60, 0x30, 0x18, 0x18, 0, 1000, 0x01, 0x18 * 2);
+
     // init client state
     init_connections();
 }
@@ -259,6 +262,7 @@ static void handle_gatt_client_event(uint8_t packet_type, uint16_t channel, uint
     UNUSED(size);
 
     int status;
+    char message[30];
 
     switch(state){
         case TC_W4_SERVICE_RESULT:
@@ -303,7 +307,9 @@ static void handle_gatt_client_event(uint8_t packet_type, uint16_t channel, uint
         case TC_W4_SUBSCRIBED:
             switch(hci_event_packet_get_type(packet)){
                 case GATT_EVENT_NOTIFICATION:
-                    printf("Counter Data: %s\n", gatt_event_notification_get_value(packet));
+                    memset(message, 0, sizeof(message));
+                    memcpy(message, gatt_event_notification_get_value(packet), gatt_event_notification_get_value_length(packet));
+                    printf("Counter Data: %s\n", message);
                     break;
                 case GATT_EVENT_QUERY_COMPLETE:
                     // register handler for notifications
@@ -382,7 +388,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                                 connection_handle = hci_subevent_le_connection_complete_get_connection_handle(packet);
                                 // initialize gatt client context with handle, and add it to the list of active clients
                                 // query primary services
-                                printf("\nSearch for battery service.\n");
+                                printf("\nSearch for LE Counter service.\n");
                                 state = TC_W4_SERVICE_RESULT;
                                 gatt_client_discover_primary_services_by_uuid128(handle_gatt_client_event, connection_handle, le_counter_service_uuid);
                             } else {
