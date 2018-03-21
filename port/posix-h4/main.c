@@ -78,7 +78,7 @@ static hci_transport_config_uart_t config = {
     HCI_TRANSPORT_CONFIG_UART,
     115200,
     0,  // main baudrate
-    0,  // flow control
+    1,  // flow control
     NULL,
 };
 
@@ -141,8 +141,8 @@ static void use_fast_uart(void){
     printf("Using 2000000 baud.\n");
     config.baudrate_main = 2000000;
 #else
-    printf("Using 921600 baud.\n");
-    config.baudrate_main = 921600;
+    printf("Using 1843200 baud.\n");
+    config.baudrate_main = 1843200;
 #endif
 }
 
@@ -196,7 +196,7 @@ static void local_version_information_handler(uint8_t * packet){
         case BLUETOOTH_COMPANY_ID_EM_MICROELECTRONIC_MARIN_SA:
             printf("EM Microelectronics - using EM9301 driver.\n");
             hci_set_chipset(btstack_chipset_em9301_instance());
-            // use_fast_uart();
+            use_fast_uart();
             break;
         case BLUETOOTH_COMPANY_ID_NORDIC_SEMICONDUCTOR_ASA:
             printf("Nordic Semiconductor nRF5 chipset.\n");
@@ -227,7 +227,7 @@ int main(int argc, const char * argv[]){
     // config.device_name = "/dev/tty.usbserial-A900K2WS"; // DFROBOT
     // config.device_name = "/dev/tty.usbserial-A50285BI"; // BOOST-CC2564MODA New
     // config.device_name = "/dev/tty.usbserial-A9OVNX5P"; // RedBear IoT pHAT breakout board
-    config.device_name = "/dev/tty.usbserial-A9GN71D5"; // nucleo
+    config.device_name = "/dev/tty.usbserial-1431430"; // ftdi
 
     // accept path from command line
     if (argc >= 3 && strcmp(argv[1], "-u") == 0){
