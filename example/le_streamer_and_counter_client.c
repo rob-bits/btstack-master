@@ -186,10 +186,10 @@ static void le_streamer_setup(void){
     memset(null_addr, 0, 6);
     gap_advertisements_set_params(adv_int_min, adv_int_max, adv_type, 0, null_addr, 0x07, 0x00);
     gap_advertisements_set_data(adv_data_len, (uint8_t*) adv_data);
-    // gap_advertisements_enable(1);
+    gap_advertisements_enable(1);
 
     // use different connection parameters: conn interval min/max (* 1.25 ms), slave latency, supervision timeout, CE len min/max (* 0.6125 ms) 
-    gap_set_connection_parameters(0x60, 0x30, 0x18, 0x18, 0, 1000, 0x01, 0x18 * 2);
+    gap_set_connection_parameters(0x60, 0x30, 0x60, 0x60, 0, 1000, 0x01, 0x18 * 2);
 
     // init client state
     init_connections();
@@ -354,7 +354,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                         printf("To start the streaming, please run the le_streamer_client example on other device, or use some GATT Explorer, e.g. LightBlue, BLExplr.\n");
                         printf("Start scanning for LE Counter!\n");
                         state = TC_W4_SCAN_RESULT;
-                        gap_set_scan_parameters(0,0x0030, 0x0030);
+                        gap_set_scan_parameters(0,0x0010, 0x060);
                         gap_start_scan();
                     } 
                     break;
@@ -448,8 +448,6 @@ static void streamer(void){
         // none found
         if (connection_index == old_connection_index) return;
     }
-
-    printf("sending \n");
 
     le_streamer_connection_t * context = &le_streamer_connections[connection_index];
 
