@@ -1,5 +1,7 @@
 #include <stdint.h>
-// from 0000000_META_hci_patches_v7rc2a.emp
+
+const char * container_blob_name = "0000000_META_hci_patches_v7rc2a";
+
 const uint8_t container_blob_data[] = {
 #if 1
   0x33, 0x39, 0x6d, 0x65, 0x14, 0x12, 0x00, 0x00, 0x02, 0x05, 0x3b, 0x14,

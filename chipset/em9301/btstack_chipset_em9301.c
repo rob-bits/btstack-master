@@ -136,6 +136,7 @@ static const uint32_t baudrates[] = {
 
 extern const uint8_t   container_blob_data[];
 extern const uint32_t  container_blob_size;
+extern const char *    container_blob_name;
 
 static uint32_t container_blob_offset  = 0;
 static uint32_t container_end;	// current container
@@ -199,6 +200,7 @@ static void chipset_init(const void * config){
 	container_blob_offset = 0;
 	em_cpu_reset_sent = 0;
 	upload_state = UPLOAD_IDLE;
+	log_info("patch %s", container_blob_name);
 }
 
 static btstack_chipset_result_t chipset_next_command(uint8_t * hci_cmd_buffer){
