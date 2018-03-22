@@ -101,6 +101,7 @@ typedef struct {
     char test_data[200];
     int  test_data_len;
     uint32_t test_data_sent;
+    uint32_t test_data_received;
     uint32_t test_data_start;
 } le_streamer_connection_t;
 static le_streamer_connection_t le_streamer_connections[MAX_NR_CONNECTIONS];
@@ -210,20 +211,33 @@ static void test_reset(le_streamer_connection_t * context){
     context->test_data_sent = 0;
 }
 
-static void test_track_sent(le_streamer_connection_t * context, int bytes_sent){
-    context->test_data_sent += bytes_sent;
+static void test_report(le_streamer_connection_t * context){
     // evaluate
     uint32_t now = btstack_run_loop_get_time_ms();
     uint32_t time_passed = now - context->test_data_start;
     if (time_passed < REPORT_INTERVAL_MS) return;
     // print speed
-    int bytes_per_second = context->test_data_sent * 1000 / time_passed;
-    printf("%c: %"PRIu32" bytes sent-> %u.%03u kB/s\n", context->name, context->test_data_sent, bytes_per_second / 1000, bytes_per_second % 1000);
+    int bytes_per_second = (context->test_data_sent  + context->test_data_received) * 1000 / time_passed;
+    printf("%c: %"PRIu32" bytes sent + %"PRIu32" bytes received -> %u.%03u kB/s\n", 
+        context->name, context->test_data_sent, context->test_data_received, 
+        bytes_per_second / 1000, bytes_per_second % 1000);
 
     // restart
-    context->test_data_start = now;
-    context->test_data_sent  = 0;
+    context->test_data_start     = now;
+    context->test_data_sent      = 0;
+    context->test_data_received  = 0;
 }
+
+static void test_track_sent(le_streamer_connection_t * context, int bytes_sent){
+    context->test_data_sent += bytes_sent;
+    test_report(context);
+}
+
+static void test_track_received(le_streamer_connection_t * context, int bytes_received){
+    context->test_data_received += bytes_received;
+    test_report(context);
+}
+
 /* LISTING_END(tracking): Tracking throughput */
 
 // returns 1 if name is found in advertisement
@@ -507,7 +521,7 @@ static int att_write_callback(hci_con_handle_t con_handle, uint16_t att_handle, 
             break;
         case ATT_CHARACTERISTIC_0000FF11_0000_1000_8000_00805F9B34FB_01_VALUE_HANDLE:
         case ATT_CHARACTERISTIC_0000FF12_0000_1000_8000_00805F9B34FB_01_VALUE_HANDLE:
-            test_track_sent(context, buffer_size);
+            test_track_received(context, buffer_size);
             break;
         default:
             printf("Write to 0x%04x, len %u\n", att_handle, buffer_size);
