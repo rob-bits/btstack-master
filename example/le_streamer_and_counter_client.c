@@ -254,15 +254,19 @@ static int advertisement_report_contains_name(const char * name, uint8_t * adver
         uint8_t data_size    = ad_iterator_get_data_len(&context);
         const uint8_t * data = ad_iterator_get_data(&context);
         int i;
+        int match = 1;
         switch (data_type){
             case BLUETOOTH_DATA_TYPE_SHORTENED_LOCAL_NAME:
             case BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME:
                 // compare common prefix
                 for (i=0; i<data_size && i<name_len;i++){
-                    if (data[i] != name[i]) break;
+                    if (data[i] != name[i]) {
+                        match = 0;
+                        break;
+                    }
                 }
-                // prefix match
-                return 1;
+                if (match) return 1;
+                break;
             default:
                 break;
         }
@@ -323,7 +327,7 @@ static void handle_gatt_client_event(uint8_t packet_type, uint16_t channel, uint
                 case GATT_EVENT_NOTIFICATION:
                     memset(message, 0, sizeof(message));
                     memcpy(message, gatt_event_notification_get_value(packet), gatt_event_notification_get_value_length(packet));
-                    printf("Counter Data: %s\n", message);
+                    printf("Counter: %s\n", message);
                     break;
                 case GATT_EVENT_QUERY_COMPLETE:
                     // register handler for notifications
@@ -351,6 +355,12 @@ static void handle_gatt_client_event(uint8_t packet_type, uint16_t channel, uint
  * in the commented code block.
  */
 
+static void start_scanning(void){
+    state = TC_W4_SCAN_RESULT;
+    gap_set_scan_parameters(0,0x0010, 0x060);
+    gap_start_scan();
+}
+
 /* LISTING_START(packetHandler): Packet Handler */
 static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     UNUSED(channel);
@@ -358,6 +368,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
     
     int mtu;
     uint16_t conn_interval;
+    hci_con_handle_t con_handle;
     le_streamer_connection_t * context;
     switch (packet_type) {
         case HCI_EVENT_PACKET:
@@ -367,9 +378,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                     if (btstack_event_state_get_state(packet) == HCI_STATE_WORKING) {
                         printf("To start the streaming, please run the le_streamer_client example on other device, or use some GATT Explorer, e.g. LightBlue, BLExplr.\n");
                         printf("Start scanning for LE Counter!\n");
-                        state = TC_W4_SCAN_RESULT;
-                        gap_set_scan_parameters(0,0x0010, 0x060);
-                        gap_start_scan();
+                        start_scanning();
                     } 
                     break;
                 case GAP_EVENT_ADVERTISING_REPORT:
@@ -386,12 +395,22 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                     gap_connect(le_counter_addr,le_counter_addr_type);
                     break;
                 case HCI_EVENT_DISCONNECTION_COMPLETE:
+                    con_handle = hci_event_disconnection_complete_get_connection_handle(packet);
+                    if (con_handle == connection_handle){
+                        // LE Counter
+                        printf("Counter: Disconnect, reason %02x\n", hci_event_disconnection_complete_get_reason(packet));
+                        connection_handle = HCI_CON_HANDLE_INVALID;
+                        start_scanning();
+                        break;
+                    }
                     context = connection_for_conn_handle(hci_event_disconnection_complete_get_connection_handle(packet));
+                    if (context){
+                        // LE Streamer
+                        printf("%c: Disconnect, reason %02x\n", context->name, hci_event_disconnection_complete_get_reason(packet));                    
+                        context->le_notification_enabled = 0;
+                        context->connection_handle = HCI_CON_HANDLE_INVALID;
+                    }
                     if (!context) break;
-                    // free connection
-                    printf("%c: Disconnect, reason %02x\n", context->name, hci_event_disconnection_complete_get_reason(packet));                    
-                    context->le_notification_enabled = 0;
-                    context->connection_handle = HCI_CON_HANDLE_INVALID;
                     break;
                 case HCI_EVENT_LE_META:
                     switch (hci_event_le_meta_get_subevent_code(packet)) {
