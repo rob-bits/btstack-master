@@ -172,26 +172,30 @@ static void streamer(le_streamer_connection_t * context){
 // returns 1 if name is found in advertisement
 static int advertisement_report_contains_name(const char * name, uint8_t * advertisement_report){
     // get advertisement from report event
-    const uint8_t * adv_data = gap_event_advertising_report_get_data(advertisement_report);
+    const uint8_t * _adv_data = gap_event_advertising_report_get_data(advertisement_report);
     uint16_t        adv_len  = gap_event_advertising_report_get_data_length(advertisement_report);
     int             name_len = strlen(name);
 
     // iterate over advertisement data
     ad_context_t context;
-    for (ad_iterator_init(&context, adv_len, adv_data) ; ad_iterator_has_more(&context) ; ad_iterator_next(&context)){
+    for (ad_iterator_init(&context, adv_len, _adv_data) ; ad_iterator_has_more(&context) ; ad_iterator_next(&context)){
         uint8_t data_type    = ad_iterator_get_data_type(&context);
         uint8_t data_size    = ad_iterator_get_data_len(&context);
         const uint8_t * data = ad_iterator_get_data(&context);
         int i;
+        int match = 1;
         switch (data_type){
             case BLUETOOTH_DATA_TYPE_SHORTENED_LOCAL_NAME:
             case BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME:
                 // compare common prefix
                 for (i=0; i<data_size && i<name_len;i++){
-                    if (data[i] != name[i]) break;
+                    if (data[i] != name[i]) {
+                        match = 0;
+                        break;
+                    }
                 }
-                // prefix match
-                return 1;
+                if (match) return 1;
+                break;
             default:
                 break;
         }
