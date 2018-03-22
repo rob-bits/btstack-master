@@ -295,7 +295,7 @@ static void handle_gatt_client_event(uint8_t packet_type, uint16_t channel, uint
                         break;  
                     } 
                     state = TC_W4_CHARACTERISTIC_RESULT;
-                    printf("\nSearch for counter characteristic.\n");
+                    printf("Search for counter characteristic.\n");
                     gatt_client_discover_characteristics_for_service_by_uuid128(handle_gatt_client_event, connection_handle, &le_counter_service, le_counter_characteristic_uuid);
                     break;
                 default:
@@ -315,7 +315,7 @@ static void handle_gatt_client_event(uint8_t packet_type, uint16_t channel, uint
                         break;  
                     } 
                     state = TC_W4_SUBSCRIBED;
-                    printf("\nConfigure counter for notify.\n");
+                    printf("Configure counter for notify.\n");
                     status = gatt_client_write_client_characteristic_configuration(handle_gatt_client_event, connection_handle, &le_counter_characteristic, GATT_CLIENT_CHARACTERISTICS_CONFIGURATION_NOTIFICATION);
                     break;
                 default:
@@ -356,6 +356,7 @@ static void handle_gatt_client_event(uint8_t packet_type, uint16_t channel, uint
  */
 
 static void start_scanning(void){
+    printf("Start scanning for LE Counter!\n");
     state = TC_W4_SCAN_RESULT;
     gap_set_scan_parameters(0,0x0010, 0x060);
     gap_start_scan();
@@ -377,7 +378,6 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                     // BTstack activated, get started
                     if (btstack_event_state_get_state(packet) == HCI_STATE_WORKING) {
                         printf("To start the streaming, please run the le_streamer_client example on other device, or use some GATT Explorer, e.g. LightBlue, BLExplr.\n");
-                        printf("Start scanning for LE Counter!\n");
                         start_scanning();
                     } 
                     break;
@@ -451,6 +451,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                     printf("%c: ATT MTU = %u => use test data of len %u\n", context->name, mtu, context->test_data_len);
                     break;
                 case ATT_EVENT_CAN_SEND_NOW:
+                    log_info("ATT_EVENT_CAN_SEND_NOW");
                     streamer();
                     break;
             }
