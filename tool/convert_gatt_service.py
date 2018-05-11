@@ -13,6 +13,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 
+
 def indent(elem, level=0):
     i = "\n" + level*"  "
     j = "\n" + (level-1)*"  "
@@ -39,8 +40,8 @@ def list_services():
     tree = html.fromstring(page.content)
     # get all <tr> elements in <table id="gattTable">
     rows = tree.xpath('//table[@id="gattTable"]/tbody/tr')
-    print("%-55s| %-30s| %s" % ('Specification Type', 'Specification Name', 'UUID'))
-    print('-'*55 + '+-' + '-' * 30 + '+-' + '-'*10)
+    print("%-55s| %-40s| %s" % ('Specification Type', 'Specification Name2', 'UUID'))
+    print('-'*55 + '+-' + '-' * 40 + '+-' + '-'*10)
     maxlen_type = 0
     maxlen_name = 0
     services = []
@@ -58,7 +59,7 @@ def list_services():
             maxlen_type = len(id)
         if (len(summary) > maxlen_name):
             maxlen_name = len(summary)
-        print("%-55s| %-30s| %s" % service)
+        print("%-55s| %-40s| %s" % service)
 
 def parse_properties(element):
     properties = element.find('Properties')
