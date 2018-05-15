@@ -11,6 +11,7 @@ VPATH += ${BTSTACK_ROOT}/3rd-party/bluedroid/encoder//srce
 
 CFLAGS += -I.
 CFLAGS += -I${BTSTACK_ROOT}/src/ble
+CFLAGS += -I${BTSTACK_ROOT}/src/ble/gatt-service
 CFLAGS += -I${BTSTACK_ROOT}/src/classic
 CFLAGS += -I${BTSTACK_ROOT}/src
 CFLAGS += -I${BTSTACK_ROOT}/3rd-party/hxcmod-player

@@ -40,8 +40,10 @@ ATT	+= \
 GATT_SERVER += \
 	att_db.c 				 	    \
 	att_server.c        	    \
-	battery_service_server.c     \
-	device_information_service_server.c  \
+	# cycling_speed_and_cadence_service_server\
+ #    device_information_service_server.c \
+	# heart_rate_service_server.c \
+ #    hids_device.c \
 
 GATT_CLIENT += \
 	gatt_client.c        	    \
@@ -77,6 +79,7 @@ HXCMOD_PLAYER = \
 include ${BTSTACK_ROOT}/example/Makefile.inc
 include ${BTSTACK_ROOT}/3rd-party/bluedroid/decoder/Makefile.inc
 include ${BTSTACK_ROOT}/3rd-party/bluedroid/encoder/Makefile.inc
+include ${BTSTACK_ROOT}/src/ble/gatt-service/Makefile.inc
 
 CFLAGS += -g -Wall -Wmissing-prototypes -Wstrict-prototypes -Wshadow -Wunused-variable -Wunused-parameter
 # -Werror 
@@ -86,7 +89,6 @@ CFLAGS += -D ENABLE_MICRO_ECC_FOR_LE_SECURE_CONNECTIONS
 CFLAGS += -D ENABLE_TESTING_SUPPORT
 CFLAGS += -I..
 CFLAGS += -I${BTSTACK_ROOT}/src
-CFLAGS += -I${BTSTACK_ROOT}/src/classic
 CFLAGS += -I${BTSTACK_ROOT}/3rd-party/bluedroid/decoder/include -D OI_DEBUG
 CFLAGS += -I${BTSTACK_ROOT}/3rd-party/bluedroid/encoder/include
 CFLAGS += -I${BTSTACK_ROOT}/3rd-party/eCC
@@ -98,7 +100,7 @@ CFLAGS += -I${BTSTACK_ROOT}/3rd-party/tinydir
 
 VPATH += ${BTSTACK_ROOT}/src
 VPATH += ${BTSTACK_ROOT}/src/ble
-VPATH += ${BTSTACK_ROOT}/src/gatt-service
+VPATH += ${BTSTACK_ROOT}/src/ble/gatt-service
 VPATH += ${BTSTACK_ROOT}/src/ble/mesh
 VPATH += ${BTSTACK_ROOT}/src/classic
 VPATH += ${BTSTACK_ROOT}/platform/posix
@@ -125,16 +127,24 @@ SBC_DECODER_OBJ  = $(SBC_DECODER:.c=.o)
 SBC_ENCODER_OBJ  = $(SBC_ENCODER:.c=.o)
 AVDTP_OBJ  = $(AVDTP:.c=.o)
 HXCMOD_PLAYER_OBJ = ${HXCMOD_PLAYER:.c=.o}
+SRC_BLE_GATT_SERVICE_FILES_OBJ =  ${SRC_BLE_GATT_SERVICE_FILES:.c=.o}
 
 EXAMPLES  = iopt ble_peripheral_test ble_central_test l2cap_test classic_test bnep_test hsp_ag_test hsp_hs_test sco_loopback le_data_channel
-EXAMPLES += avdtp_source_test avdtp_sink_test le_data_channel avrcp_controller_test sm_test avrcp_target_test gatt_profiles hrp_col_test hrp_server_test
+EXAMPLES += avdtp_source_test avdtp_sink_test le_data_channel avrcp_controller_test sm_test avrcp_target_test gatt_profiles 
+EXAMPLES += hrp_server_test hrp_col_test cscs_server_test
 
 all: ${EXAMPLES}
+
+cscs_server_test.h: cscs_server_test.gatt
+	python ${BTSTACK_ROOT}/tool/compile_gatt.py $< $@ 
+
+cscs_server_test: cscs_server_test.h ${CORE_OBJ} ${COMMON_OBJ} ${ATT_OBJ} ${GATT_SERVER_OBJ} ${SM_OBJ} ${SRC_BLE_GATT_SERVICE_FILES_OBJ} cscs_server_test.c
+	${CC} $(filter-out cscs_server_test.h,$^) ${CFLAGS} ${LDFLAGS} -o $@
 
 hrp_server_test.h: hrp_server_test.gatt
 	python ${BTSTACK_ROOT}/tool/compile_gatt.py $< $@ 
 	
-hrp_server_test: hrp_server_test.h ${CORE_OBJ} ${COMMON_OBJ} ${ATT_OBJ} ${GATT_SERVER_OBJ} ${SM_OBJ} heart_rate_service_server.o hrp_server_test.c
+hrp_server_test: hrp_server_test.h ${CORE_OBJ} ${COMMON_OBJ} ${ATT_OBJ} ${GATT_SERVER_OBJ} ${SM_OBJ} ${SRC_BLE_GATT_SERVICE_FILES_OBJ} hrp_server_test.c
 	${CC} $(filter-out hrp_server_test.h,$^) ${CFLAGS} ${LDFLAGS} -o $@
 
 hrp_col_test: ${CORE_OBJ} ${COMMON_OBJ} ${ATT_OBJ} ${GATT_CLIENT_OBJ} ${SM_OBJ} hrp_col_test.c
@@ -197,7 +207,7 @@ sm_test: sm_test.h ${CORE_OBJ} ${COMMON_OBJ} ${ATT_OBJ} ${GATT_SERVER_OBJ} ${GAT
 gatt_profiles.h: gatt_profiles.gatt
 	python ${BTSTACK_ROOT}/tool/compile_gatt.py $< $@ 
 
-gatt_profiles: gatt_profiles.h ${CORE_OBJ} ${COMMON_OBJ} ${ATT_OBJ} ${GATT_SERVER_OBJ} ${SM_OBJ} gatt_profiles.o
+gatt_profiles: gatt_profiles.h ${CORE_OBJ} ${COMMON_OBJ} ${ATT_OBJ} ${GATT_SERVER_OBJ} ${SM_OBJ} ${SRC_BLE_GATT_SERVICE_FILES_OBJ} gatt_profiles.o
 	${CC} $(filter-out gatt_profiles.h,$^) ${CFLAGS} ${LDFLAGS} -o $@
 
 myclean:
