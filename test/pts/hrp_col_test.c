@@ -94,15 +94,9 @@ static bd_addr_type_t le_streamer_addr_type;
 
 static hci_con_handle_t connection_handle;
 
-// static gatt_client_service_t        heart_rate_service;
-// static gatt_client_characteristic_t body_sensor_location_characteristic;
-// static gatt_client_characteristic_t heart_rate_measurement_characteristic;
-
 static gatt_client_service_t        service;
 static gatt_client_characteristic_t characteristic;
 static gatt_client_characteristic_descriptor_t descriptor;
-
-// static uint8_t body_sensor_location;
 
 static gatt_client_notification_t notification_listener;
 static int listener_registered;
@@ -255,60 +249,6 @@ static void handle_gatt_client_event(uint8_t packet_type, uint16_t channel, uint
         case TC_W4_WRITE_CHARACTERISTIC:
             printf_hexdump(packet, size);
             break;
-
-        // case TC_W4_HEART_RATE_MEASUREMENT_CHARACTERISTIC:
-        //     switch(hci_event_packet_get_type(packet)){
-        //         case GATT_EVENT_CHARACTERISTIC_QUERY_RESULT:
-        //             gatt_event_characteristic_query_result_get_characteristic(packet, &heart_rate_measurement_characteristic);
-        //             printf("GATT characteristic:\n   start handle 0x%02x, value handle 0x%02x, end handle 0x%02x\n", 
-        //                 heart_rate_measurement_characteristic.start_handle, heart_rate_measurement_characteristic.value_handle, heart_rate_measurement_characteristic.end_handle);
-        //             break;
-        //         case GATT_EVENT_QUERY_COMPLETE:
-        //             if (packet[4] != 0){
-        //                 printf("CHARACTERISTIC_QUERY_RESULT - Error status %x.\n", packet[4]);
-        //                 gap_disconnect(connection_handle);
-        //                 break;  
-        //             } 
-        //             // register handler for notifications
-        //             listener_registered = 1;
-        //             gatt_client_listen_for_characteristic_value_updates(&notification_listener, handle_gatt_client_event, connection_handle, &heart_rate_measurement_characteristic);
-        //             // enable notifications
-        //             printf("Enable Notify on Heart Rate Measurements characteristic.\n");
-        //             state = TC_W4_ENABLE_NOTIFICATIONS_COMPLETE;
-        //             gatt_client_write_client_characteristic_configuration(handle_gatt_client_event, connection_handle,
-        //                 &heart_rate_measurement_characteristic, GATT_CLIENT_CHARACTERISTICS_CONFIGURATION_NOTIFICATION);
-        //             break;
-        //         default:
-        //             break;
-        //     }
-        //     break;
-
-        // 
-
-
-        // case TC_W4_SENSOR_LOCATION_CHARACTERISTIC:
-        //     switch(hci_event_packet_get_type(packet)){
-        //         case GATT_EVENT_CHARACTERISTIC_QUERY_RESULT:
-        //             gatt_event_characteristic_query_result_get_characteristic(packet, &body_sensor_location_characteristic);
-        //             printf("GATT Heart Rate Service body_sensor_location_characteristic:\n  start handle 0x%02x, value handle 0x%02x, end handle 0x%02x\n", 
-        //                 body_sensor_location_characteristic.start_handle, body_sensor_location_characteristic.value_handle, body_sensor_location_characteristic.end_handle);
-                    
-        //             break;
-        //         case GATT_EVENT_QUERY_COMPLETE:
-        //             if (packet[4] != 0){
-        //                 printf("CHARACTERISTIC_QUERY_RESULT - Error status %x.\n", packet[4]);
-        //                 state = TC_CONNECTED;
-        //                 break;  
-        //             } 
-        //             state = TC_W4_HEART_RATE_MEASUREMENT_CHARACTERISTIC;
-        //             printf("Read Body Sensor Location.\n");
-        //             state = TC_W4_SENSOR_LOCATION;
-        //             gatt_client_read_value_of_characteristic(handle_gatt_client_event, connection_handle, &body_sensor_location_characteristic);
-        //             break;
-        //         default:
-        //             break;
-        //     }
-        //     break;
 
 
         case TC_CONNECTED:
@@ -466,11 +406,6 @@ static void hci_event_handler(uint8_t packet_type, uint16_t channel, uint8_t *pa
             conn_interval = hci_subevent_le_connection_complete_get_conn_interval(packet);
             printf("Connection Interval: %u.%02u ms\n", conn_interval * 125 / 100, 25 * (conn_interval & 3));
             printf("Connection Latency: %u\n", hci_subevent_le_connection_complete_get_conn_latency(packet));  
-            // initialize gatt client context with handle, and add it to the list of active clients
-            // query primary services
-            // printf("Search for Heart Rate service.\n");
-            // state = TC_W4_SERVICE_RESULT;
-            // gatt_client_discover_primary_services_by_uuid16(handle_gatt_client_event, connection_handle, ORG_BLUETOOTH_SERVICE_HEART_RATE);
             break;
         case HCI_EVENT_DISCONNECTION_COMPLETE:
             // unregister listener
@@ -508,6 +443,7 @@ static void show_usage(void){
     printf("\n--- GATT Heart Rate Client Test Console %s ---\n", bd_addr_to_str(iut_address));
     printf("e      - create connection to addr %s\n", device_addr_string);
     printf("E      - disconnect\n");
+    printf("b      - start pairing\n");
     printf("a      - start scanning\n");
     printf("\n");
     printf("P      - search all primary services\n");
@@ -545,6 +481,10 @@ static void stdin_process(char cmd){
             printf("Disconnect from %s\n", device_addr_string);
             state = TC_W4_DISCONNECT;
             status = gap_disconnect(connection_handle);
+            break;
+        case 'b':
+            printf("Start pairing\n");
+            sm_request_pairing(connection_handle);
             break;
         case 'a':
             printf("Start scanning!\n");
@@ -676,6 +616,8 @@ int btstack_main(int argc, const char * argv[]){
 
     gatt_client_init();
 
+    le_device_db_init();
+    
     sm_init();
     sm_set_io_capabilities(IO_CAPABILITY_NO_INPUT_NO_OUTPUT);
     sm_set_authentication_requirements(SM_AUTHREQ_BONDING);
