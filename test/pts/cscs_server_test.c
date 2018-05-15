@@ -42,18 +42,25 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "hrp_server_test.h"
+#include "cscs_server_test.h"
 #include "btstack.h"
-// #include "ble/gatt-service/cycling_speed_and_cadence_service_server.h"
 
+#define WHEEL_REVOLUTION_DATA_SUPPORTED 1
+#define CRANK_REVOLUTION_DATA_SUPPORTED 1
+
+// https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.characteristic.gap.appearance.xml
+// cycling / speed and cadence sensor
+static const uint16_t appearance = (18 << 6) | 5;
 
 const uint8_t adv_data[] = {
     // Flags general discoverable, BR/EDR not supported
     0x02, 0x01, 0x06, 
-    // Name 
-    0x0C, 0x09, 'C', 'S', 'C', 'S', ' ', 'S', 'e', 'r', 'v', 'e','r',
+    // Name
+    0x0B, 0x09, 'C', 'S', 'C', ' ', 'S', 'e', 'r', 'v', 'e','r',
     // 16-bit Service UUIDs
-    0x03, BLUETOOTH_DATA_TYPE_COMPLETE_LIST_OF_16_BIT_SERVICE_CLASS_UUIDS, ORG_BLUETOOTH_SERVICE_CYCLING_SPEED_AND_CADENCE & 0xff, ORG_BLUETOOTH_SERVICE_CYCLING_SPEED_AND_CADENCE >> 8
+    0x03, BLUETOOTH_DATA_TYPE_COMPLETE_LIST_OF_16_BIT_SERVICE_CLASS_UUIDS, ORG_BLUETOOTH_SERVICE_CYCLING_SPEED_AND_CADENCE & 0xff, ORG_BLUETOOTH_SERVICE_CYCLING_SPEED_AND_CADENCE >> 8,
+    // Appearance
+    3, BLUETOOTH_DATA_TYPE_APPEARANCE, appearance & 0xff, appearance >> 8,
 };
 
 const uint8_t adv_data_len = sizeof(adv_data);
@@ -95,7 +102,7 @@ int btstack_main(void){
     att_server_init(profile_data, NULL, NULL);    
 
     // setup heart rate service
-    cycling_speed_and_cadence_service_server_init();
+    cycling_speed_and_cadence_service_server_init(CSC_SERVICE_BODY_SENSOR_LOCATION_TOP_OF_SHOE, WHEEL_REVOLUTION_DATA_SUPPORTED, CRANK_REVOLUTION_DATA_SUPPORTED);
     
     // setup advertisements
     uint16_t adv_int_min = 0x0030;

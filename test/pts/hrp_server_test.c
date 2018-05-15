@@ -46,16 +46,11 @@
 #include "btstack.h"
 // #include "ble/gatt-service/heart_rate_service_server.h"
 
-#define HEARTBEAT_PERIOD_MS 1000
 #define ENERGY_EXPENDED_SUPPORTED 1
-
-static btstack_timer_source_t heartbeat;
 
 static uint16_t heart_rate = 100;
 static int rr_interval_count = 2;
 static uint16_t rr_intervals[] = {0x55, 0x66};
-
-static void heartbeat_handler(struct btstack_timer_source *ts);
 
 const uint8_t adv_data[] = {
     // Flags general discoverable, BR/EDR not supported
@@ -67,13 +62,6 @@ const uint8_t adv_data[] = {
 };
 const uint8_t adv_data_len = sizeof(adv_data);
 
-static void heartbeat_handler(struct btstack_timer_source *ts){
-
-    // simulate increase of energy spent 
-    // heart_rate_service_server_update_heart_rate_values(heart_rate, HEART_RATE_SERVICE_SENSOR_CONTACT_HAVE_CONTACT, rr_interval_count, &rr_intervals[0]);
-    btstack_run_loop_set_timer(ts, HEARTBEAT_PERIOD_MS);
-    btstack_run_loop_add_timer(ts);
-} 
 
 #ifdef HAVE_BTSTACK_STDIN
 
@@ -139,12 +127,6 @@ int btstack_main(void){
     gap_advertisements_set_params(adv_int_min, adv_int_max, adv_type, 0, null_addr, 0x07, 0x00);
     gap_advertisements_set_data(adv_data_len, (uint8_t*) adv_data);
     gap_advertisements_enable(1);
-
-    // setup simulated heartbeat measurement
-    heartbeat.process = &heartbeat_handler;
-    btstack_run_loop_set_timer(&heartbeat, HEARTBEAT_PERIOD_MS);
-    btstack_run_loop_add_timer(&heartbeat);
-
 
 #ifdef HAVE_BTSTACK_STDIN
     btstack_stdin_setup(stdin_process);
