@@ -102,7 +102,7 @@ typedef enum {
 
 
 /**
- * @brief Init Battery Service Server with ATT DB
+ * @brief Init Heart Rate Service Server with ATT DB
  * @param body_sensor_location
  * @param energy_expended_supported
  */

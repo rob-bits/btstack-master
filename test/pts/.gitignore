@@ -18,6 +18,8 @@ hfp_hf_test
 hrp_col_test
 hrp_server_test
 hrp_server_test.h
+cscs_server_test
+cscs_server_test.h
 hsp_ag_test
 hsp_hs_test
 iopt
