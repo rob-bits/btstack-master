@@ -73,19 +73,21 @@ typedef enum {
 	CSC_SERVICE_BODY_SENSOR_LOCATION_REAR_HUB,
 	CSC_SERVICE_BODY_SENSOR_LOCATION_CHEST,
 	CSC_SERVICE_BODY_SENSOR_LOCATION_SPIDER,
-	CSC_SERVICE_BODY_SENSOR_LOCATION_CHAIN_RING
+	CSC_SERVICE_BODY_SENSOR_LOCATION_CHAIN_RING,
+	CSC_SERVICE_BODY_SENSOR_RESERVED
 } cycling_speed_and_cadence_body_sensor_location_t;
 
 /**
  * @brief Init Server with ATT DB
  */
-void cycling_speed_and_cadence_service_server_init(cycling_speed_and_cadence_body_sensor_location_t sensor_location, uint8_t wheel_revolution_data_supported, uint8_t crank_revolution_data_supported);
+void cycling_speed_and_cadence_service_server_init(uint32_t supported_sensor_locations, 
+	uint8_t multiple_sensor_locations_supported, uint8_t wheel_revolution_data_supported, uint8_t crank_revolution_data_supported);
 
 /**
  * @brief Update heart rate (unit: beats per minute)
  * @note triggers notifications if subscribed
  */
-void cycling_speed_and_cadence_service_server_update_values(void);
+void cycling_speed_and_cadence_service_server_update_values(int32_t wheel_revolutions, uint16_t last_wheel_event_time, uint16_t crank_revolutions, uint16_t last_crank_event_time);
 
 /* API_END */
 

@@ -234,8 +234,6 @@ void heart_rate_service_server_update_heart_rate_values(uint16_t heart_rate_bpm,
 	heart_rate_service_sensor_contact_status_t sensor_contact, int rr_interval_count, uint16_t * rr_intervals){
 	heart_rate_t * instance = &heart_rate;
 
-	log_info("update_heart_rate_values, notify %u con_handle %04x", instance->measurement_client_configuration_descriptor_notify, instance->con_handle);	
-	
 	instance->measurement_bpm = heart_rate_bpm;
 	instance->sensor_contact = sensor_contact;
 	instance->rr_interval_count = rr_interval_count;

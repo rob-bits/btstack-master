@@ -47,6 +47,7 @@
 
 #define WHEEL_REVOLUTION_DATA_SUPPORTED 1
 #define CRANK_REVOLUTION_DATA_SUPPORTED 1
+#define MULTIPLE_SENSOR_LOCATIONS_SUPPORTED 1
 
 // https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.characteristic.gap.appearance.xml
 // cycling / speed and cadence sensor
@@ -65,21 +66,47 @@ const uint8_t adv_data[] = {
 
 const uint8_t adv_data_len = sizeof(adv_data);
 
+static int32_t  wheel_revolutions = 0;
+static uint16_t last_wheel_event_time = 0;
+static uint16_t crank_revolutions = 0;
+static uint16_t last_crank_event_time = 0;
+
 #ifdef HAVE_BTSTACK_STDIN
 
 static void show_usage(void){
     bd_addr_t      iut_address;
     gap_local_bd_addr(iut_address);
     printf("\n--- Bluetooth CSCS Server Test Console %s ---\n", bd_addr_to_str(iut_address));
+    printf("f     - update forward wheel revolution\n");
+    printf("r     - update reverse wheel revolution\n");
+    printf("c     - update crank revolution\n");
     printf("Ctrl-c - exit\n");
     printf("---\n");
 }
 
 
 static void stdin_process(char cmd){
+    last_wheel_event_time += 10;
+    last_crank_event_time += 10;
+
     switch (cmd){
         case '\n':
         case '\r':
+            break;
+        case 'f':
+            wheel_revolutions = 10;
+            crank_revolutions = 10;
+            cycling_speed_and_cadence_service_server_update_values(wheel_revolutions, last_wheel_event_time, crank_revolutions, last_crank_event_time);
+            break;
+        case 'r':
+            wheel_revolutions = -10;
+            crank_revolutions = 10;
+            cycling_speed_and_cadence_service_server_update_values(wheel_revolutions, last_wheel_event_time, crank_revolutions, last_crank_event_time);
+            break;
+        case 'c':
+            wheel_revolutions = 0;
+            crank_revolutions = 0;
+            cycling_speed_and_cadence_service_server_update_values(wheel_revolutions, last_wheel_event_time, crank_revolutions, last_crank_event_time);
             break;
         default:
             show_usage();
@@ -102,7 +129,8 @@ int btstack_main(void){
     att_server_init(profile_data, NULL, NULL);    
 
     // setup heart rate service
-    cycling_speed_and_cadence_service_server_init(CSC_SERVICE_BODY_SENSOR_LOCATION_TOP_OF_SHOE, WHEEL_REVOLUTION_DATA_SUPPORTED, CRANK_REVOLUTION_DATA_SUPPORTED);
+    cycling_speed_and_cadence_service_server_init(CSC_SERVICE_BODY_SENSOR_LOCATION_TOP_OF_SHOE, 
+        MULTIPLE_SENSOR_LOCATIONS_SUPPORTED, WHEEL_REVOLUTION_DATA_SUPPORTED, CRANK_REVOLUTION_DATA_SUPPORTED);
     
     // setup advertisements
     uint16_t adv_int_min = 0x0030;
