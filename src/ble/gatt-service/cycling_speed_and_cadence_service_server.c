@@ -49,6 +49,10 @@
 
 #include "ble/gatt-service/cycling_speed_and_cadence_service_server.h"
 
+// error codes from cscs spec
+#define CSC_ERROR_CODE_PROCEDURE_ALREADY_IN_PROGRESS        0x80
+#define CSC_ERROR_CODE_CCC_DESCRIPTOR_IMPROPERLY_CONFIGURED 0x81
+
 typedef enum {
 	CSC_FLAG_WHEEL_REVOLUTION_DATA_SUPPORTED = 0,
 	CSC_FLAG_CRANK_REVOLUTION_DATA_SUPPORTED,
@@ -56,6 +60,7 @@ typedef enum {
 } csc_feature_flag_bit_t;
 
 typedef enum {
+	CSC_OPCODE_IDLE = 0,
 	CSC_OPCODE_SET_CUMULATIVE_VALUE = 1,
 	CSC_OPCODE_START_SENSOR_CALIBRATION,
 	CSC_OPCODE_UPDATE_SENSOR_LOCATION,
@@ -205,10 +210,13 @@ static void cycling_speed_and_cadence_service_response_can_send_now(void * conte
 		default:
 			break;
 	}
-	printf_hexdump(value, pos);
-	att_server_indicate(instance->con_handle, instance->control_point_value_handle, &value[0], pos); 
+	csc_opcode_t temp_request_opcode = instance->request_opcode;
+	instance->request_opcode = CSC_OPCODE_IDLE;
 
-	switch (instance->request_opcode){
+	printf_hexdump(value, pos);
+	uint8_t status = att_server_indicate(instance->con_handle, instance->control_point_value_handle, &value[0], pos); 
+	printf("att_server_indicate status 0x%02x\n", status);
+	switch (temp_request_opcode){
 		case CSC_OPCODE_SET_CUMULATIVE_VALUE:
 			if (instance->response_value != CSC_RESPONSE_VALUE_SUCCESS) break;
 			if (instance->measurement_client_configuration_descriptor_notify){
@@ -255,6 +263,9 @@ static int cycling_speed_and_cadence_service_write_callback(hci_con_handle_t con
 	}
 
 	if (attribute_handle == instance->control_point_value_handle){
+		if (instance->control_point_client_configuration_descriptor_indicate == 0) return CSC_ERROR_CODE_CCC_DESCRIPTOR_IMPROPERLY_CONFIGURED;
+		if (instance->request_opcode != CSC_OPCODE_IDLE) return CSC_ERROR_CODE_PROCEDURE_ALREADY_IN_PROGRESS;
+
 		instance->request_opcode = buffer[0];
 		instance->response_value = CSC_RESPONSE_VALUE_SUCCESS;
 		
