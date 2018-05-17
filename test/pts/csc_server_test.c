@@ -35,14 +35,14 @@
  *
  */
 
-#define __BTSTACK_FILE__ "cscs_server_test.c"
+#define __BTSTACK_FILE__ "csc_server_test.c"
 
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "cscs_server_test.h"
+#include "csc_server_test.h"
 #include "btstack.h"
 
 #define WHEEL_REVOLUTION_DATA_SUPPORTED 1
