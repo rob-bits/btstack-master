@@ -35,11 +35,7 @@
  *
  */
 
-#define __BTSTACK_FILE__ "gatt_heart_rate_client.c"
-
-// *****************************************************************************
-/* EXAMPLE_START(gatt_heart_rate_client): Connects to Heart Rate Sensor and reports measurements */
-// *****************************************************************************
+#define __BTSTACK_FILE__ "hrp_col_test.c"
 
 #include <inttypes.h>
 #include <stdint.h>
@@ -60,9 +56,7 @@ typedef enum {
     TC_W4_SERVICE_RESULT,
     TC_W4_CHARACTERISTIC_RESULT,
     TC_W4_CHARACTERISTIC_DESCRIPTOR_RESULT,
-    TC_W4_HEART_RATE_MEASUREMENT_CHARACTERISTIC,
     TC_W4_ENABLE_NOTIFICATIONS_COMPLETE,
-    TC_W4_SENSOR_LOCATION_CHARACTERISTIC,
     TC_W4_SENSOR_LOCATION,
     TC_W4_WRITE_CHARACTERISTIC,
     TC_CONNECTED,
