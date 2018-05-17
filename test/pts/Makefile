@@ -131,9 +131,15 @@ SRC_BLE_GATT_SERVICE_FILES_OBJ =  ${SRC_BLE_GATT_SERVICE_FILES:.c=.o}
 
 EXAMPLES  = iopt ble_peripheral_test ble_central_test l2cap_test classic_test bnep_test hsp_ag_test hsp_hs_test sco_loopback le_data_channel
 EXAMPLES += avdtp_source_test avdtp_sink_test le_data_channel avrcp_controller_test sm_test avrcp_target_test gatt_profiles 
-EXAMPLES += hrp_server_test hrp_client_test csc_server_test csc_client_test
+EXAMPLES += hrp_server_test hrp_client_test csc_server_test csc_client_test cycling_power_server_test
 
 all: ${EXAMPLES}
+
+cycling_power_server_test.h: cycling_power_server_test.gatt
+	python ${BTSTACK_ROOT}/tool/compile_gatt.py $< $@ 
+
+cycling_power_server_test: cycling_power_server_test.h ${CORE_OBJ} ${COMMON_OBJ} ${ATT_OBJ} ${GATT_SERVER_OBJ} ${SM_OBJ} ${SRC_BLE_GATT_SERVICE_FILES_OBJ} cycling_power_server_test.c
+	${CC} $(filter-out cycling_power_server_test.h,$^) ${CFLAGS} ${LDFLAGS} -o $@
 
 csc_server_test.h: csc_server_test.gatt
 	python ${BTSTACK_ROOT}/tool/compile_gatt.py $< $@ 

@@ -2,6 +2,7 @@
 
 SRC_BLE_GATT_SERVICE_FILES = \
     battery_service_server.c \
+	cycling_power_service_server.c \
 	cycling_speed_and_cadence_service_server.c \
     device_information_service_server.c \
 	heart_rate_service_server.c \
