@@ -54,12 +54,6 @@
 #define CSC_ERROR_CODE_CCC_DESCRIPTOR_IMPROPERLY_CONFIGURED 0x81
 
 typedef enum {
-	CSC_FLAG_WHEEL_REVOLUTION_DATA_SUPPORTED = 0,
-	CSC_FLAG_CRANK_REVOLUTION_DATA_SUPPORTED,
-	CSC_FLAG_MULTIPLE_SENSOR_LOCATIONS_SUPPORTED
-} csc_feature_flag_bit_t;
-
-typedef enum {
 	CSC_OPCODE_IDLE = 0,
 	CSC_OPCODE_SET_CUMULATIVE_VALUE = 1,
 	CSC_OPCODE_START_SENSOR_CALIBRATION,
@@ -200,7 +194,7 @@ static void cycling_speed_and_cadence_service_response_can_send_now(void * conte
 	switch (instance->request_opcode){
 		case CSC_OPCODE_REQUEST_SUPPORTED_SENSOR_LOCATIONS:{
 			int loc;
-			for (loc = CSC_SERVICE_BODY_SENSOR_LOCATION_OTHER; loc < CSC_SERVICE_BODY_SENSOR_RESERVED-1; loc++){
+			for (loc = CSC_SERVICE_BODY_SENSOR_LOCATION_OTHER; loc < CSC_SERVICE_BODY_SENSOR_LOCATION_RESERVED-1; loc++){
 				if (instance->supported_sensor_locations & (1 << loc)){
 					value[pos++] = loc;
 				}
@@ -282,7 +276,7 @@ static int cycling_speed_and_cadence_service_write_callback(hci_con_handle_t con
 	 		case CSC_OPCODE_UPDATE_SENSOR_LOCATION:
 	 			if (instance->multiple_sensor_locations_supported){
 					cycling_speed_and_cadence_body_sensor_location_t sensor_location = buffer[1];
-					if (sensor_location >= CSC_SERVICE_BODY_SENSOR_RESERVED){
+					if (sensor_location >= CSC_SERVICE_BODY_SENSOR_LOCATION_RESERVED){
 						instance->response_value = CSC_RESPONSE_VALUE_INVALID_PARAMETER;
 						break;
 					}
