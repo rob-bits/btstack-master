@@ -38,12 +38,8 @@ ATT	+= \
 	att_dispatch.c       	    \
 
 GATT_SERVER += \
-	att_db.c 				 	    \
+	att_db.c 				 	\
 	att_server.c        	    \
-	# cycling_speed_and_cadence_service_server\
- #    device_information_service_server.c \
-	# heart_rate_service_server.c \
- #    hids_device.c \
 
 GATT_CLIENT += \
 	gatt_client.c        	    \
