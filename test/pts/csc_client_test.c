@@ -93,7 +93,7 @@ static const char * sensor_loc2str(cycling_speed_and_cadence_body_sensor_locatio
     return sensor_location_string[CSC_SERVICE_BODY_SENSOR_LOCATION_RESERVED];
 }
 
-
+#define MAX_NUM_MEASUREMENTS 20
 #ifdef HAVE_BTSTACK_STDIN
 // pts:         
 static const char * device_addr_string = "00:1B:DC:07:32:EF";
@@ -119,6 +119,14 @@ static gc_state_t state = TC_OFF;
 static btstack_packet_callback_registration_t hci_event_callback_registration;
 static btstack_packet_callback_registration_t sm_event_callback_registration;
 
+static uint32_t cumulative_wheel_revolutions[MAX_NUM_MEASUREMENTS];
+static uint16_t last_wheel_event_time[MAX_NUM_MEASUREMENTS]; // Unit has a resolution of 1/1024s
+static uint16_t cumulative_crank_revolutions[MAX_NUM_MEASUREMENTS];
+static uint16_t last_crank_event_time[MAX_NUM_MEASUREMENTS]; // Unit has a resolution of 1/1024s
+static int wm_index = 0;
+static int cm_index = 0;
+
+static int wheel_circumference_cm = 210;
 // returns 1 if name is found in advertisement
 static int advertisement_report_contains_uuid16(uint16_t uuid16, uint8_t * advertisement_report){
     // get advertisement from report event
@@ -151,10 +159,26 @@ static int advertisement_report_contains_uuid16(uint16_t uuid16, uint8_t * adver
     return found;
 }
 
+
+static float csc_client_calculate_instantaneous_speed_km_per_h(uint32_t * wheel_rotation, uint16_t * time){
+    if (time[1] == time[0]) return 0;
+    int16_t delta_time = time[1] - time[0];
+    int32_t delta_wheel_rotation = wheel_rotation[1] - wheel_rotation[0];
+    return  delta_wheel_rotation * wheel_circumference_cm / (float)delta_time * 1024 * 3600 / 100000;
+}
+
+static float csc_client_calculate_instantaneous_cadence_rpm(uint16_t * crank_revolution, uint16_t * time){
+    if (time[1] == time[0]) return 0;
+    int16_t delta_time = time[1] - time[0];
+    int16_t delta_crank_revolution = crank_revolution[1] - crank_revolution[0];
+    return  delta_crank_revolution / (float)delta_time * 60 * 1024;
+}
+
 static void handle_gatt_client_event(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     UNUSED(packet_type);
     UNUSED(channel);
     UNUSED(size);
+
 
     switch(state){
         case TC_W4_SERVICE_RESULT:
@@ -268,23 +292,20 @@ static void handle_gatt_client_event(uint8_t packet_type, uint16_t channel, uint
         case TC_CONNECTED:
             switch(hci_event_packet_get_type(packet)){
                 case GATT_EVENT_NOTIFICATION:{
-                    uint16_t value_handle = gatt_event_notification_get_value_handle(packet);
-                    uint16_t value_length = gatt_event_notification_get_value_length(packet);
+                    // uint16_t value_handle = gatt_event_notification_get_value_handle(packet);
+                    // uint16_t value_length = gatt_event_notification_get_value_length(packet);
                     const uint8_t * value = gatt_event_notification_get_value(packet);
-                    printf("Notification handle 0x%04x, value len %d, value: ", value_handle, value_length);
-                    printf_hexdump(value, value_length);
+                    // printf("Notification handle 0x%04x, value len %d, value: ", value_handle, value_length);
+                    // printf_hexdump(value, value_length);
                     int pos = 0;
-                            
+                    uint8_t wheel_revolution_data_supported = 0;
+                    uint8_t crank_revolution_data_supported = 0;
+
                     switch (characteristic.uuid16){
                         case ORG_BLUETOOTH_CHARACTERISTIC_CSC_MEASUREMENT:{
-                            uint8_t flags = gatt_event_notification_get_value(packet)[pos++];
-                            uint8_t wheel_revolution_data_supported = 0;
-                            uint8_t crank_revolution_data_supported = 0;
-                            uint32_t cumulative_wheel_revolutions = 0;
-                            uint16_t last_wheel_event_time = 0; // Unit has a resolution of 1/1024s
-                            uint16_t cumulative_crank_revolutions = 0;
-                            uint16_t last_crank_event_time = 0; // Unit has a resolution of 1/1024s
-
+                            uint8_t flags = value[pos++];
+                            printf("flags 0x%02x\n", flags);
+                            
                             if (flags & (1 << CSC_FLAG_WHEEL_REVOLUTION_DATA_SUPPORTED)){
                                 wheel_revolution_data_supported = 1;
                             }
@@ -293,30 +314,46 @@ static void handle_gatt_client_event(uint8_t packet_type, uint16_t channel, uint
                             }
                             
                             if (wheel_revolution_data_supported){
-                                cumulative_wheel_revolutions = little_endian_read_32(packet, pos);
+                                cumulative_wheel_revolutions[wm_index] = little_endian_read_32(value, pos);
                                 pos += 4;
-                                last_wheel_event_time = little_endian_read_16(packet, pos);
+                                last_wheel_event_time[wm_index] = little_endian_read_16(value, pos);
                                 pos += 2;
-                                printf("wheel_revolution_data 0x%04x, time 0x%02x\n", cumulative_wheel_revolutions, last_wheel_event_time);
+                                printf("wheel_revolution_data (0x%04x) = %d, time (0x%02x) = %f s\n", cumulative_wheel_revolutions[wm_index], cumulative_wheel_revolutions[wm_index], 
+                                    last_wheel_event_time[wm_index], last_wheel_event_time[wm_index]/1024.0);
+                                if (wm_index > 0){
+                                    // Speed = (Difference in two successive Cumulative Wheel Revolution values * Wheel Circumference) / (Difference in two successive Last Wheel Event Time values)
+                                    printf("instantaneous speed %f km/h\n", csc_client_calculate_instantaneous_speed_km_per_h(&cumulative_wheel_revolutions[wm_index-1], &last_wheel_event_time[wm_index-1]));
+                                }
+                                wm_index++;
                             }
 
                             if (crank_revolution_data_supported){
-                                cumulative_crank_revolutions = little_endian_read_16(packet, pos);
+                                cumulative_crank_revolutions[cm_index] = little_endian_read_16(value, pos);
                                 pos += 2;
-                                last_crank_event_time = little_endian_read_16(packet, pos);
+                                last_crank_event_time[cm_index] = little_endian_read_16(value, pos);
                                 pos += 2;
-                                printf("crank_revolution_data 0x%04x, time 0x%02x\n", cumulative_crank_revolutions, last_crank_event_time);
+                                printf("crank_revolution_data (0x%04x) = %d, time (0x%02x) = %f s\n", cumulative_crank_revolutions[cm_index], cumulative_crank_revolutions[cm_index],
+                                    last_crank_event_time[cm_index], last_crank_event_time[cm_index]/1024.0);
+
+                                if (cm_index > 0){
+                                    printf("instantaneous cadence %f rpm\n", 
+                                        csc_client_calculate_instantaneous_cadence_rpm(&cumulative_crank_revolutions[cm_index-1], &last_crank_event_time[cm_index-1]));
+                                }
+                                cm_index++;
                             }
+                            
                             break;
                         }
                         case ORG_BLUETOOTH_CHARACTERISTIC_CSC_FEATURE:
+                            printf("ORG_BLUETOOTH_CHARACTERISTIC_CSC_FEATURE\n");
                             break;
                         case ORG_BLUETOOTH_CHARACTERISTIC_SENSOR_LOCATION:{
-                            cycling_speed_and_cadence_body_sensor_location_t sensor_location = packet[pos++];
+                            cycling_speed_and_cadence_body_sensor_location_t sensor_location = value[pos++];
                             printf("Sensor location 0x%2x, name %s\n", sensor_location, sensor_loc2str(sensor_location));
                             break;
                         }
                         default:
+                            printf("uuid 0x%2x\n", characteristic.uuid16);
                             break;
                     }
                     break;
@@ -402,7 +439,7 @@ static void hci_event_handler(uint8_t packet_type, uint16_t channel, uint8_t *pa
         case BTSTACK_EVENT_STATE:
             // BTstack activated, get started
             if (btstack_event_state_get_state(packet) == HCI_STATE_WORKING) {
-                gatt_heart_rate_client_start();
+                // gatt_heart_rate_client_start();
             } else {
                 state = TC_OFF;
             }
@@ -473,19 +510,21 @@ static void show_usage(void){
     printf("C      - search all characteristics of last found primary service\n");
     printf("D      - search all characteristic descriptors of last found characteristic\n");
     printf("\n");
-    printf("H      - search GATT Heart rate service\n");
-    printf("1      - search HEART_RATE_MEASUREMENT characteristic\n");
-    printf("2      - search BODY_SENSOR_LOCATION characteristic\n");
+    printf("H      - search CSC service\n");
+    printf("1      - search CSC_MEASUREMENT characteristic\n");
+    printf("2      - search CSC FEATURE characteristic\n");
+    printf("3      - search SENSOR_LOCATION characteristic\n");
+    printf("4      - search CONTROL_POINT characteristic\n");
     printf("\n");
     printf("I      - search GATT Device Information service\n");
-    printf("3      - search for 0x2a2a device info characteristic\n");
-    printf("4      - search for 0x2a25 device info characteristic\n");
-    printf("5      - search for 0x2a29 device info characteristic\n");
+    printf("x      - search for 0x2a2a device info characteristic\n");
+    printf("y      - search for 0x2a25 device info characteristic\n");
+    printf("z      - search for 0x2a29 device info characteristic\n");
     printf(" \n");
     printf("r      - read request for last found characteristic\n");
     printf("n      - register notification for last found characteristic\n");
     printf(" \n");
-    printf("6      - write HR control point: reset energy expended\n");
+    printf("6      - register notification for last found characteristic\n");
     printf(" \n");
     printf("Ctrl-c - exit\n");
     printf("---\n");
@@ -531,20 +570,30 @@ static void stdin_process(char cmd){
             status = gatt_client_discover_characteristic_descriptors(handle_gatt_client_event, connection_handle, &characteristic);
             break;
         case 'H':
-            printf("Search GATT Heart rate service\n");
+            printf("Search CSC service\n");
             state = TC_W4_SERVICE_RESULT;
-            status = gatt_client_discover_primary_services_by_uuid16(handle_gatt_client_event, connection_handle, ORG_BLUETOOTH_SERVICE_HEART_RATE);
+            status = gatt_client_discover_primary_services_by_uuid16(handle_gatt_client_event, connection_handle, ORG_BLUETOOTH_SERVICE_CYCLING_SPEED_AND_CADENCE);
             break;
 
         case '1':
-            printf("Search for HEART_RATE_MEASUREMENT characteristic.\n");
+            printf("Search for CSC_MEASUREMENT characteristic.\n");
             state = TC_W4_CHARACTERISTIC_RESULT;
-            status = gatt_client_discover_characteristics_for_service_by_uuid16(handle_gatt_client_event, connection_handle, &service, ORG_BLUETOOTH_CHARACTERISTIC_HEART_RATE_MEASUREMENT);
+            status = gatt_client_discover_characteristics_for_service_by_uuid16(handle_gatt_client_event, connection_handle, &service, ORG_BLUETOOTH_CHARACTERISTIC_CSC_MEASUREMENT);
             break;
         case '2':
-            printf("Search for BODY_SENSOR_LOCATION characteristic.\n");
+            printf("Search for CSC_FEATURE characteristic.\n");
             state = TC_W4_CHARACTERISTIC_RESULT;
-            status = gatt_client_discover_characteristics_for_service_by_uuid16(handle_gatt_client_event, connection_handle, &service, ORG_BLUETOOTH_CHARACTERISTIC_BODY_SENSOR_LOCATION);
+            status = gatt_client_discover_characteristics_for_service_by_uuid16(handle_gatt_client_event, connection_handle, &service, ORG_BLUETOOTH_CHARACTERISTIC_CSC_FEATURE);
+            break;
+        case '3':
+            printf("Search for SENSOR_LOCATION characteristic.\n");
+            state = TC_W4_CHARACTERISTIC_RESULT;
+            status = gatt_client_discover_characteristics_for_service_by_uuid16(handle_gatt_client_event, connection_handle, &service, ORG_BLUETOOTH_CHARACTERISTIC_SENSOR_LOCATION);
+            break;
+        case '4':
+            printf("Search for CONTROL_POINT characteristic.\n");
+            state = TC_W4_CHARACTERISTIC_RESULT;
+            status = gatt_client_discover_characteristics_for_service_by_uuid16(handle_gatt_client_event, connection_handle, &service, ORG_BLUETOOTH_CHARACTERISTIC_SC_CONTROL_POINT);
             break;
 
         case 'I':
@@ -552,17 +601,17 @@ static void stdin_process(char cmd){
             state = TC_W4_SERVICE_RESULT;
             status = gatt_client_discover_primary_services_by_uuid16(handle_gatt_client_event, connection_handle, ORG_BLUETOOTH_SERVICE_DEVICE_INFORMATION);
             break;
-        case '3':
+        case 'x':
             printf("Search for 0x2a2a device info characteristic.\n");
             state = TC_W4_CHARACTERISTIC_RESULT;
             status = gatt_client_discover_characteristics_for_service_by_uuid16(handle_gatt_client_event, connection_handle, &service, ORG_BLUETOOTH_CHARACTERISTIC_IEEE_11073_20601_REGULATORY_CERTIFICATION_DATA_LIST);
             break;
-        case '4':
+        case 'y':
             printf("Search for 0x2a25 device info characteristic.\n");
             state = TC_W4_CHARACTERISTIC_RESULT;
             status = gatt_client_discover_characteristics_for_service_by_uuid16(handle_gatt_client_event, connection_handle, &service, ORG_BLUETOOTH_CHARACTERISTIC_SERIAL_NUMBER_STRING);
             break;
-        case '5':
+        case 'z':
             printf("Search for 0x2a29 device info characteristic.\n");
             state = TC_W4_CHARACTERISTIC_RESULT;
             status = gatt_client_discover_characteristics_for_service_by_uuid16(handle_gatt_client_event, connection_handle, &service, ORG_BLUETOOTH_CHARACTERISTIC_MANUFACTURER_NAME_STRING);
@@ -585,17 +634,15 @@ static void stdin_process(char cmd){
             break;     
 
         case '6':
-            printf("Search for HR control point characteristic.\n");
-            state = TC_W4_CHARACTERISTIC_RESULT;
-            status = gatt_client_discover_characteristics_for_service_by_uuid16(handle_gatt_client_event, connection_handle, &service, ORG_BLUETOOTH_CHARACTERISTIC_HEART_RATE_CONTROL_POINT);
-            break;     
-        case '7':{
-            uint8_t value[] = {0x01};
             printf("Register notification handler for characteristic 0x%4x.\n", characteristic.uuid16);
             state = TC_W4_WRITE_CHARACTERISTIC;
-            status = gatt_client_write_value_of_characteristic(handle_gatt_client_event, connection_handle, characteristic.value_handle, sizeof(value), &value[0]);
+            status = gatt_client_write_client_characteristic_configuration(handle_gatt_client_event, connection_handle, &characteristic, GATT_CLIENT_CHARACTERISTICS_CONFIGURATION_NOTIFICATION);
             break;
-        }   
+        // case '6':
+        //     printf("Search for HR control point characteristic.\n");
+        //     state = TC_W4_CHARACTERISTIC_RESULT;
+        //     status = gatt_client_discover_characteristics_for_service_by_uuid16(handle_gatt_client_event, connection_handle, &service, ORG_BLUETOOTH_CHARACTERISTIC_HEART_RATE_CONTROL_POINT);
+        //     break; 
         case '\n':
         case '\r':
             break;
