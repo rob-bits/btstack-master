@@ -129,7 +129,7 @@ int btstack_main(void){
     att_server_init(profile_data, NULL, NULL);    
 
     // setup heart rate service
-    cycling_speed_and_cadence_service_server_init(CSC_SERVICE_BODY_SENSOR_LOCATION_TOP_OF_SHOE, 
+    cycling_speed_and_cadence_service_server_init(CSC_SERVICE_SENSOR_LOCATION_TOP_OF_SHOE, 
         MULTIPLE_SENSOR_LOCATIONS_SUPPORTED, WHEEL_REVOLUTION_DATA_SUPPORTED, CRANK_REVOLUTION_DATA_SUPPORTED);
     
     // setup advertisements
