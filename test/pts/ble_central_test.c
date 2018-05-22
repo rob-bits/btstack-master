@@ -253,6 +253,7 @@ const char * ad_event_types[] = {
 };
 
 static void handle_advertising_event(uint8_t * packet, int size){
+    UNUSED(size);
     // filter PTS
     bd_addr_t addr;
     gap_event_advertising_report_get_address(packet, addr);
@@ -320,6 +321,7 @@ static void gap_run(void){
 }
 
 static void app_packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
+    UNUSED(channel);
     uint16_t aHandle;
     bd_addr_t event_address;
 
@@ -430,7 +432,8 @@ static void extract_characteristic(gatt_client_characteristic_t * characteristic
 }
 
 static void handle_gatt_client_event(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
-
+    UNUSED(channel);
+    UNUSED(size);
     if (packet_type != HCI_EVENT_PACKET) return;
 
     uint8_t address_type;
@@ -1624,6 +1627,8 @@ static void stdin_process(char c){
 }
 
 static int get_oob_data_callback(uint8_t addres_type, bd_addr_t addr, uint8_t * oob_data){
+    UNUSED(addres_type);
+    UNUSED(&addr);
     switch(sm_have_oob_data){
         case 1:
             memcpy(oob_data, sm_oob_data_A, 16);
@@ -1641,11 +1646,11 @@ static int get_oob_data_callback(uint8_t addres_type, bd_addr_t addr, uint8_t * 
 // - if buffer != NULL, copy data and return number bytes copied
 // @param offset defines start of attribute value
 static uint16_t att_read_callback(hci_con_handle_t con_handle, uint16_t attribute_handle, uint16_t offset, uint8_t * buffer, uint16_t buffer_size){
-
-    printf("READ Callback, handle %04x, offset %u, buffer size %u\n", handle, offset, buffer_size);
+    UNUSED(con_handle);
+    printf("READ Callback, attribute_handle %04x, offset %u, buffer size %u\n", attribute_handle, offset, buffer_size);
     uint16_t  att_value_len;
 
-    uint16_t uuid16 = att_uuid_for_handle(handle);
+    uint16_t uuid16 = att_uuid_for_handle(attribute_handle);
     switch (uuid16){
         case 0x2a00:
             att_value_len = strlen(gap_device_name);
@@ -1661,7 +1666,8 @@ static uint16_t att_read_callback(hci_con_handle_t con_handle, uint16_t attribut
 
 int btstack_main(int argc, const char * argv[]);
 int btstack_main(int argc, const char * argv[]){
-    
+    UNUSED(argc);
+    UNUSED(&argv);
     printf("BTstack LE Peripheral starting up...\n");
 
     memset(rows, 0, sizeof(char *) * 100);
