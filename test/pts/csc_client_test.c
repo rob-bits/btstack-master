@@ -58,6 +58,7 @@ typedef enum {
     TC_W4_CHARACTERISTIC_DESCRIPTOR_RESULT,
     TC_W4_HEART_RATE_MEASUREMENT_CHARACTERISTIC,
     TC_W4_ENABLE_NOTIFICATIONS_COMPLETE,
+    TC_W4_ENABLE_INDICATIONS_COMPLETE,
     TC_W4_SENSOR_LOCATION_CHARACTERISTIC,
     TC_W4_SENSOR_LOCATION,
     TC_W4_WRITE_CHARACTERISTIC,
@@ -86,11 +87,11 @@ static const char * sensor_location_string[] = {
     "reserved"
 };
 
-static const char * sensor_loc2str(cycling_speed_and_cadence_body_sensor_location_t index){
-    if (index < CSC_SERVICE_BODY_SENSOR_LOCATION_RESERVED){
+static const char * sensor_loc2str(cycling_speed_and_cadence_sensor_location_t index){
+    if (index < CSC_SERVICE_SENSOR_LOCATION_RESERVED){
         return sensor_location_string[index];
     }
-    return sensor_location_string[CSC_SERVICE_BODY_SENSOR_LOCATION_RESERVED];
+    return sensor_location_string[CSC_SERVICE_SENSOR_LOCATION_RESERVED];
 }
 
 #define MAX_NUM_MEASUREMENTS 20
@@ -98,7 +99,6 @@ static const char * sensor_loc2str(cycling_speed_and_cadence_body_sensor_locatio
 // pts:         
 static const char * device_addr_string = "00:1B:DC:07:32:EF";
 #endif
-static bd_addr_t device_addr;
 static bd_addr_t cmdline_addr = { };
 static int cmdline_addr_found = 0;
 
@@ -110,10 +110,16 @@ static hci_con_handle_t connection_handle;
 
 static gatt_client_service_t        service;
 static gatt_client_characteristic_t characteristic;
+static gatt_client_characteristic_t measurement_characteristic;
+static gatt_client_characteristic_t control_point_characteristic;
+
 static gatt_client_characteristic_descriptor_t descriptor;
 
 static gatt_client_notification_t notification_listener;
-static int listener_registered;
+static int notification_listener_registered;
+
+static gatt_client_notification_t indication_listener;
+static int indication_listener_registered;
 
 static gc_state_t state = TC_OFF;
 static btstack_packet_callback_registration_t hci_event_callback_registration;
@@ -125,6 +131,8 @@ static uint16_t cumulative_crank_revolutions[MAX_NUM_MEASUREMENTS];
 static uint16_t last_crank_event_time[MAX_NUM_MEASUREMENTS]; // Unit has a resolution of 1/1024s
 static int wm_index = 0;
 static int cm_index = 0;
+
+static btstack_timer_source_t indication_timer;
 
 static int wheel_circumference_cm = 210;
 // returns 1 if name is found in advertisement
@@ -158,6 +166,26 @@ static int advertisement_report_contains_uuid16(uint16_t uuid16, uint8_t * adver
     }
     return found;
 }
+
+#define INDICATION_TIMEOUT_MS 30000
+
+static void csc_client_indication_timeout_handler(btstack_timer_source_t * timer){
+    UNUSED(timer);
+    // avdtp_connection_t * connection = (avdtp_connection_t *) btstack_run_loop_get_timer_context(timer);
+    printf("Indication not received\n");
+}
+
+static void csc_client_indication_timer_start(void){
+    btstack_run_loop_remove_timer(&indication_timer);
+    btstack_run_loop_set_timer_handler(&indication_timer, csc_client_indication_timeout_handler);
+    // btstack_run_loop_set_timer_context(&indication_timer, connection);
+    btstack_run_loop_set_timer(&indication_timer, INDICATION_TIMEOUT_MS); 
+    btstack_run_loop_add_timer(&indication_timer);
+}
+
+static void csc_client_indication_timer_stop(void){
+    btstack_run_loop_remove_timer(&indication_timer);
+} 
 
 
 static float csc_client_calculate_instantaneous_speed_km_per_h(uint32_t * wheel_rotation, uint16_t * time){
@@ -206,6 +234,16 @@ static void handle_gatt_client_event(uint8_t packet_type, uint16_t channel, uint
                     gatt_event_characteristic_query_result_get_characteristic(packet, &characteristic);
                     printf("GATT characteristic:\n   attribute handle 0x%02x, properties 0x%02x,   handle 0x%02x, uuid 0x%02x\n", 
                         characteristic.start_handle, characteristic.properties, characteristic.value_handle, characteristic.uuid16);
+                    switch(characteristic.uuid16){
+                        case ORG_BLUETOOTH_CHARACTERISTIC_CSC_MEASUREMENT:
+                            measurement_characteristic = characteristic;
+                            break;
+                        case ORG_BLUETOOTH_CHARACTERISTIC_SC_CONTROL_POINT:
+                            control_point_characteristic = characteristic;
+                            break;
+                        default:
+                            break;
+                    }
                     break;
                 case GATT_EVENT_QUERY_COMPLETE:
                     if (packet[4] != 0){
@@ -250,7 +288,7 @@ static void handle_gatt_client_event(uint8_t packet_type, uint16_t channel, uint
                         case ORG_BLUETOOTH_CHARACTERISTIC_HEART_RATE_MEASUREMENT:{
                             break;
                     }
-                    case ORG_BLUETOOTH_CHARACTERISTIC_BODY_SENSOR_LOCATION:
+                    case ORG_BLUETOOTH_CHARACTERISTIC_SENSOR_LOCATION:
                             // https://www.bluetooth.com/specifications/gatt/services
                             // https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.characteristic.body_sensor_location.xml
                             printf("Body sensor location 0x%02x, name %s\n", value[0], sensor_loc2str(value[0]));
@@ -283,14 +321,42 @@ static void handle_gatt_client_event(uint8_t packet_type, uint16_t channel, uint
                     break;
             }
             break;
+        case TC_W4_ENABLE_INDICATIONS_COMPLETE:
+            switch(hci_event_packet_get_type(packet)){
+                case GATT_EVENT_QUERY_COMPLETE:
+                    printf("Indications enabled, status %02x\n", gatt_event_query_complete_get_status(packet));
+                    state = TC_CONNECTED;
+                    break;
+                default:
+                    break;
+            }
+            break;
 
         case TC_W4_WRITE_CHARACTERISTIC:
-            printf_hexdump(packet, size);
+            switch(hci_event_packet_get_type(packet)){
+                case GATT_EVENT_QUERY_COMPLETE:
+                    printf("Command done, status %02x\n", gatt_event_query_complete_get_status(packet));
+                    if (gatt_event_query_complete_get_status(packet) == ERROR_CODE_SUCCESS){
+                        csc_client_indication_timer_start();
+                    }
+                    state = TC_CONNECTED;
+                    break;
+                default:
+                    break;
+            }
             break;
 
 
         case TC_CONNECTED:
             switch(hci_event_packet_get_type(packet)){
+                case GATT_EVENT_INDICATION:{
+                    uint16_t value_length = gatt_event_notification_get_value_length(packet);
+                    const uint8_t * value = gatt_event_notification_get_value(packet);
+                    printf("Indication value len %d, value: ", value_length);
+                    printf_hexdump(value, value_length);
+                    csc_client_indication_timer_stop();
+                    break;
+                }
                 case GATT_EVENT_NOTIFICATION:{
                     // uint16_t value_handle = gatt_event_notification_get_value_handle(packet);
                     // uint16_t value_length = gatt_event_notification_get_value_length(packet);
@@ -348,7 +414,7 @@ static void handle_gatt_client_event(uint8_t packet_type, uint16_t channel, uint
                             printf("ORG_BLUETOOTH_CHARACTERISTIC_CSC_FEATURE\n");
                             break;
                         case ORG_BLUETOOTH_CHARACTERISTIC_SENSOR_LOCATION:{
-                            cycling_speed_and_cadence_body_sensor_location_t sensor_location = value[pos++];
+                            cycling_speed_and_cadence_sensor_location_t sensor_location = value[pos++];
                             printf("Sensor location 0x%2x, name %s\n", sensor_location, sensor_loc2str(sensor_location));
                             break;
                         }
@@ -369,20 +435,6 @@ static void handle_gatt_client_event(uint8_t packet_type, uint16_t channel, uint
 
         default:
             break;
-    }
-}
-
-// Either connect to remote specified on command line or start scan for device with Hear Rate Service in advertisement
-static void gatt_heart_rate_client_start(void){
-    if (cmdline_addr_found){
-        printf("Connect to %s\n", bd_addr_to_str(cmdline_addr));
-        state = TC_W4_CONNECT;
-        gap_connect(cmdline_addr, 0);
-    } else {
-        printf("Start scanning!\n");
-        state = TC_W4_SCAN_RESULT;
-        gap_set_scan_parameters(0,0x0030, 0x0030);
-        gap_start_scan();
     }
 }
 
@@ -439,7 +491,7 @@ static void hci_event_handler(uint8_t packet_type, uint16_t channel, uint8_t *pa
         case BTSTACK_EVENT_STATE:
             // BTstack activated, get started
             if (btstack_event_state_get_state(packet) == HCI_STATE_WORKING) {
-                // gatt_heart_rate_client_start();
+                printf("btstack is powered on\n");;
             } else {
                 state = TC_OFF;
             }
@@ -466,21 +518,35 @@ static void hci_event_handler(uint8_t packet_type, uint16_t channel, uint8_t *pa
             conn_interval = hci_subevent_le_connection_complete_get_conn_interval(packet);
             printf("Connection Interval: %u.%02u ms\n", conn_interval * 125 / 100, 25 * (conn_interval & 3));
             printf("Connection Latency: %u\n", hci_subevent_le_connection_complete_get_conn_latency(packet));  
+            state = TC_CONNECTED;
+            // TODO: find better way to re-register listeners. Re-register notification listener if Characteristic is known
+            notification_listener_registered = 0;
+            if (measurement_characteristic.uuid16 != 0){
+                gatt_client_listen_for_characteristic_value_updates(&notification_listener, handle_gatt_client_event, connection_handle, &measurement_characteristic);
+                notification_listener_registered = 1;
+            }
+            
+            indication_listener_registered = 0;
+            if (control_point_characteristic.uuid16 != 0){
+                gatt_client_listen_for_characteristic_value_updates(&indication_listener, handle_gatt_client_event, connection_handle, &control_point_characteristic);
+                indication_listener_registered = 1;
+            }
             break;
         case HCI_EVENT_DISCONNECTION_COMPLETE:
             // unregister listener
             connection_handle = HCI_CON_HANDLE_INVALID;
-            if (listener_registered){
-                listener_registered = 0;
+            if (notification_listener_registered){
+                notification_listener_registered = 0;
                 gatt_client_stop_listening_for_characteristic_value_updates(&notification_listener);
             }
-            if (cmdline_addr_found){
-                printf("Disconnected %s\n", bd_addr_to_str(cmdline_addr));
-                return;
+            if (indication_listener_registered){
+                indication_listener_registered = 0;
+                gatt_client_stop_listening_for_characteristic_value_updates(&indication_listener);
             }
             printf("Disconnected %s\n", bd_addr_to_str(csc_server_addr));
+            wm_index = 0;
+            cm_index = 0;
             if (state == TC_OFF) break;
-            gatt_heart_rate_client_start();
             break;
         default:
             break;
@@ -521,13 +587,53 @@ static void show_usage(void){
     printf("y      - search for 0x2a25 device info characteristic\n");
     printf("z      - search for 0x2a29 device info characteristic\n");
     printf(" \n");
+    printf("F      - search CSC feature\n");
+    printf("f      - search for 0x0075 handle\n");
+    printf(" \n");
+    
     printf("r      - read request for last found characteristic\n");
     printf("n      - register notification for last found characteristic\n");
+    printf("i      - register indication for last found characteristic\n");
     printf(" \n");
-    printf("6      - register notification for last found characteristic\n");
+
+    printf("j      - set cumulative wheel revolutions to 0 \n");
+    printf("k      - set cumulative wheel revolutions to 0xFFFF \n");
+    printf("o      - request supported sensor locations\n");
+    printf("p      - update sensor location to right pedal\n");
+    printf(" \n");
+    
+    printf("J      - write unsupported opcode \n");
+    printf("K      - write invalid parameter \n");
+
+    printf(" \n");
     printf(" \n");
     printf("Ctrl-c - exit\n");
     printf("---\n");
+}
+
+
+static uint8_t csc_client_set_cumulative_wheel_revolutions(uint32_t wheel_revolutions){
+    uint8_t event[20];
+    int pos = 0;
+    event[pos++] = CSC_OPCODE_SET_CUMULATIVE_VALUE; // opcode;
+    little_endian_store_32(event, pos, wheel_revolutions);
+    pos += 4;
+    return gatt_client_write_value_of_characteristic(handle_gatt_client_event, connection_handle, control_point_characteristic.value_handle, pos, event);
+}
+
+static uint8_t csc_client_update_sensor_location(cycling_speed_and_cadence_sensor_location_t sensor_location){
+    uint8_t event[20];
+    int pos = 0;
+    event[pos++] = CSC_OPCODE_UPDATE_SENSOR_LOCATION; // opcode;
+    event[pos++] = sensor_location;
+    return gatt_client_write_value_of_characteristic(handle_gatt_client_event, connection_handle, control_point_characteristic.value_handle, pos, event);
+}
+
+static uint8_t csc_client_request_supported_sensor_locations(){
+    uint8_t event[20];
+    int pos = 0;
+    event[pos++] = CSC_OPCODE_REQUEST_SUPPORTED_SENSOR_LOCATIONS; // opcode;
+    return gatt_client_write_value_of_characteristic(handle_gatt_client_event, connection_handle, control_point_characteristic.value_handle, pos, event);
 }
 
 
@@ -537,7 +643,7 @@ static void stdin_process(char cmd){
         case 'e':
             printf("Connect to %s\n", device_addr_string);
             state = TC_W4_CONNECT;
-            status = gap_connect(device_addr, 0);
+            status = gap_connect(csc_server_addr, 0);
             break;
         case 'E':
             printf("Disconnect from %s\n", device_addr_string);
@@ -617,6 +723,12 @@ static void stdin_process(char cmd){
             status = gatt_client_discover_characteristics_for_service_by_uuid16(handle_gatt_client_event, connection_handle, &service, ORG_BLUETOOTH_CHARACTERISTIC_MANUFACTURER_NAME_STRING);
             break;
 
+        // case 'x':
+        //     printf("Search for 0x2a2a device info characteristic.\n");
+        //     state = TC_W4_CHARACTERISTIC_RESULT;
+        //     status = gatt_client_discover_characteristics_for_service_by_uuid16(handle_gatt_client_event, connection_handle, &service, ORG_BLUETOOTH_CHARACTERISTIC_IEEE_11073_20601_REGULATORY_CERTIFICATION_DATA_LIST);
+        //     break;
+
         case 'r':
             printf("Read request for characteristic 0x%4x, value handle 0x%4x.\n", characteristic.uuid16, characteristic.value_handle);
             state = TC_W4_SENSOR_LOCATION;
@@ -624,25 +736,62 @@ static void stdin_process(char cmd){
             break;            
         case 'n':
             printf("Register notification handler for characteristic 0x%4x.\n", characteristic.uuid16);
-            listener_registered = 1;
             gatt_client_listen_for_characteristic_value_updates(&notification_listener, handle_gatt_client_event, connection_handle, &characteristic);
             printf("Request Notify on characteristic 0x%4x.\n", characteristic.uuid16);
             state = TC_W4_ENABLE_NOTIFICATIONS_COMPLETE;
             status = gatt_client_write_client_characteristic_configuration(handle_gatt_client_event, connection_handle,
                 &characteristic, GATT_CLIENT_CHARACTERISTICS_CONFIGURATION_NOTIFICATION);
-
+            if (status == ERROR_CODE_SUCCESS){
+                notification_listener_registered = 1;
+            }
             break;     
 
-        case '6':
-            printf("Register notification handler for characteristic 0x%4x.\n", characteristic.uuid16);
-            state = TC_W4_WRITE_CHARACTERISTIC;
-            status = gatt_client_write_client_characteristic_configuration(handle_gatt_client_event, connection_handle, &characteristic, GATT_CLIENT_CHARACTERISTICS_CONFIGURATION_NOTIFICATION);
+        case 'i':
+            printf("Register indication handler for characteristic 0x%4x.\n", characteristic.uuid16);
+            gatt_client_listen_for_characteristic_value_updates(&indication_listener, handle_gatt_client_event, connection_handle, &characteristic);
+            printf("Request Indicate on characteristic 0x%4x.\n", characteristic.uuid16);
+            state = TC_W4_ENABLE_INDICATIONS_COMPLETE;
+            status = gatt_client_write_client_characteristic_configuration(handle_gatt_client_event, connection_handle,
+                &characteristic, GATT_CLIENT_CHARACTERISTICS_CONFIGURATION_INDICATION);
+            if (status == ERROR_CODE_SUCCESS){
+                indication_listener_registered = 1;
+            }
             break;
-        // case '6':
-        //     printf("Search for HR control point characteristic.\n");
-        //     state = TC_W4_CHARACTERISTIC_RESULT;
-        //     status = gatt_client_discover_characteristics_for_service_by_uuid16(handle_gatt_client_event, connection_handle, &service, ORG_BLUETOOTH_CHARACTERISTIC_HEART_RATE_CONTROL_POINT);
-        //     break; 
+        
+        case 'j':
+            printf("set cumulative value to 0\n");
+            state = TC_W4_WRITE_CHARACTERISTIC;
+            status = csc_client_set_cumulative_wheel_revolutions(0);
+            break;
+        case 'k':
+            printf("set cumulative value to 0xFFFF\n");
+            state = TC_W4_WRITE_CHARACTERISTIC;
+            status = csc_client_set_cumulative_wheel_revolutions(0xFFFF);
+            break;
+        case 'o':
+            printf("request supported sensor locations\n");
+            state = TC_W4_WRITE_CHARACTERISTIC;
+            status = csc_client_request_supported_sensor_locations();
+            break;
+        case 'p':
+            printf("update sensor location to right pedal\n");
+            state = TC_W4_WRITE_CHARACTERISTIC;
+            status = csc_client_update_sensor_location(CSC_SERVICE_SENSOR_LOCATION_RIGHT_PEDAL);
+            break;
+
+        case 'J':{
+            uint8_t value[] = {10};
+            printf("write unsupported opcode\n");
+            state = TC_W4_WRITE_CHARACTERISTIC;
+            status = gatt_client_write_value_of_characteristic(handle_gatt_client_event, connection_handle, control_point_characteristic.value_handle, 1, value);
+            break;
+        }
+        case 'K':
+            printf("write invalid param\n");
+            state = TC_W4_WRITE_CHARACTERISTIC;
+            status = csc_client_update_sensor_location(CSC_SERVICE_SENSOR_LOCATION_RESERVED);
+            break;
+    
         case '\n':
         case '\r':
             break;
@@ -651,7 +800,8 @@ static void stdin_process(char cmd){
             break;
     }
     if (status != ERROR_CODE_SUCCESS){
-        printf("AVDTP Sink cmd \'%c\' failed, status 0x%02x\n", cmd, status);
+        printf("GATT cmd \'%c\' failed, status 0x%02x\n", cmd, status);
+        state = TC_CONNECTED;
     }
 }
 #endif
@@ -696,7 +846,7 @@ int btstack_main(int argc, const char * argv[]){
 
 #ifdef HAVE_BTSTACK_STDIN
     // parse human readable Bluetooth address
-    sscanf_bd_addr(device_addr_string, device_addr);
+    sscanf_bd_addr(device_addr_string, csc_server_addr);
     btstack_stdin_setup(stdin_process);
 #endif
 

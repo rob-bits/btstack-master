@@ -54,15 +54,6 @@
 #define CSC_ERROR_CODE_CCC_DESCRIPTOR_IMPROPERLY_CONFIGURED 0x81
 
 typedef enum {
-	CSC_OPCODE_IDLE = 0,
-	CSC_OPCODE_SET_CUMULATIVE_VALUE = 1,
-	CSC_OPCODE_START_SENSOR_CALIBRATION,
-	CSC_OPCODE_UPDATE_SENSOR_LOCATION,
-	CSC_OPCODE_REQUEST_SUPPORTED_SENSOR_LOCATIONS,
-	CSC_OPCODE_RESPONSE_CODE = 16
-} csc_opcode_t;
-
-typedef enum {
 	CSC_RESPONSE_VALUE_SUCCESS = 1,
 	CSC_RESPONSE_VALUE_OP_CODE_NOT_SUPPORTED,
 	CSC_RESPONSE_VALUE_INVALID_PARAMETER,
@@ -93,7 +84,7 @@ typedef struct {
 	
 	// sensor locations
 	uint16_t sensor_location_value_handle;
-	cycling_speed_and_cadence_body_sensor_location_t sensor_location;
+	cycling_speed_and_cadence_sensor_location_t sensor_location;
 	uint32_t supported_sensor_locations;
 
 	// characteristic: Heart Rate Control Point
@@ -186,7 +177,7 @@ static void cycling_speed_and_cadence_service_response_can_send_now(void * conte
 		return;
 	}
 		
-	uint8_t value[3 + sizeof(cycling_speed_and_cadence_body_sensor_location_t)];
+	uint8_t value[3 + sizeof(cycling_speed_and_cadence_sensor_location_t)];
 	int pos = 0;
 	value[pos++] = CSC_OPCODE_RESPONSE_CODE;
 	value[pos++] = instance->request_opcode;
@@ -194,7 +185,7 @@ static void cycling_speed_and_cadence_service_response_can_send_now(void * conte
 	switch (instance->request_opcode){
 		case CSC_OPCODE_REQUEST_SUPPORTED_SENSOR_LOCATIONS:{
 			int loc;
-			for (loc = CSC_SERVICE_BODY_SENSOR_LOCATION_OTHER; loc < CSC_SERVICE_BODY_SENSOR_LOCATION_RESERVED-1; loc++){
+			for (loc = CSC_SERVICE_SENSOR_LOCATION_OTHER; loc < CSC_SERVICE_SENSOR_LOCATION_RESERVED-1; loc++){
 				if (instance->supported_sensor_locations & (1 << loc)){
 					value[pos++] = loc;
 				}
@@ -275,8 +266,8 @@ static int cycling_speed_and_cadence_service_write_callback(hci_con_handle_t con
 				break;
 	 		case CSC_OPCODE_UPDATE_SENSOR_LOCATION:
 	 			if (instance->multiple_sensor_locations_supported){
-					cycling_speed_and_cadence_body_sensor_location_t sensor_location = buffer[1];
-					if (sensor_location >= CSC_SERVICE_BODY_SENSOR_LOCATION_RESERVED){
+					cycling_speed_and_cadence_sensor_location_t sensor_location = buffer[1];
+					if (sensor_location >= CSC_SERVICE_SENSOR_LOCATION_RESERVED){
 						instance->response_value = CSC_RESPONSE_VALUE_INVALID_PARAMETER;
 						break;
 					}
@@ -314,7 +305,7 @@ void cycling_speed_and_cadence_service_server_init(uint32_t supported_sensor_loc
 	instance->multiple_sensor_locations_supported = multiple_sensor_locations_supported;
 	instance->supported_sensor_locations = supported_sensor_locations;
 
-	instance->sensor_location = CSC_SERVICE_BODY_SENSOR_LOCATION_OTHER;
+	instance->sensor_location = CSC_SERVICE_SENSOR_LOCATION_OTHER;
 
 	// get service handle range
 	uint16_t start_handle = 0;
