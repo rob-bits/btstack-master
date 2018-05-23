@@ -53,37 +53,98 @@
 #define CYCLING_POWER_ERROR_CODE_INAPPROPRIATE_CONNECTION_PARAMETERS	0x80
 
 typedef enum {
-	CYCLING_POWER_OPCODE_IDLE = 0,
-	CYCLING_POWER_OPCODE_RESPONSE_CODE
+	CP_OPCODE_IDLE = 0,
+	CP_OPCODE_SET_CUMULATIVE_VALUE,
+	CP_OPCODE_UPDATE_SENSOR_LOCATION,
+	CP_OPCODE_REQUEST_SUPPORTED_SENSOR_LOCATIONS,
+	CP_OPCODE_SET_CRANK_LENGTH,
+	CP_OPCODE_REQUEST_CRANK_LENGTH,
+	CP_OPCODE_SET_CHAIN_LENGTH,
+	CP_OPCODE_REQUEST_CHAIN_LENGTH,
+	CP_OPCODE_SET_CHAIN_WEIGHT,
+	CP_OPCODE_REQUEST_CHAIN_WEIGHT,
+	CP_OPCODE_SET_SPAN_LENGTH,
+	CP_OPCODE_REQUEST_SPAN_LENGTH,
+	CP_OPCODE_START_OFFSET_COMPENSATION,
+	CP_OPCODE_MASK_CYCLING_POWER_MEASUREMENT_CHARACTERISTIC_CONTENT,
+	CP_OPCODE_REQUEST_SAMPLING_RATE,
+	CP_OPCODE_REQUEST_FACTORY_CALIBRATION_DATE,
+	CP_OPCODE_START_ENHANCED_OFFSET_COMPENSATION,
+	CP_OPCODE_RESPONSE_CODE = 32
 } cycling_power_opcode_t;
 
 typedef enum {
-	CYCLING_POWER_RESPONSE_VALUE_SUCCESS = 1,
+	CP_RESPONSE_VALUE_SUCCESS = 1,
+	CP_RESPONSE_VALUE_OP_CODE_NOT_SUPPORTED,
+	CP_RESPONSE_VALUE_INVALID_PARAMETER,
+	CP_RESPONSE_VALUE_OPERATION_FAILED
 } cycling_power_response_value_t;
 
 typedef struct {
 	hci_con_handle_t con_handle;
 
-	// characteristic: CSC Mesurement 
+	// Cycling Power Measurement 
 	uint16_t measurement_value_handle;
-	
-	// characteristic descriptor: Client Characteristic Configuration
+	uint16_t measurement_flags;					// see cycling_pover_measurement_flag_t
+	int16_t  instantaneous_power_watt;
+	uint8_t  pedal_power_balance_percentage; 	// percentage, resolution 1/2
+	uint16_t accumulated_torque_m; 				// meters, resolution 1/32
+	// wheel revolution data:
+	uint32_t cumulative_wheel_revolutions;
+	uint16_t last_wheel_event_time_s; 			// seconds, resolution 1/2048
+	// crank revolution data:
+	uint32_t cumulative_crank_revolutions;
+	uint16_t last_crank_event_time_s; 			// seconds, resolution 1/1024
+	// extreme force magnitudes
+	int16_t maximum_force_magnitude_newton;
+	int16_t minimum_force_magnitude_newton;
+	int16_t maximum_torque_magnitude_newton_m; 	// newton meters, resolution 1/32
+	int16_t minimum_torque_magnitude_newton_m; 	// newton meters, resolution 1/32
+	// extreme angles
+	uint16_t maximum_angle_deg;					// 12bit, degrees
+	uint16_t minimum_angle_deg;					// 12bit, degrees, concatenated with previous into 3 octets
+												// i.e. if the Maximum Angle is 0xABC and the Minimum Angle is 0x123, the transmitted value is 0x123ABC.
+	uint16_t top_dead_spot_angle;
+	uint16_t bottom_dead_spot_angle;
+	uint16_t accumulated_energy_kJ;				// kilojoules
+
+	// CP Measurement Notification (Client Characteristic Configuration)
 	uint16_t measurement_client_configuration_descriptor_handle;
 	uint16_t measurement_client_configuration_descriptor_notify;
-	btstack_context_callback_registration_t measurement_callback;
+	btstack_context_callback_registration_t measurement_notify_callback;
 
-	// sensor locations bitmap
-	uint16_t feature_handle;
+	// CP Measurement Broadcast (Server Characteristic Configuration)
+	uint16_t measurement_server_configuration_descriptor_handle;
+	uint16_t measurement_server_configuration_descriptor_notify;
+	btstack_context_callback_registration_t measurement_broadcast_callback;
+
+	// Cycling Power Feature
+	uint16_t feature_value_handle;
+	uint32_t feature_flags; 							// see cycling_power_feature_flag_t
 	
-	// sensor locations
+	// Sensor Location
 	uint16_t sensor_location_value_handle;
-	cycling_power_sensor_location_t sensor_location;
+	cycling_power_sensor_location_t sensor_location; 	// see cycling_power_sensor_location_t
 	
+	// Cycling Power Vector
+	uint16_t vector_value_handle;
+	uint8_t  vector_flags;												// see cycling_power_vector_flag_t
+	uint16_t vector_cumulative_crank_revolutions;
+	uint16_t vector_last_crank_event_time_s;							// seconds, resolution 1/1024
+	uint16_t vector_first_crank_measurement_angle_deg;
+	int16_t  vector_instantaneous_force_magnitude_newton_array;			// newton
+	int16_t  vector_instantaneous_torque_magnitude_newton_per_m_array;	// newton per meter, resolution 1/32
+
+	// CP Vector Notification (Client Characteristic Configuration)
+	uint16_t vector_client_configuration_descriptor_handle;
+	uint16_t vector_client_configuration_descriptor_notify;
+	btstack_context_callback_registration_t vector_notify_callback;
+
 	// characteristic: Control Point
 	uint16_t control_point_value_handle;
 	uint16_t control_point_client_configuration_descriptor_handle;
 	uint16_t control_point_client_configuration_descriptor_indicate;
-	btstack_context_callback_registration_t control_point_callback;
+	btstack_context_callback_registration_t control_point_indicate_callback;
 
 	cycling_power_opcode_t request_opcode;
 	cycling_power_response_value_t response_value;
@@ -112,7 +173,7 @@ static uint16_t cycling_power_service_read_callback(hci_con_handle_t con_handle,
 		return 2;
 	}
 
-	if (attribute_handle == instance->feature_handle){
+	if (attribute_handle == instance->feature_value_handle){
 		return 2;
 	}	
 	
@@ -146,7 +207,7 @@ static void cycling_power_service_response_can_send_now(void * context){
 		
 	uint8_t value[3 + sizeof(cycling_power_sensor_location_t)];
 	int pos = 0;
-	value[pos++] = CYCLING_POWER_OPCODE_RESPONSE_CODE;
+	value[pos++] = CP_OPCODE_RESPONSE_CODE;
 	value[pos++] = instance->request_opcode;
 	value[pos++] = instance->response_value;
 	switch (instance->request_opcode){
@@ -154,7 +215,7 @@ static void cycling_power_service_response_can_send_now(void * context){
 			break;
 	}
 	cycling_power_opcode_t temp_request_opcode = instance->request_opcode;
-	instance->request_opcode = CYCLING_POWER_OPCODE_IDLE;
+	instance->request_opcode = CP_OPCODE_IDLE;
 
 	uint8_t status = att_server_indicate(instance->con_handle, instance->control_point_value_handle, &value[0], pos); 
 	printf("att_server_indicate status 0x%02x\n", status);
@@ -203,7 +264,7 @@ static int cycling_power_service_write_callback(hci_con_handle_t con_handle, uin
 		// if (instance->request_opcode != CSC_OPCODE_IDLE) return CSC_ERROR_CODE_PROCEDURE_ALREADY_IN_PROGRESS;
 
 		instance->request_opcode = buffer[0];
-		instance->response_value = CYCLING_POWER_RESPONSE_VALUE_SUCCESS;
+		instance->response_value = CP_RESPONSE_VALUE_SUCCESS;
 		
 		switch (instance->request_opcode){
 			default:
@@ -212,9 +273,9 @@ static int cycling_power_service_write_callback(hci_con_handle_t con_handle, uin
 		printf("control point, opcode %02x, response %02x\n", instance->request_opcode, instance->response_value);
 	
 		if (instance->control_point_client_configuration_descriptor_indicate){
-			instance->control_point_callback.callback = &cycling_power_service_response_can_send_now;
-			instance->control_point_callback.context  = (void*) instance;
-			att_server_register_can_send_now_callback(&instance->control_point_callback, instance->con_handle);
+			instance->control_point_indicate_callback.callback = &cycling_power_service_response_can_send_now;
+			instance->control_point_indicate_callback.context  = (void*) instance;
+			att_server_register_can_send_now_callback(&instance->control_point_indicate_callback, instance->con_handle);
 		}
 		return 0;
 	}
@@ -226,7 +287,7 @@ static int cycling_power_service_write_callback(hci_con_handle_t con_handle, uin
 void cycling_power_service_server_init(void){
 	cycling_power_t * instance = &cycling_power;
 	
-	instance->sensor_location = CYCLING_POWER_SENSOR_LOCATION_OTHER;
+	instance->sensor_location = CP_SENSOR_LOCATION_OTHER;
 
 	// get service handle range
 	uint16_t start_handle = 0;
@@ -269,9 +330,9 @@ void cycling_power_service_server_update_values(void){
 	
 	// TODO: update values
 	if (instance->measurement_client_configuration_descriptor_notify){
-		instance->measurement_callback.callback = &cycling_power_service_measurement_can_send_now;
-		instance->measurement_callback.context  = (void*) instance;
-		// printf("cycling_power_service_server_update_values instance %p, context %p\n", instance, instance->measurement_callback.context);
-		att_server_register_can_send_now_callback(&instance->measurement_callback, instance->con_handle);
+		instance->measurement_notify_callback.callback = &cycling_power_service_measurement_can_send_now;
+		instance->measurement_notify_callback.context  = (void*) instance;
+		// printf("cycling_power_service_server_update_values instance %p, context %p\n", instance, instance->measurement_notify_callback.context);
+		att_server_register_can_send_now_callback(&instance->measurement_notify_callback, instance->con_handle);
 	}
 }
