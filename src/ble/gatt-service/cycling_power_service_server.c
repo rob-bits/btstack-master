@@ -115,7 +115,7 @@ typedef struct {
 
 	// CP Measurement Broadcast (Server Characteristic Configuration)
 	uint16_t measurement_server_configuration_descriptor_handle;
-	uint16_t measurement_server_configuration_descriptor_notify;
+	uint16_t measurement_server_configuration_descriptor_broadcast;
 	btstack_context_callback_registration_t measurement_broadcast_callback;
 
 	// Cycling Power Feature
@@ -140,8 +140,9 @@ typedef struct {
 	uint16_t vector_client_configuration_descriptor_notify;
 	btstack_context_callback_registration_t vector_notify_callback;
 
-	// characteristic: Control Point
+	// CP Control Point
 	uint16_t control_point_value_handle;
+	// CP Control Point Indication (Client Characteristic Configuration)
 	uint16_t control_point_client_configuration_descriptor_handle;
 	uint16_t control_point_client_configuration_descriptor_indicate;
 	btstack_context_callback_registration_t control_point_indicate_callback;
@@ -162,6 +163,20 @@ static uint16_t cycling_power_service_read_callback(hci_con_handle_t con_handle,
 	if (attribute_handle == instance->measurement_client_configuration_descriptor_handle){
 		if (buffer && buffer_size >= 2){
 			little_endian_store_16(buffer, 0, instance->measurement_client_configuration_descriptor_notify);
+		} 
+		return 2;
+	}
+
+	if (attribute_handle == instance->measurement_server_configuration_descriptor_handle){
+		if (buffer && buffer_size >= 2){
+			little_endian_store_16(buffer, 0, instance->measurement_server_configuration_descriptor_broadcast);
+		} 
+		return 2;
+	}
+
+	if (attribute_handle == instance->vector_client_configuration_descriptor_handle){
+		if (buffer && buffer_size >= 2){
+			little_endian_store_16(buffer, 0, instance->vector_client_configuration_descriptor_notify);
 		} 
 		return 2;
 	}
@@ -242,7 +257,31 @@ static int cycling_power_service_write_callback(hci_con_handle_t con_handle, uin
 		instance->measurement_client_configuration_descriptor_notify = little_endian_read_16(buffer, 0);
 		instance->con_handle = con_handle;
 		if (instance->measurement_client_configuration_descriptor_notify){
-			printf("enable notification\n");
+			printf("measurement enable notification\n");
+		}
+		return 0;
+	}
+
+	if (attribute_handle == instance->measurement_server_configuration_descriptor_handle){
+		if (buffer_size < 2){
+			return ATT_ERROR_INVALID_OFFSET;
+		}
+		instance->measurement_server_configuration_descriptor_broadcast = little_endian_read_16(buffer, 0);
+		instance->con_handle = con_handle;
+		if (instance->measurement_server_configuration_descriptor_broadcast){
+			printf("measurement enable broadcast\n");
+		}
+		return 0;
+	}
+
+	if (attribute_handle == instance->vector_client_configuration_descriptor_handle){
+		if (buffer_size < 2){
+			return ATT_ERROR_INVALID_OFFSET;
+		}
+		instance->vector_client_configuration_descriptor_notify = little_endian_read_16(buffer, 0);
+		instance->con_handle = con_handle;
+		if (instance->vector_client_configuration_descriptor_notify){
+			printf("vector enable notification\n");
 		}
 		return 0;
 	}
@@ -254,7 +293,7 @@ static int cycling_power_service_write_callback(hci_con_handle_t con_handle, uin
 		instance->control_point_client_configuration_descriptor_indicate = little_endian_read_16(buffer, 0);
 		instance->con_handle = con_handle;
 		if (instance->control_point_client_configuration_descriptor_indicate){
-			printf("enable indication\n");
+			printf("control point enable indication\n");
 		}
 		return 0;
 	}
@@ -297,25 +336,39 @@ void cycling_power_service_server_init(void){
 		printf("no service found\n");
 		return;
 	}
-	// // // get CSC Mesurement characteristic value handle and client configuration handle
-	// instance->measurement_value_handle = gatt_server_get_value_handle_for_characteristic_with_uuid16(start_handle, end_handle, ORG_BLUETOOTH_CHARACTERISTIC_CSC_MEASUREMENT);
-	// instance->measurement_client_configuration_descriptor_handle = gatt_server_get_client_configuration_handle_for_characteristic_with_uuid16(start_handle, end_handle, ORG_BLUETOOTH_CHARACTERISTIC_CSC_MEASUREMENT);
+	// get CP Mesurement characteristic value handle and client configuration handle
+	instance->measurement_value_handle = gatt_server_get_value_handle_for_characteristic_with_uuid16(start_handle, end_handle, ORG_BLUETOOTH_CHARACTERISTIC_CYCLING_POWER_MEASUREMENT);
+	instance->measurement_client_configuration_descriptor_handle = gatt_server_get_client_configuration_handle_for_characteristic_with_uuid16(start_handle, end_handle, ORG_BLUETOOTH_CHARACTERISTIC_CYCLING_POWER_MEASUREMENT);
+	instance->measurement_server_configuration_descriptor_handle = gatt_server_get_server_configuration_handle_for_characteristic_with_uuid16(start_handle, end_handle, ORG_BLUETOOTH_CHARACTERISTIC_CYCLING_POWER_MEASUREMENT);
 	
-	// // get CSC Feature characteristic value handle and client configuration handle
-	// instance->feature_handle = gatt_server_get_value_handle_for_characteristic_with_uuid16(start_handle, end_handle, ORG_BLUETOOTH_CHARACTERISTIC_CSC_FEATURE);
+	// get CP Feature characteristic value handle and client configuration handle
+	instance->feature_value_handle = gatt_server_get_value_handle_for_characteristic_with_uuid16(start_handle, end_handle, ORG_BLUETOOTH_CHARACTERISTIC_CYCLING_POWER_FEATURE);
+	// get CP Sensor Location characteristic value handle and client configuration handle
+	instance->sensor_location_value_handle = gatt_server_get_value_handle_for_characteristic_with_uuid16(start_handle, end_handle, ORG_BLUETOOTH_CHARACTERISTIC_SENSOR_LOCATION);
 	
-	// // get Body Sensor Location characteristic value handle and client configuration handle
-	// instance->sensor_location_value_handle = gatt_server_get_value_handle_for_characteristic_with_uuid16(start_handle, end_handle, ORG_BLUETOOTH_CHARACTERISTIC_SENSOR_LOCATION);
+	// get CP Vector characteristic value handle and client configuration handle
+	instance->vector_value_handle = gatt_server_get_value_handle_for_characteristic_with_uuid16(start_handle, end_handle, ORG_BLUETOOTH_CHARACTERISTIC_CYCLING_POWER_VECTOR);
+	instance->vector_client_configuration_descriptor_handle = gatt_server_get_client_configuration_handle_for_characteristic_with_uuid16(start_handle, end_handle, ORG_BLUETOOTH_CHARACTERISTIC_CYCLING_POWER_VECTOR);
+
+	// get Body Sensor Location characteristic value handle and client configuration handle
+	instance->sensor_location_value_handle = gatt_server_get_value_handle_for_characteristic_with_uuid16(start_handle, end_handle, ORG_BLUETOOTH_CHARACTERISTIC_SENSOR_LOCATION);
 	
-	// // get SC Control Point characteristic value handle and client configuration handle
-	// instance->control_point_value_handle = gatt_server_get_value_handle_for_characteristic_with_uuid16(start_handle, end_handle, ORG_BLUETOOTH_CHARACTERISTIC_SC_CONTROL_POINT);
-	// instance->control_point_client_configuration_descriptor_handle = gatt_server_get_client_configuration_handle_for_characteristic_with_uuid16(start_handle, end_handle, ORG_BLUETOOTH_CHARACTERISTIC_SC_CONTROL_POINT);
-	// printf("Measurement     value handle 0x%02x\n", instance->measurement_value_handle);
-	// printf("Measurement Cfg value handle 0x%02x\n", instance->measurement_client_configuration_descriptor_handle);
-	// printf("Feature         value  handle 0x%02x\n", instance->feature_handle);
-	// printf("Sensor location value handle 0x%02x\n", instance->sensor_location_value_handle);
-	// printf("Control Point   value handle 0x%02x\n", instance->control_point_value_handle);
-	// printf("Control P. Cfg. value handle 0x%02x\n", instance->control_point_client_configuration_descriptor_handle);
+	// get SP Control Point characteristic value handle and client configuration handle
+	instance->control_point_value_handle = gatt_server_get_value_handle_for_characteristic_with_uuid16(start_handle, end_handle, ORG_BLUETOOTH_CHARACTERISTIC_CYCLING_POWER_CONTROL_POINT);
+	instance->control_point_client_configuration_descriptor_handle = gatt_server_get_client_configuration_handle_for_characteristic_with_uuid16(start_handle, end_handle, ORG_BLUETOOTH_CHARACTERISTIC_CYCLING_POWER_CONTROL_POINT);
+
+	printf("Measurement     value handle 0x%02x\n", instance->measurement_value_handle);
+	printf("M. Client Cfg   value handle 0x%02x\n", instance->measurement_client_configuration_descriptor_handle);
+	printf("M. Server Cfg   value handle 0x%02x\n", instance->measurement_server_configuration_descriptor_handle);
+
+	printf("Feature         value handle 0x%02x\n", instance->feature_value_handle);
+	printf("Sensor location value handle 0x%02x\n", instance->sensor_location_value_handle);
+
+	printf("Vector          value handle 0x%02x\n", instance->vector_value_handle);
+	printf("Vector Cfg.     value handle 0x%02x\n", instance->vector_client_configuration_descriptor_handle);
+
+	printf("Control Point   value handle 0x%02x\n", instance->control_point_value_handle);
+	printf("Control P. Cfg. value handle 0x%02x\n", instance->control_point_client_configuration_descriptor_handle);
 	
 	cycling_power_service.start_handle   = start_handle;
 	cycling_power_service.end_handle     = end_handle;

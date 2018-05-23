@@ -46,18 +46,18 @@
 #include "btstack.h"
 
 // https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.characteristic.gap.appearance.xml
-// cycling / speed and cadence sensor
-// static const uint16_t appearance = (18 << 6) | 5;
+// cycling / cycling power sensor
+static const uint16_t appearance = (18 << 6) | 4;
 
 const uint8_t adv_data[] = {
     // Flags general discoverable, BR/EDR not supported
     0x02, 0x01, 0x06, 
     // Name
-    0x14, 0x09, 'C', 'y', 'c', 'l', 'i', 'n', 'g', '_', 'P', 'o', 'w', 'e', 'r', ' ', 'S', 'e', 'r', 'v', 'e','r',
+    0x0E, 0x09, 'C', 'y', 'c', 'l', 'i', 'n', 'g', '_', 'P', 'o', 'w', 'e', 'r',
     // 16-bit Service UUIDs
     0x03, BLUETOOTH_DATA_TYPE_COMPLETE_LIST_OF_16_BIT_SERVICE_CLASS_UUIDS, ORG_BLUETOOTH_SERVICE_CYCLING_POWER & 0xff, ORG_BLUETOOTH_SERVICE_CYCLING_POWER >> 8,
     // Appearance
-    // 3, BLUETOOTH_DATA_TYPE_APPEARANCE, appearance & 0xff, appearance >> 8,
+    3, BLUETOOTH_DATA_TYPE_APPEARANCE, appearance & 0xff, appearance >> 8
 };
 
 const uint8_t adv_data_len = sizeof(adv_data);
@@ -67,7 +67,7 @@ const uint8_t adv_data_len = sizeof(adv_data);
 static void show_usage(void){
     bd_addr_t      iut_address;
     gap_local_bd_addr(iut_address);
-    printf("\n--- Bluetooth CSCS Server Test Console %s ---\n", bd_addr_to_str(iut_address));
+    printf("\n--- Bluetooth Cycling Power Server Test Console %s ---\n", bd_addr_to_str(iut_address));
     printf("Ctrl-c - exit\n");
     printf("---\n");
 }
