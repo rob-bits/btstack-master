@@ -68,13 +68,98 @@ static void show_usage(void){
     bd_addr_t      iut_address;
     gap_local_bd_addr(iut_address);
     printf("\n--- Bluetooth Cycling Power Server Test Console %s ---\n", bd_addr_to_str(iut_address));
+    printf("u    - push update\n");
+    printf("\n");
+    printf("t    - add positive torque\n");
+    printf("T    - add negative torque\n");
+    printf("w    - add wheel revolution\n");
+    printf("c    - add crank revolution\n");
+    printf("e    - add energy\n");
+    printf("\n");
+    printf("p    - set instantaneous power\n");
+    printf("b    - set power balance percentage\n");
+    printf("m    - set force magnitude\n");
+    printf("M    - set torque magnitude\n");
+    printf("a    - set angle\n");
+    printf("x    - set top dead spot angle\n");
+    printf("y    - set bottom dead spot angle\n");
+    printf("\n");
     printf("Ctrl-c - exit\n");
     printf("---\n");
 }
 
+static uint16_t event_time_s = 0;
+static uint16_t force_magnitude_newton = 0;
+static uint16_t torque_magnitude_newton_m = 0;
+static uint16_t angle_deg = 0;
 
 static void stdin_process(char cmd){
+
     switch (cmd){
+        case 'u':
+            printf("push update\n");
+            cycling_power_service_server_update_values();
+            event_time_s++;
+            break;
+    
+        case 't':
+            printf("add positive torque\n");
+            cycling_power_service_server_add_torque(100);
+            break;
+        case 'T':
+            printf("add negative torque\n");
+            cycling_power_service_server_add_torque(-100);
+            break;
+        case 'w':
+            printf("add wheel revolution\n");
+            cycling_power_service_server_add_wheel_revolution(10, event_time_s);
+            break;
+        case 'W':
+            printf("reverse wheel revolution\n");
+            cycling_power_service_server_add_wheel_revolution(-10, event_time_s);
+            break;
+
+        case 'c':
+            printf("add crank revolution\n");
+            cycling_power_service_server_add_crank_revolution(10, event_time_s);
+            break;
+        case 'e':
+            printf("add energy\n");
+            cycling_power_service_add_energy(100);
+            break;
+
+        case 'p':
+            printf("set instantaneous power\n");
+            cycling_power_service_server_set_instantaneous_power(100);
+            break;
+        case 'b':
+            printf("set power balance percentage\n");
+            cycling_power_service_server_set_pedal_power_balance(50);
+            break;
+        case 'm':
+            force_magnitude_newton += 10;
+            printf("set force magnitude\n");
+            cycling_power_service_server_set_force_magnitude(force_magnitude_newton-5, force_magnitude_newton+5);
+            break;
+        case 'M':
+            torque_magnitude_newton_m += 10;
+            printf("set torque magnitude\n");
+            cycling_power_service_server_set_torque_magnitude(torque_magnitude_newton_m-5, torque_magnitude_newton_m+5);
+            break;
+        case 'a':
+            angle_deg += 10;
+            printf("set angle\n");
+            cycling_power_service_server_set_angle(angle_deg);
+            break;
+        case 'x':
+            printf("set top dead spot angle\n");
+            cycling_power_service_server_set_top_dead_spot_angle(180); 
+            break;
+        case 'y':
+            printf("set bottom dead spot angle\n");
+            cycling_power_service_server_set_bottom_dead_spot_angle(20); 
+            break;
+
         case '\n':
         case '\r':
             break;
@@ -99,8 +184,55 @@ int btstack_main(void){
     att_server_init(profile_data, NULL, NULL);    
 
     // setup heart rate service
-    cycling_power_service_server_init();
+    // cycling_power_service_server_init(0x2FFFFF, 0x1F, CP_PEDAL_POWER_BALANCE_REFERENCE_LEFT);
+
+    uint32_t feature_flags = 0;   
+    feature_flags |= (1 << CP_FEATURE_FLAG_PEDAL_POWER_BALANCE_SUPPORTED);
+    feature_flags |= (1 << CP_FEATURE_FLAG_ACCUMULATED_TORQUE_SUPPORTED);
+    feature_flags |= (1 << CP_FEATURE_FLAG_ACCUMULATED_TORQUE_SUPPORTED);
+    feature_flags |= (1 << CP_FEATURE_FLAG_ACCUMULATED_TORQUE_SUPPORTED);
+    feature_flags |= (1 << CP_FEATURE_FLAG_WHEEL_REVOLUTION_DATA_SUPPORTED);
+    feature_flags |= (1 << CP_FEATURE_FLAG_CRANK_REVOLUTION_DATA_SUPPORTED);
     
+    feature_flags |= (1 << CP_FEATURE_FLAG_EXTREME_MAGNITUDES_SUPPORTED);
+    feature_flags |= (CP_SENSOR_MEASUREMENT_CONTEXT_FORCE << CP_FEATURE_FLAG_SENSOR_MEASUREMENT_CONTEXT);
+    
+    //feature_flags |= (1 << CP_FEATURE_FLAG_EXTREME_ANGLES_SUPPORTED);
+    //feature_flags |= (1 << CP_FEATURE_FLAG_TOP_AND_BOTTOM_DEAD_SPOT_ANGLE_SUPPORTED);
+    //feature_flags |= (1 << CP_FEATURE_FLAG_ACCUMULATED_ENERGY_SUPPORTED);
+    //feature_flags |= (1 << CP_FEATURE_FLAG_OFFSET_COMPENSATION_INDICATOR_SUPPORTED);
+    //feature_flags |= (1 << CP_FEATURE_FLAG_OFFSET_COMPENSATION_SUPPORTED);
+    //feature_flags |= (1 << CP_FEATURE_FLAG_CYCLING_POWER_MEASUREMENT_CHARACTERISTIC_CONTENT_MASKING_SUPPORTED);
+    //feature_flags |= (1 << CP_FEATURE_FLAG_MULTIPLE_SENSOR_LOCATIONS_SUPPORTED);
+    //feature_flags |= (1 << CP_FEATURE_FLAG_CRANK_LENGTH_ADJUSTMENT_SUPPORTED);
+    //feature_flags |= (1 << CP_FEATURE_FLAG_CHAIN_LENGTH_ADJUSTMENT_SUPPORTED);
+    //feature_flags |= (1 << CP_FEATURE_FLAG_CHAIN_WEIGHT_ADJUSTMENT_SUPPORTED);
+    //feature_flags |= (1 << CP_FEATURE_FLAG_SPAN_LENGTH_ADJUSTMENT_SUPPORTED);
+    //feature_flags |= (1 << CP_FEATURE_FLAG_INSTANTANEOUS_MEASUREMENT_DIRECTION_SUPPORTED);
+    //feature_flags |= (1 << CP_FEATURE_FLAG_FACTORY_CALIBRATION_DATE_SUPPORTED);
+    //feature_flags |= (1 << CP_FEATURE_FLAG_ENHANCED_OFFSET_COMPENSATION_SUPPORTED);
+    //feature_flags |= (2 << CP_FEATURE_FLAG_DISTRIBUTE_SYSTEM_SUPPORT;
+
+
+    cycling_power_service_server_init(feature_flags, 0x1F, CP_PEDAL_POWER_BALANCE_REFERENCE_LEFT, CP_TORQUE_SOURCE_WHEEL);
+
+    cycling_power_service_server_add_torque(100);
+    cycling_power_service_server_add_torque(-100);
+    cycling_power_service_server_add_wheel_revolution(10, event_time_s);
+    cycling_power_service_server_add_crank_revolution(10, event_time_s);
+    cycling_power_service_add_energy(100);
+
+    cycling_power_service_server_set_instantaneous_power(100);
+    cycling_power_service_server_set_pedal_power_balance(50);
+    force_magnitude_newton += 10;
+    cycling_power_service_server_set_force_magnitude(force_magnitude_newton-5, force_magnitude_newton+5);
+    torque_magnitude_newton_m += 10;
+    cycling_power_service_server_set_torque_magnitude(torque_magnitude_newton_m-5, torque_magnitude_newton_m+5);
+    angle_deg += 10;
+    cycling_power_service_server_set_angle(angle_deg);
+    cycling_power_service_server_set_top_dead_spot_angle(180); 
+    cycling_power_service_server_set_bottom_dead_spot_angle(20); 
+
     // setup advertisements
     uint16_t adv_int_min = 0x0030;
     uint16_t adv_int_max = 0x0030;

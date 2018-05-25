@@ -71,7 +71,30 @@ typedef enum {
 	CP_MEASUREMENT_FLAG_ACCUMULATED_ENERGY_PRESENT,
 	CP_MEASUREMENT_FLAG_OFFSET_COMPENSATION_INDICATOR,
 	CP_MEASUREMENT_FLAG_RESERVED
-} cycling_pover_measurement_flag_t;
+} cycling_power_measurement_flag_t;
+
+typedef enum {
+	CP_PEDAL_POWER_BALANCE_REFERENCE_UNKNOWN = 0,
+	CP_PEDAL_POWER_BALANCE_REFERENCE_LEFT,
+	CP_PEDAL_POWER_BALANCE_REFERENCE_NOT_SUPPORTED
+} cycling_power_pedal_power_balance_reference_t;
+
+typedef enum {
+	CP_TORQUE_SOURCE_WHEEL = 0,
+	CP_TORQUE_SOURCE_CRANK,
+	CP_TORQUE_SOURCE_NOT_SUPPORTED
+} cycling_power_torque_source_t;
+
+typedef enum {
+	CP_SENSOR_MEASUREMENT_CONTEXT_FORCE = 0,
+	CP_SENSOR_MEASUREMENT_CONTEXT_TORQUE
+} cycling_power_sensor_measurement_context_t;
+
+typedef enum {
+	CP_DISTRIBUTED_SYSTEM_UNSPECIFIED = 0,
+	CP_DISTRIBUTED_SYSTEM_NOT_SUPPORTED,
+	CP_DISTRIBUTED_SYSTEM_SUPPORTED
+} cycling_power_distributed_system_t;
 
 typedef enum {
 	CP_SENSOR_LOCATION_OTHER,
@@ -115,7 +138,7 @@ typedef enum {
 	CP_FEATURE_FLAG_INSTANTANEOUS_MEASUREMENT_DIRECTION_SUPPORTED,
 	CP_FEATURE_FLAG_FACTORY_CALIBRATION_DATE_SUPPORTED,
 	CP_FEATURE_FLAG_ENHANCED_OFFSET_COMPENSATION_SUPPORTED,
-	CP_FEATURE_FLAG_DISTRIBUTE_SYSTEM_SUPPORT,  // 0-unspecified, 1-not for use in distr. system, 2-used in distr. system, 3-reserved
+	CP_FEATURE_FLAG_DISTRIBUTED_SYSTEM_SUPPORT,  // 0-unspecified, 1-not for use in distr. system, 2-used in distr. system, 3-reserved
 	CP_FEATURE_FLAG_RESERVED
 } cycling_power_feature_flag_t;
 
@@ -132,13 +155,25 @@ typedef enum {
 /**
  * @brief Init Server with ATT DB
  */
-void cycling_power_service_server_init(void);
-
+void cycling_power_service_server_init(uint32_t feature_flags, uint8_t vector_flags, cycling_power_pedal_power_balance_reference_t reference, cycling_power_torque_source_t torque_source);
 /**
- * @brief Update heart rate (unit: beats per minute)
+ * @brief Push update
  * @note triggers notifications if subscribed
  */
 void cycling_power_service_server_update_values(void);
+
+void cycling_power_service_server_add_torque(int16_t torque_m); 
+void cycling_power_service_server_add_wheel_revolution(int32_t wheel_revolution, uint16_t wheel_event_time_s); 
+void cycling_power_service_server_add_crank_revolution(uint16_t crank_revolution, uint16_t crank_event_time_s); 
+void cycling_power_service_add_energy(uint16_t energy_kJ); 
+
+void cycling_power_service_server_set_instantaneous_power(int16_t instantaneous_power_watt);
+void cycling_power_service_server_set_pedal_power_balance(uint8_t pedal_power_balance_percentage);
+void cycling_power_service_server_set_force_magnitude(int16_t min_force_magnitude_newton, int16_t max_force_magnitude_newton); 
+void cycling_power_service_server_set_torque_magnitude(int16_t min_torque_magnitude_newton, int16_t max_torque_magnitude_newton); 
+void cycling_power_service_server_set_angle(uint16_t angle_deg); 
+void cycling_power_service_server_set_top_dead_spot_angle(uint16_t top_dead_spot_angle_deg); 
+void cycling_power_service_server_set_bottom_dead_spot_angle(uint16_t bottom_dead_spot_angle_deg); 
 
 /* API_END */
 

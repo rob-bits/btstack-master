@@ -173,7 +173,7 @@ static void cycling_speed_and_cadence_service_csc_measurement_can_send_now(void 
 static void cycling_speed_and_cadence_service_response_can_send_now(void * context){
 	cycling_speed_and_cadence_t * instance = (cycling_speed_and_cadence_t *) context;
 	if (!instance){
-		printf("instance is null (cycling_speed_and_cadence_service_csc_measurement_can_send_now)\n");
+		printf("instance is null (cycling_speed_and_cadence_service_response_can_send_now)\n");
 		return;
 	}
 		
