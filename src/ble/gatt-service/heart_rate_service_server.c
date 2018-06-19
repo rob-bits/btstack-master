@@ -68,7 +68,6 @@ typedef struct {
 	uint8_t  energy_expended_supported;
 	uint16_t energy_expended_kJ; // kilo Joules
 	int rr_interval_count;
-	int rr_offset;
 	uint16_t * rr_intervals;
 	heart_rate_service_sensor_contact_status_t sensor_contact;
 
@@ -238,7 +237,6 @@ void heart_rate_service_server_update_heart_rate_values(uint16_t heart_rate_bpm,
 	instance->sensor_contact = sensor_contact;
 	instance->rr_interval_count = rr_interval_count;
 	instance->rr_intervals = rr_intervals;
-	instance->rr_offset = 0;
 
 	if (instance->measurement_client_configuration_descriptor_notify){
 		instance->measurement_callback.callback = &heart_rate_service_can_send_now;

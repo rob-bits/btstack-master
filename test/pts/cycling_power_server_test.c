@@ -64,6 +64,99 @@ const uint8_t adv_data_len = sizeof(adv_data);
 
 #ifdef HAVE_BTSTACK_STDIN
 
+
+static char * measurement_flag_str[] = {
+    "1   Pedal Power Balance",
+    "2   Pedal Power Balance Reference", // Unknown/Left
+    "2   Accumulated Torque",            // Wheel Based/Crank
+    "2   Accumulated Torque Source",     // Wheel Based/Crank
+    "4 2 Wheel Revolution Data",
+    "2 2 Crank Revolution Data",
+    "2 2 Extreme Force Magnitudes",
+    "2 2 Extreme Torque Magnitudes",
+    "3   Extreme Angles",
+    "2   Top Dead Spot Angle",
+    "2   Bottom Dead Spot Angle",
+    "2   Accumulated Energy",
+    "Offset Compensation Indicator"
+};
+
+static char buffer[80];
+
+static char * measurement_flag2str(cycling_power_measurement_flag_t flag, uint8_t value){
+    if (flag >= CP_MEASUREMENT_FLAG_RESERVED) return "Reserved";
+
+    strcpy(buffer, measurement_flag_str[flag]);
+    int pos = strlen(measurement_flag_str[flag]);
+    // printf(" copy %d\n", pos);
+    switch (flag){
+        case CP_MEASUREMENT_FLAG_PEDAL_POWER_BALANCE_REFERENCE:
+            if (value == 0){
+                strcpy(buffer + pos, ": Unknown");
+            } else {
+                strcpy(buffer + pos, ": Left");
+            }
+            break;
+        case CP_MEASUREMENT_FLAG_ACCUMULATED_TORQUE_PRESENT:
+            if (value == 0){
+                strcpy(buffer + pos, ": Wheel Based");
+            } else {
+                strcpy(buffer + pos, ": Crank Based");
+            }
+            break;
+        case CP_MEASUREMENT_FLAG_ACCUMULATED_TORQUE_SOURCE:
+            if (value == 0){
+                strcpy(buffer + pos, ": Wheel Based");
+            } else {
+                strcpy(buffer + pos, ": Crank Based");
+            }
+            break;
+        default:
+            if (value == 0){                                
+                strcpy(buffer + pos, ": NOT SUPPORTED");
+            }
+            break;
+    }
+    return &buffer[0];
+}
+
+static void dump_feature_flags(uint32_t feature_flags){
+    int i;
+    printf("feature flags: \n");
+    for (i = 0; i < CP_FEATURE_FLAG_RESERVED; i++){
+        printf("%02d ", i);
+    }
+    printf("\n");
+    for (i = 0; i < CP_FEATURE_FLAG_RESERVED; i++){
+        uint8_t value = (feature_flags & (1 << i)) != 0;
+        printf("%2d ", value);
+    }
+    printf("\n");
+}
+
+static void dump_measurement_flags(uint16_t measurement_flags){
+    int i;
+    printf("measurement flags: \n");
+    for (i = 0; i < CP_MEASUREMENT_FLAG_RESERVED; i++){
+        printf("%02d ", i);
+    }
+    printf("\n");
+    for (i = 0; i < CP_MEASUREMENT_FLAG_RESERVED; i++){
+        uint8_t value = (measurement_flags & (1 << i)) != 0;
+        printf("%2d ", value);
+    }
+    printf("\n");
+}
+
+static void dump_measurement_flags_as_str(uint16_t measurement_flags){
+    int i;
+    for (i = CP_MEASUREMENT_FLAG_PEDAL_POWER_BALANCE_PRESENT; i <= CP_MEASUREMENT_FLAG_OFFSET_COMPENSATION_INDICATOR; i++){
+        // printf("measurement_flags 0x%02x, bit %d, has feature %d\n", measurement_flags, i, flag[i]);
+        uint8_t value = (measurement_flags & (1 << i)) != 0;
+        printf("%s\n", measurement_flag2str(i, value));
+    }
+}
+
 static void show_usage(void){
     bd_addr_t      iut_address;
     gap_local_bd_addr(iut_address);
@@ -149,7 +242,7 @@ static void stdin_process(char cmd){
         case 'a':
             angle_deg += 10;
             printf("set angle\n");
-            cycling_power_service_server_set_angle(angle_deg);
+            cycling_power_service_server_set_angle(angle_deg-5, angle_deg+5);
             break;
         case 'x':
             printf("set top dead spot angle\n");
@@ -188,33 +281,26 @@ int btstack_main(void){
 
     uint32_t feature_flags = 0;   
     feature_flags |= (1 << CP_FEATURE_FLAG_PEDAL_POWER_BALANCE_SUPPORTED);
-    feature_flags |= (1 << CP_FEATURE_FLAG_ACCUMULATED_TORQUE_SUPPORTED);
-    feature_flags |= (1 << CP_FEATURE_FLAG_ACCUMULATED_TORQUE_SUPPORTED);
-    feature_flags |= (1 << CP_FEATURE_FLAG_ACCUMULATED_TORQUE_SUPPORTED);
-    feature_flags |= (1 << CP_FEATURE_FLAG_WHEEL_REVOLUTION_DATA_SUPPORTED);
+    // feature_flags |= (1 << CP_FEATURE_FLAG_ACCUMULATED_TORQUE_SUPPORTED);
+    // feature_flags |= (1 << CP_FEATURE_FLAG_WHEEL_REVOLUTION_DATA_SUPPORTED);
     feature_flags |= (1 << CP_FEATURE_FLAG_CRANK_REVOLUTION_DATA_SUPPORTED);
+    // feature_flags |= (1 << CP_FEATURE_FLAG_EXTREME_ANGLES_SUPPORTED);
+    // feature_flags |= (1 << CP_FEATURE_FLAG_TOP_AND_BOTTOM_DEAD_SPOT_ANGLE_SUPPORTED);
+    // feature_flags |= (1 << CP_FEATURE_FLAG_ACCUMULATED_ENERGY_SUPPORTED);
+    feature_flags |= (1 << CP_FEATURE_FLAG_OFFSET_COMPENSATION_INDICATOR_SUPPORTED);
+    feature_flags |= (1 << CP_FEATURE_FLAG_OFFSET_COMPENSATION_SUPPORTED);
     
     feature_flags |= (1 << CP_FEATURE_FLAG_EXTREME_MAGNITUDES_SUPPORTED);
-    feature_flags |= (CP_SENSOR_MEASUREMENT_CONTEXT_FORCE << CP_FEATURE_FLAG_SENSOR_MEASUREMENT_CONTEXT);
+    // feature_flags |= (CP_SENSOR_MEASUREMENT_CONTEXT_FORCE << CP_FEATURE_FLAG_SENSOR_MEASUREMENT_CONTEXT);
+    feature_flags |= (CP_SENSOR_MEASUREMENT_CONTEXT_TORQUE << CP_FEATURE_FLAG_SENSOR_MEASUREMENT_CONTEXT);
     
-    //feature_flags |= (1 << CP_FEATURE_FLAG_EXTREME_ANGLES_SUPPORTED);
-    //feature_flags |= (1 << CP_FEATURE_FLAG_TOP_AND_BOTTOM_DEAD_SPOT_ANGLE_SUPPORTED);
-    //feature_flags |= (1 << CP_FEATURE_FLAG_ACCUMULATED_ENERGY_SUPPORTED);
-    //feature_flags |= (1 << CP_FEATURE_FLAG_OFFSET_COMPENSATION_INDICATOR_SUPPORTED);
-    //feature_flags |= (1 << CP_FEATURE_FLAG_OFFSET_COMPENSATION_SUPPORTED);
-    //feature_flags |= (1 << CP_FEATURE_FLAG_CYCLING_POWER_MEASUREMENT_CHARACTERISTIC_CONTENT_MASKING_SUPPORTED);
-    //feature_flags |= (1 << CP_FEATURE_FLAG_MULTIPLE_SENSOR_LOCATIONS_SUPPORTED);
-    //feature_flags |= (1 << CP_FEATURE_FLAG_CRANK_LENGTH_ADJUSTMENT_SUPPORTED);
-    //feature_flags |= (1 << CP_FEATURE_FLAG_CHAIN_LENGTH_ADJUSTMENT_SUPPORTED);
-    //feature_flags |= (1 << CP_FEATURE_FLAG_CHAIN_WEIGHT_ADJUSTMENT_SUPPORTED);
-    //feature_flags |= (1 << CP_FEATURE_FLAG_SPAN_LENGTH_ADJUSTMENT_SUPPORTED);
-    //feature_flags |= (1 << CP_FEATURE_FLAG_INSTANTANEOUS_MEASUREMENT_DIRECTION_SUPPORTED);
-    //feature_flags |= (1 << CP_FEATURE_FLAG_FACTORY_CALIBRATION_DATE_SUPPORTED);
-    //feature_flags |= (1 << CP_FEATURE_FLAG_ENHANCED_OFFSET_COMPENSATION_SUPPORTED);
-    //feature_flags |= (2 << CP_FEATURE_FLAG_DISTRIBUTE_SYSTEM_SUPPORT;
+    
+    cycling_power_service_server_init(feature_flags, CP_PEDAL_POWER_BALANCE_REFERENCE_LEFT, CP_TORQUE_SOURCE_CRANK);
 
-
-    cycling_power_service_server_init(feature_flags, 0x1F, CP_PEDAL_POWER_BALANCE_REFERENCE_LEFT, CP_TORQUE_SOURCE_WHEEL);
+    uint16_t measurement_flags = cycling_power_service_measurement_flags();
+    dump_feature_flags(feature_flags);
+    dump_measurement_flags(measurement_flags);
+    dump_measurement_flags_as_str(measurement_flags);
 
     cycling_power_service_server_add_torque(100);
     cycling_power_service_server_add_torque(-100);
@@ -229,10 +315,14 @@ int btstack_main(void){
     torque_magnitude_newton_m += 10;
     cycling_power_service_server_set_torque_magnitude(torque_magnitude_newton_m-5, torque_magnitude_newton_m+5);
     angle_deg += 10;
-    cycling_power_service_server_set_angle(angle_deg);
+    cycling_power_service_server_set_angle(angle_deg-5, angle_deg+5);
     cycling_power_service_server_set_top_dead_spot_angle(180); 
     cycling_power_service_server_set_bottom_dead_spot_angle(20); 
-
+    cycling_power_service_add_energy(100);
+    int16_t values[] = {12, -50, 100};
+    cycling_power_service_server_set_torque_magnitude_values(3, values);
+    cycling_power_service_server_set_force_magnitude_values(3, values);
+    
     // setup advertisements
     uint16_t adv_int_min = 0x0030;
     uint16_t adv_int_max = 0x0030;

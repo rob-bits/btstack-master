@@ -85,7 +85,6 @@ typedef struct {
 
 	// Cycling Power Measurement 
 	uint16_t measurement_value_handle;
-	uint16_t measurement_flags;					// see cycling_pover_measurement_flag_t
 	int16_t  instantaneous_power_watt;
 	
 	cycling_power_pedal_power_balance_reference_t  pedal_power_balance_reference; 
@@ -137,13 +136,14 @@ typedef struct {
 	
 	// Cycling Power Vector
 	uint16_t vector_value_handle;
-	uint8_t  vector_flags;												// see cycling_power_vector_flag_t
 	uint16_t vector_cumulative_crank_revolutions;
 	uint16_t vector_last_crank_event_time_s;							// seconds, resolution 1/1024
 	uint16_t vector_first_crank_measurement_angle_deg;
-	int16_t  vector_instantaneous_force_magnitude_newton_array;			// newton
-	int16_t  vector_instantaneous_torque_magnitude_newton_per_m_array;	// newton per meter, resolution 1/32
-
+	int16_t  * vector_instantaneous_force_magnitude_newton_array;			// newton
+	int force_magnitude_count;
+	int16_t  * vector_instantaneous_torque_magnitude_newton_per_m_array;	// newton per meter, resolution 1/32
+	int torque_magnitude_count;
+	
 	// CP Vector Notification (Client Characteristic Configuration)
 	uint16_t vector_client_configuration_descriptor_handle;
 	uint16_t vector_client_configuration_descriptor_notify;
@@ -219,13 +219,9 @@ static int has_feature(cycling_power_feature_flag_t feature){
 	return (instance->feature_flags & (1 << feature)) != 0;
 }
 
-static void cycling_power_service_measurement_can_send_now(void * context){
-	cycling_power_t * instance = (cycling_power_t *) context;
-	if (!instance){
-		printf("instance is null (cycling_power_service_measurement_can_send_now)\n");
-		return;
-	}
-	uint8_t value[50];
+uint16_t cycling_power_service_measurement_flags(void){
+	cycling_power_t * instance = &cycling_power;
+	uint16_t measurement_flags = 0;
 	uint8_t flag[] = {
 		has_feature(CP_FEATURE_FLAG_PEDAL_POWER_BALANCE_SUPPORTED),
 		has_feature(CP_FEATURE_FLAG_PEDAL_POWER_BALANCE_SUPPORTED) && instance->pedal_power_balance_reference,
@@ -233,8 +229,8 @@ static void cycling_power_service_measurement_can_send_now(void * context){
 		has_feature(CP_FEATURE_FLAG_ACCUMULATED_TORQUE_SUPPORTED) && instance->torque_source,
 		has_feature(CP_FEATURE_FLAG_WHEEL_REVOLUTION_DATA_SUPPORTED),
 		has_feature(CP_FEATURE_FLAG_CRANK_REVOLUTION_DATA_SUPPORTED),
-		has_feature(CP_FEATURE_FLAG_EXTREME_MAGNITUDES_SUPPORTED) && (has_feature(CP_FEATURE_FLAG_SENSOR_MEASUREMENT_CONTEXT) == 0),
-		has_feature(CP_FEATURE_FLAG_EXTREME_MAGNITUDES_SUPPORTED) && (has_feature(CP_FEATURE_FLAG_SENSOR_MEASUREMENT_CONTEXT) == 1),
+		has_feature(CP_FEATURE_FLAG_EXTREME_MAGNITUDES_SUPPORTED) && (has_feature(CP_FEATURE_FLAG_SENSOR_MEASUREMENT_CONTEXT) == CP_SENSOR_MEASUREMENT_CONTEXT_FORCE),
+		has_feature(CP_FEATURE_FLAG_EXTREME_MAGNITUDES_SUPPORTED) && (has_feature(CP_FEATURE_FLAG_SENSOR_MEASUREMENT_CONTEXT) == CP_SENSOR_MEASUREMENT_CONTEXT_TORQUE),
 		has_feature(CP_FEATURE_FLAG_EXTREME_ANGLES_SUPPORTED),
 		has_feature(CP_FEATURE_FLAG_TOP_AND_BOTTOM_DEAD_SPOT_ANGLE_SUPPORTED),
 		has_feature(CP_FEATURE_FLAG_TOP_AND_BOTTOM_DEAD_SPOT_ANGLE_SUPPORTED),
@@ -242,23 +238,124 @@ static void cycling_power_service_measurement_can_send_now(void * context){
 		has_feature(CP_FEATURE_FLAG_OFFSET_COMPENSATION_INDICATOR_SUPPORTED)
 	};
 
-	uint16_t measurement_flags = 0;
 	int i;
-	int pos = 4;
 	for (i = CP_MEASUREMENT_FLAG_PEDAL_POWER_BALANCE_PRESENT; i <= CP_MEASUREMENT_FLAG_OFFSET_COMPENSATION_INDICATOR; i++){
 		measurement_flags |= flag[i] << i;
+	}
+ // printf("mes. flags:\n");
+ // for (i = 0; i < CP_MEASUREMENT_FLAG_RESERVED; i++){
+ //        uint8_t value = (measurement_flags & (1 << i)) != 0;
+ //        printf("%2d ", value);
+ //    }
+ //    printf("\n");
+	return measurement_flags;
+}
+
+uint8_t cycling_power_service_vector_flags(void){
+	uint8_t vector_flags = 0;
+	uint8_t flag[] = {
+		has_feature(CP_FEATURE_FLAG_CRANK_REVOLUTION_DATA_SUPPORTED),
+		has_feature(CP_FEATURE_FLAG_EXTREME_ANGLES_SUPPORTED),
+		has_feature(CP_FEATURE_FLAG_EXTREME_MAGNITUDES_SUPPORTED) && (has_feature(CP_FEATURE_FLAG_SENSOR_MEASUREMENT_CONTEXT) == CP_SENSOR_MEASUREMENT_CONTEXT_FORCE),
+		has_feature(CP_FEATURE_FLAG_EXTREME_MAGNITUDES_SUPPORTED) && (has_feature(CP_FEATURE_FLAG_SENSOR_MEASUREMENT_CONTEXT) == CP_SENSOR_MEASUREMENT_CONTEXT_TORQUE),
+		has_feature(CP_FEATURE_FLAG_INSTANTANEOUS_MEASUREMENT_DIRECTION_SUPPORTED)
+	};
+
+	int i;
+	for (i = CP_VECTOR_FLAG_CRANK_REVOLUTION_DATA_PRESENT; i <= CP_VECTOR_FLAG_INSTANTANEOUS_MEASUREMENT_DIRECTION; i++){
+		vector_flags |= flag[i] << i;
+	}
+	return vector_flags;
+}
+
+static void cycling_power_service_vector_can_send_now(void * context){
+	cycling_power_t * instance = (cycling_power_t *) context;
+	if (!instance){
+		printf("instance is null (cycling_power_service_measurement_can_send_now)\n");
+		return;
+	}
+	uint8_t value[50];
+	uint8_t vector_flags = cycling_power_service_vector_flags();
+	int pos = 0;
+	
+	value[pos++] = vector_flags;
+	int i;
+	printf("vector flags 0x%02x\n", vector_flags);
+	for (i = CP_VECTOR_FLAG_CRANK_REVOLUTION_DATA_PRESENT; i <= CP_VECTOR_FLAG_INSTANTANEOUS_MEASUREMENT_DIRECTION; i++){
+		
+		if ((vector_flags & (1 << i)) == 0) continue;
+		switch ((cycling_power_vector_flag_t) i){
+			case CP_VECTOR_FLAG_CRANK_REVOLUTION_DATA_PRESENT:
+				printf("CP_VECTOR_FLAG_CRANK_REVOLUTION_DATA_PRESENT \n");
+				little_endian_store_16(value, pos, instance->cumulative_crank_revolutions);
+				pos += 2;
+				little_endian_store_16(value, pos, instance->last_crank_event_time_s);
+				pos += 2;
+				break;
+			case CP_VECTOR_FLAG_FIRST_CRANK_MEASUREMENT_ANGLE_PRESENT:
+				break;
+			case CP_VECTOR_FLAG_INSTANTANEOUS_FORCE_MAGNITUDE_ARRAY_PRESENT:{
+				// TODO: get actual MTU from ATT server
+				printf("CP_VECTOR_FLAG_INSTANTANEOUS_FORCE_MAGNITUDE_ARRAY_PRESENT \n");
+				uint16_t bytes_left = btstack_min(sizeof(value), l2cap_max_mtu() - 3 - pos);
+
+				while (bytes_left > 2 && instance->force_magnitude_count){
+					little_endian_store_16(value, pos, instance->vector_instantaneous_force_magnitude_newton_array[0]);
+					pos += 2;
+					bytes_left -= 2;
+					instance->vector_instantaneous_force_magnitude_newton_array++;
+					instance->force_magnitude_count--;
+				}
+				break;
+			}
+			case CP_VECTOR_FLAG_INSTANTANEOUS_TORQUE_MAGNITUDE_ARRAY_PRESENT:{
+				// TODO: get actual MTU from ATT server
+				printf("CP_VECTOR_FLAG_INSTANTANEOUS_TORQUE_MAGNITUDE_ARRAY_PRESENT \n");
+				
+				uint16_t bytes_left = btstack_min(sizeof(value), l2cap_max_mtu() - 3 - pos);
+
+				while (bytes_left > 2 && instance->torque_magnitude_count){
+					little_endian_store_16(value, pos, instance->vector_instantaneous_torque_magnitude_newton_per_m_array[0]);
+					pos += 2;
+					bytes_left -= 2;
+					instance->vector_instantaneous_torque_magnitude_newton_per_m_array++;
+					instance->torque_magnitude_count--;
+				}
+				break;
+			}
+				break;
+			case CP_VECTOR_FLAG_INSTANTANEOUS_MEASUREMENT_DIRECTION:
+				break;
+			default:
+				break;
+		}
+	}
+
+	att_server_notify(instance->con_handle, instance->vector_value_handle, &value[0], pos); 
+}
+
+static void cycling_power_service_measurement_can_send_now(void * context){
+	cycling_power_t * instance = (cycling_power_t *) context;
+	if (!instance){
+		printf("instance is null (cycling_power_service_measurement_can_send_now)\n");
+		return;
+	}
+	uint8_t value[50];
+	uint16_t measurement_flags = cycling_power_service_measurement_flags();
+	int pos = 4;
+	
+	int i;
+	for (i = CP_MEASUREMENT_FLAG_PEDAL_POWER_BALANCE_PRESENT; i <= CP_MEASUREMENT_FLAG_OFFSET_COMPENSATION_INDICATOR; i++){
 		// printf("measurement_flags 0x%02x, bit %d, has feature %d\n", measurement_flags, i, flag[i]);
-		if (!flag[i]) continue;
+		if ((measurement_flags & (1 << i)) == 0) continue;
 		switch ((cycling_power_measurement_flag_t) i){
 			case CP_MEASUREMENT_FLAG_PEDAL_POWER_BALANCE_PRESENT:
 				value[pos++] = instance->pedal_power_balance_percentage;
 				break;
-			
 			case CP_MEASUREMENT_FLAG_ACCUMULATED_TORQUE_PRESENT:
 				little_endian_store_16(value, pos, instance->accumulated_torque_m);
 				pos += 2;
 				break;
-
 			case CP_MEASUREMENT_FLAG_WHEEL_REVOLUTION_DATA_PRESENT:
 				little_endian_store_32(value, pos, instance->cumulative_wheel_revolutions);
 				pos += 4;
@@ -308,6 +405,7 @@ static void cycling_power_service_measurement_can_send_now(void * context){
 	
 	little_endian_store_16(value, 0, measurement_flags);
 	little_endian_store_16(value, 2, instance->instantaneous_power_watt);
+	printf_hexdump(value, pos);
 	att_server_notify(instance->con_handle, instance->measurement_value_handle, &value[0], pos); 
 }
 
@@ -429,12 +527,11 @@ static int cycling_power_service_write_callback(hci_con_handle_t con_handle, uin
 	return 0;
 }
 
-void cycling_power_service_server_init(uint32_t feature_flags, uint8_t vector_flags, cycling_power_pedal_power_balance_reference_t reference, cycling_power_torque_source_t torque_source){
+void cycling_power_service_server_init(uint32_t feature_flags, cycling_power_pedal_power_balance_reference_t reference, cycling_power_torque_source_t torque_source){
 	cycling_power_t * instance = &cycling_power;
 	
 	instance->sensor_location = CP_SENSOR_LOCATION_OTHER;
 	instance->feature_flags = feature_flags;
-	instance->vector_flags = vector_flags;
 	instance->pedal_power_balance_reference = reference;
 	instance->torque_source = torque_source;
 	printf("init with 0x%04x\n", instance->feature_flags);
@@ -537,6 +634,18 @@ void cycling_power_service_server_set_pedal_power_balance(uint8_t pedal_power_ba
 	instance->pedal_power_balance_percentage = pedal_power_balance_percentage;
 }
 
+void cycling_power_service_server_set_force_magnitude_values(int force_magnitude_count, int16_t * force_magnitude_newton_array){
+	cycling_power_t * instance = &cycling_power;
+	instance->force_magnitude_count = force_magnitude_count;
+	instance->vector_instantaneous_force_magnitude_newton_array = force_magnitude_newton_array;
+}
+
+void cycling_power_service_server_set_torque_magnitude_values(int torque_magnitude_count, int16_t * torque_magnitude_newton_array){
+	cycling_power_t * instance = &cycling_power;
+	instance->torque_magnitude_count = torque_magnitude_count;
+	instance->vector_instantaneous_torque_magnitude_newton_per_m_array = torque_magnitude_newton_array;
+}
+
 void cycling_power_service_server_set_force_magnitude(int16_t min_force_magnitude_newton, int16_t max_force_magnitude_newton){
 	cycling_power_t * instance = &cycling_power;
 	instance->minimum_force_magnitude_newton = min_force_magnitude_newton;
@@ -549,13 +658,10 @@ void cycling_power_service_server_set_torque_magnitude(int16_t min_torque_magnit
 	instance->maximum_torque_magnitude_newton_m = max_torque_magnitude_newton;
 } 
 
-void cycling_power_service_server_set_angle(uint16_t angle_deg){
+void cycling_power_service_server_set_angle(uint16_t min_angle_deg, uint16_t max_angle_deg){
 	cycling_power_t * instance = &cycling_power;
-	if (instance->minimum_angle_deg > angle_deg){
-		instance->minimum_angle_deg = angle_deg;
-	} else if (instance->maximum_angle_deg < angle_deg){
-		instance->maximum_angle_deg = angle_deg;
-	}
+	instance->minimum_angle_deg = min_angle_deg;
+	instance->maximum_angle_deg = max_angle_deg;
 } 
 
 void cycling_power_service_server_set_top_dead_spot_angle(uint16_t top_dead_spot_angle_deg){
@@ -576,5 +682,12 @@ void cycling_power_service_server_update_values(void){
 		instance->measurement_notify_callback.callback = &cycling_power_service_measurement_can_send_now;
 		instance->measurement_notify_callback.context  = (void*) instance;
 		att_server_register_can_send_now_callback(&instance->measurement_notify_callback, instance->con_handle);
+	}
+
+	if (instance->vector_client_configuration_descriptor_notify){
+		instance->vector_notify_callback.callback = &cycling_power_service_vector_can_send_now;
+		instance->vector_notify_callback.context  = (void*) instance;
+		printf("update power vector\n");
+		att_server_register_can_send_now_callback(&instance->vector_notify_callback, instance->con_handle);
 	}
 }
