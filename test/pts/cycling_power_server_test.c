@@ -283,7 +283,7 @@ int btstack_main(void){
     feature_flags |= (1 << CP_FEATURE_FLAG_PEDAL_POWER_BALANCE_SUPPORTED);
     // feature_flags |= (1 << CP_FEATURE_FLAG_ACCUMULATED_TORQUE_SUPPORTED);
     // feature_flags |= (1 << CP_FEATURE_FLAG_WHEEL_REVOLUTION_DATA_SUPPORTED);
-    feature_flags |= (1 << CP_FEATURE_FLAG_CRANK_REVOLUTION_DATA_SUPPORTED);
+    // feature_flags |= (1 << CP_FEATURE_FLAG_CRANK_REVOLUTION_DATA_SUPPORTED);
     // feature_flags |= (1 << CP_FEATURE_FLAG_EXTREME_ANGLES_SUPPORTED);
     // feature_flags |= (1 << CP_FEATURE_FLAG_TOP_AND_BOTTOM_DEAD_SPOT_ANGLE_SUPPORTED);
     // feature_flags |= (1 << CP_FEATURE_FLAG_ACCUMULATED_ENERGY_SUPPORTED);
@@ -293,8 +293,9 @@ int btstack_main(void){
     feature_flags |= (1 << CP_FEATURE_FLAG_EXTREME_MAGNITUDES_SUPPORTED);
     // feature_flags |= (CP_SENSOR_MEASUREMENT_CONTEXT_FORCE << CP_FEATURE_FLAG_SENSOR_MEASUREMENT_CONTEXT);
     feature_flags |= (CP_SENSOR_MEASUREMENT_CONTEXT_TORQUE << CP_FEATURE_FLAG_SENSOR_MEASUREMENT_CONTEXT);
-    
-    
+
+    feature_flags |= (1 << CP_FEATURE_FLAG_INSTANTANEOUS_MEASUREMENT_DIRECTION_SUPPORTED);
+
     cycling_power_service_server_init(feature_flags, CP_PEDAL_POWER_BALANCE_REFERENCE_LEFT, CP_TORQUE_SOURCE_CRANK);
 
     uint16_t measurement_flags = cycling_power_service_measurement_flags();
@@ -322,7 +323,10 @@ int btstack_main(void){
     int16_t values[] = {12, -50, 100};
     cycling_power_service_server_set_torque_magnitude_values(3, values);
     cycling_power_service_server_set_force_magnitude_values(3, values);
-    
+    uint16_t first_crank_measurement_angle_deg = 90;
+    cycling_power_service_server_set_instantaneous_measurement_direction(CP_INSTANTANEOUS_MEASUREMENT_DIRECTION_TANGENTIAL_COMPONENT);
+    // cycling_power_service_server_set_first_crank_measurement_angle(first_crank_measurement_angle_deg);
+
     // setup advertisements
     uint16_t adv_int_min = 0x0030;
     uint16_t adv_int_max = 0x0030;

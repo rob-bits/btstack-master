@@ -184,6 +184,9 @@ void cycling_power_service_server_set_top_dead_spot_angle(uint16_t top_dead_spot
 void cycling_power_service_server_set_bottom_dead_spot_angle(uint16_t bottom_dead_spot_angle_deg); 
 void cycling_power_service_server_set_force_magnitude_values(int force_magnitude_count, int16_t * force_magnitude_newton_array);
 void cycling_power_service_server_set_torque_magnitude_values(int torque_magnitude_count, int16_t * torque_magnitude_newton_array);
+void cycling_power_service_server_set_instantaneous_measurement_direction(cycling_power_instantaneous_measurement_direction_t direction);
+// send only in first packet, ignore during continuation
+void cycling_power_service_server_set_first_crank_measurement_angle(uint16_t first_crank_measurement_angle_deg);
 
 uint16_t cycling_power_service_measurement_flags(void);
 uint8_t  cycling_power_service_vector_flags(void);
