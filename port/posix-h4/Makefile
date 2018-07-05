@@ -17,7 +17,7 @@ CORE += \
 	main.c \
 	btstack_stdin_posix.c \
 	wav_util.c 					\
-	0000000_META_hci_patches_v7rc5_withPMI.c \
+	0000000_META_hci_patches_v7rc6.c \
 	# bluetooth_init_cc2564_2.14.c \
 	# bluetooth_init_cc2564C_1.0.c \
 
