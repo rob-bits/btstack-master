@@ -117,6 +117,11 @@ static int btstack_audio_portaudio_init(uint8_t channels, uint32_t samplerate){
         return err;
     }
     log_info("PortAudio: stream opened");
+
+    const PaStreamInfo * stream_info = Pa_GetStreamInfo(stream);
+    log_info("PortAudio: Input  latency: %f", stream_info->inputLatency);
+    log_info("PortAudio: Output latency: %f", stream_info->outputLatency);
+
     return 0;
 }
 
