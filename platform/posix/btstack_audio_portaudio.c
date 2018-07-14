@@ -37,50 +37,88 @@
 
 
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include "btstack_debug.h"
 #include "btstack_audio.h"
+#include "btstack_run_loop.h"
 
 #ifdef HAVE_PORTAUDIO
 
-#define PA_SAMPLE_TYPE      paInt16
+#define PA_SAMPLE_TYPE               paInt16
+#define NUM_FRAMES_PER_PA_BUFFER       512
+#define NUM_BUFFERS                      3
+#define DRIVER_POLL_INTERVAL_MS          5
 
-#include "btstack_ring_buffer.h"
 #include <portaudio.h>
 
+// config
+static int                    num_channels;
+static int                    num_bytes_per_sample;
+
+// portaudio
 static PaStream * stream;
-static int media_initialized = 0;
+
+// client
 static void (*playback_callback)(uint16_t * buffer, uint16_t num_samples);
 
-static int portaudioCallback( const void *inputBuffer, void *outputBuffer,
-                           unsigned long framesPerBuffer,
-                           const PaStreamCallbackTimeInfo* timeInfo,
-                           PaStreamCallbackFlags statusFlags,
-                           void *userData ) {
+// output buffer
+static uint16_t               output_buffer_a[NUM_FRAMES_PER_PA_BUFFER * 2];   // stereo
+static uint16_t               output_buffer_b[NUM_FRAMES_PER_PA_BUFFER * 2];   // stereo
+static uint16_t               output_buffer_c[NUM_FRAMES_PER_PA_BUFFER * 2];   // stereo
+static uint16_t             * output_buffers[NUM_BUFFERS] = { output_buffer_a, output_buffer_b, output_buffer_c};
+static int                    output_buffer_to_play;
+static int                    output_buffer_to_fill;
 
-    /** portaudioCallback is called from different thread, don't use hci_dump / log_info here without additional checks */
+// timer to fill output ring buffer
+static btstack_timer_source_t  driver_timer;
+
+static int portaudio_callback( const void *                     inputBuffer, 
+                               void *                           outputBuffer,
+                               unsigned long                    samples_per_buffer,
+                               const PaStreamCallbackTimeInfo * timeInfo,
+                               PaStreamCallbackFlags            statusFlags,
+                               void *                           userData ) {
+
+    /** portaudio_callback is called from different thread, don't use hci_dump / log_info here without additional checks */
 
     (void) timeInfo; /* Prevent unused variable warnings. */
     (void) statusFlags;
     (void) inputBuffer;
     (void) userData;
-    (void) outputBuffer;
-    (void) framesPerBuffer;
-    
-    if (playback_callback){
-        (*playback_callback)(outputBuffer, framesPerBuffer);
-    } else {
-        memset(outputBuffer, 0, 2*2*framesPerBuffer);
-    }
+    (void) samples_per_buffer;
 
-    // just redirect to our callbacl
+    // printf("PLAY: play #%u, fill #%u\n", output_buffer_to_play, output_buffer_to_fill);
+    
+    // fill from our ringbuffer
+    memcpy(outputBuffer, output_buffers[output_buffer_to_play], NUM_FRAMES_PER_PA_BUFFER * num_bytes_per_sample);
+
+    // next
+    output_buffer_to_play = (output_buffer_to_play + 1 ) % NUM_BUFFERS;
+
     return 0;
 }
 
+static void driver_timer_handler(btstack_timer_source_t * ts){
+
+    // printf("FILL: play #%u, fill #%u\n", output_buffer_to_play, output_buffer_to_fill);
+
+    // buffer ready
+    if (output_buffer_to_play != output_buffer_to_fill){
+        (*playback_callback)(output_buffers[output_buffer_to_fill], NUM_FRAMES_PER_PA_BUFFER);
+
+        // next
+        output_buffer_to_fill = (output_buffer_to_fill + 1 ) % NUM_BUFFERS;
+    }
+
+    // re-set timer
+    btstack_run_loop_set_timer(ts, DRIVER_POLL_INTERVAL_MS);
+    btstack_run_loop_add_timer(ts);
+}
+
 static int btstack_audio_portaudio_init(uint8_t channels, uint32_t samplerate){
-    if (media_initialized) return 0;
+
+    num_channels = channels;
+    num_bytes_per_sample = 2 * channels;
 
     // int frames_per_buffer = configuration.frames_per_buffer;
     PaError err;
@@ -107,9 +145,9 @@ static int btstack_audio_portaudio_init(uint8_t channels, uint32_t samplerate){
            NULL,                /* &inputParameters */
            &outputParameters,
            samplerate,
-           0,
+           NUM_FRAMES_PER_PA_BUFFER,
            paClipOff,           /* we won't output out of range samples so don't bother clipping them */
-           portaudioCallback,      /* use callback */
+           portaudio_callback,  /* use callback */
            NULL );   
     
     if (err != paNoError){
@@ -126,6 +164,13 @@ static int btstack_audio_portaudio_init(uint8_t channels, uint32_t samplerate){
 }
 
 static void btstack_audio_portaudio_set_playback_callback(void (*callback)(uint16_t * buffer, uint16_t num_samples)){
+
+    // fill buffer once
+    (*callback)(output_buffer_a, NUM_FRAMES_PER_PA_BUFFER);
+    (*callback)(output_buffer_b, NUM_FRAMES_PER_PA_BUFFER);
+    output_buffer_to_play = 0;
+    output_buffer_to_fill = 2;
+
     /* -- start stream -- */
     PaError err = Pa_StartStream(stream);
     if (err != paNoError){
@@ -133,9 +178,18 @@ static void btstack_audio_portaudio_set_playback_callback(void (*callback)(uint1
         return;
     }
     playback_callback = callback;
+
+    // start timer
+    btstack_run_loop_set_timer_handler(&driver_timer, &driver_timer_handler);
+    btstack_run_loop_set_timer(&driver_timer, DRIVER_POLL_INTERVAL_MS);
+    btstack_run_loop_add_timer(&driver_timer);
 }
 
 static void btstack_audio_portaudio_close(void){
+
+    // stop timer
+    btstack_run_loop_remove_timer(&driver_timer);
+
     log_info("PortAudio: Stream closed");
     PaError err = Pa_StopStream(stream);
     if (err != paNoError){
