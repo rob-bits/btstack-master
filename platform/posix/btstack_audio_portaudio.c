@@ -115,7 +115,7 @@ static void driver_timer_handler(btstack_timer_source_t * ts){
     btstack_run_loop_add_timer(ts);
 }
 
-static int btstack_audio_portaudio_init(uint8_t channels, uint32_t samplerate){
+static int btstack_audio_portaudio_init(uint8_t channels, uint32_t samplerate, void (*playback)(uint16_t * buffer, uint16_t num_samples)){
 
     num_channels = channels;
     num_bytes_per_sample = 2 * channels;
@@ -160,14 +160,16 @@ static int btstack_audio_portaudio_init(uint8_t channels, uint32_t samplerate){
     log_info("PortAudio: Input  latency: %f", stream_info->inputLatency);
     log_info("PortAudio: Output latency: %f", stream_info->outputLatency);
 
+    playback_callback = playback;
+
     return 0;
 }
 
-static void btstack_audio_portaudio_set_playback_callback(void (*callback)(uint16_t * buffer, uint16_t num_samples)){
+static void btstack_audio_portaudio_start_stream(void){
 
     // fill buffer once
-    (*callback)(output_buffer_a, NUM_FRAMES_PER_PA_BUFFER);
-    (*callback)(output_buffer_b, NUM_FRAMES_PER_PA_BUFFER);
+    (*playback_callback)(output_buffer_a, NUM_FRAMES_PER_PA_BUFFER);
+    (*playback_callback)(output_buffer_b, NUM_FRAMES_PER_PA_BUFFER);
     output_buffer_to_play = 0;
     output_buffer_to_fill = 2;
 
@@ -177,7 +179,6 @@ static void btstack_audio_portaudio_set_playback_callback(void (*callback)(uint1
         log_error("Error starting the stream: \"%s\"\n",  Pa_GetErrorText(err));
         return;
     }
-    playback_callback = callback;
 
     // start timer
     btstack_run_loop_set_timer_handler(&driver_timer, &driver_timer_handler);
@@ -209,8 +210,8 @@ static void btstack_audio_portaudio_close(void){
 }
 
 static const btstack_audio_t btstack_audio_portaudio = {
-    /* int (*init)(uint8_t channels, uint32_t baudrate);*/      &btstack_audio_portaudio_init,
-    /* void (*set_playback_callback)(void (*callback)(...));*/  &btstack_audio_portaudio_set_playback_callback,
+    /* int (*init)(..);*/                                       &btstack_audio_portaudio_init,
+    /* void (*start_stream(void));*/                            &btstack_audio_portaudio_start_stream,
     /* void (*close)(void); */                                  &btstack_audio_portaudio_close
 };
 

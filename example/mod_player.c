@@ -63,8 +63,8 @@ int btstack_main(int argc, const char * argv[]){
         printf("BTstack Audio not setup\n");
         return 10;
     }
-    audio->init(2, 44100);
-    audio->set_playback_callback(&audio_playback);
+    audio->init(2, 44100, &audio_playback);
+    audio->start_stream();
 
     return 0;
 }

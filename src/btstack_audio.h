@@ -56,15 +56,15 @@ typedef struct {
 	 * @brief Setup audio codec for specified samplerate and number of channels
 	 * @param Channels (1=mono, 2=stereo)
 	 * @param Sample rate
+	 * @param Playback callback
 	 * @return 1 on success
 	 */
-	int (*init)(uint8_t channels, uint32_t samplerate);
+	int (*init)(uint8_t channels, uint32_t samplerate, void (*playback)(uint16_t * buffer, uint16_t num_samples));
 	
 	/** 
-	 * @brief Set playback callback
-	 * @param callback
+	 * @brief Start stream
 	 */
-	void (*set_playback_callback)(void (*callback)(uint16_t * buffer, uint16_t num_samples));
+	void (*start_stream)(void);
 
 	/**
 	 * @brief Close audio codec
