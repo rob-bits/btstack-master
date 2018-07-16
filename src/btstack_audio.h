@@ -57,9 +57,13 @@ typedef struct {
 	 * @param Channels (1=mono, 2=stereo)
 	 * @param Sample rate
 	 * @param Playback callback
+	 * @param Recording callback
 	 * @return 1 on success
 	 */
-	int (*init)(uint8_t channels, uint32_t samplerate, void (*playback)(uint16_t * buffer, uint16_t num_samples));
+	int (*init)(uint8_t channels,
+				uint32_t samplerate, 
+				void (*playback) (      uint16_t * buffer, uint16_t num_samples),
+				void (*recording)(const uint16_t * buffer, uint16_t num_samples));
 	
 	/** 
 	 * @brief Start stream
