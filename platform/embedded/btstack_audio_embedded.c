@@ -1,0 +1,156 @@
+/*
+ * Copyright (C) 2018 BlueKitchen GmbH
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. Neither the name of the copyright holders nor the names of
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
+ * 4. Any redistribution, use, or modification is done solely for
+ *    personal benefit and not for any commercial purpose or for
+ *    monetary gain.
+ *
+ * THIS SOFTWARE IS PROVIDED BY BLUEKITCHEN GMBH AND CONTRIBUTORS
+ * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+ * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL MATTHIAS
+ * RINGWALD OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
+ * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+ * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
+ * THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ *
+ * Please inquire about commercial licensing options at 
+ * contact@bluekitchen-gmbh.com
+ *
+ */
+
+#define __BTSTACK_FILE__ "btstack_audio_embedded.c"
+
+/*
+ *  btstack_audio_embedded.c
+ *
+ *  Implementation of btstack_audio.h using hal_audio.h for embedded run loop
+ *
+ */
+
+#include "btstack_debug.h"
+#include "btstack_audio.h"
+#include "btstack_run_loop_embedded.h"
+#include "hal_audio.h"
+
+#define DRIVER_POLL_INTERVAL_MS          5
+
+// client
+static void (*playback_callback)(uint16_t * buffer, uint16_t num_samples);
+static void (*recording_callback)(const uint16_t * buffer, uint16_t num_samples);
+
+// timer to fill output ring buffer
+static btstack_timer_source_t  driver_timer;
+
+
+// num buffers playes
+static volatile unsigned int btstack_audio_buffers_free;
+
+static void (*btstack_audio_audio_played)(void){
+    btstack_audio_buffers_free++;
+}
+
+static void (*btstack_audio_audio_recorded)(const uint16_t * samples, uint16_t num_samples){
+    UNUSED(samples);
+    UNUSED(num_samples);
+}
+
+
+static void driver_timer_handler(btstack_timer_source_t * ts){
+
+    // playback buffer ready to fill
+    if (playback_callback){
+        while (btstack_audio_buffers_free){
+            btstack_audio_buffers_free--;
+            uint16_t num_samples = hal_audio_get_output_buffer_size();
+            int16_t * buffer = hal_audio_reserve_output_buffer();
+            (*playback_callback)(buffer, num_samples);
+        }
+    }
+
+    // recording buffer ready to process
+    if (recording_callback){
+    }    
+
+    // re-set timer
+    btstack_run_loop_set_timer(ts, DRIVER_POLL_INTERVAL_MS);
+    btstack_run_loop_add_timer(ts);
+}
+
+static int btstack_audio_portaudio_init(
+    uint8_t channels,
+    uint32_t samplerate, 
+    void (*playback)(uint16_t * buffer, uint16_t num_samples),
+    void (*recording)(const uint16_t * buffer, uint16_t num_samples)
+){
+    playback_callback  = playback;
+    recording_callback = recording;
+
+    hal_audio_init(channels, samplerate);
+
+    if (playback){
+        hal_audio_set_audio_played(&btstack_audio_audio_played);
+    }
+
+    if (recording){
+        hal_audio_set_audio_recorded(&btstack_audio_audio_recorded);
+    }
+}
+
+static void btstack_audio_embedded_start_stream(void){
+
+    if (playback_callback){
+    
+        // pre-fill HAL buffers
+        uint16_t num_buffers = hal_audio_get_num_output_buffers();
+        uint16_t num_samples = hal_audio_get_output_buffer_size();
+        uint16_t i;
+        for (i=0;i<num_buffers;i++){
+            int16_t * buffer = hal_audio_reserve_output_buffer();
+            (*playback_callback)(buffer, num_samples);
+        }
+        btstack_audio_buffers_free = 0;
+
+    }
+
+    // TODO: setup input
+
+    // start playback
+    hal_audio_start();
+
+    // start timer
+    btstack_run_loop_set_timer_handler(&driver_timer, &driver_timer_handler);
+    btstack_run_loop_set_timer(&driver_timer, DRIVER_POLL_INTERVAL_MS);
+    btstack_run_loop_add_timer(&driver_timer);
+}
+
+static void btstack_audio_portaudio_close(void){
+    // stop timer
+    btstack_run_loop_remove_timer(&driver_timer);
+}
+
+static const btstack_audio_t btstack_audio_embedded = {
+    /* int (*init)(..);*/                                       &btstack_audio_embedded_init,
+    /* void (*start_stream(void));*/                            &btstack_audio_embedded_start_stream,
+    /* void (*close)(void); */                                  &btstack_audio_embedded_close
+};
+
+const btstack_audio_t * btstack_audio_embedded_get_instance(void){
+    return &btstack_audio_embedded;
+}
