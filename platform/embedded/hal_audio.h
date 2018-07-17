@@ -43,8 +43,11 @@
 /*
  *  hal_audio.h
  *
- *  Hardware abstraction layer that provides block-wise/circular audio playback and recording
- *
+ *  Hardware abstraction layer that provides circular audio playback and recording
+ *  Assumptions: 
+ *  - num buffers >= 2
+ *  - after start, buffers are played back in sequence 0, 1, .., n
+ *  - after a buffer is played back, the callback is called with tbe buffer index
  */
 
 /**
@@ -58,7 +61,7 @@ void hal_audio_init(uint8_t channels, uint32_t sample_rate);
  * @brief Set callback to call when audio was sent
  * @param handler
  */
-void hal_audio_set_audio_played(void (*handler)(void));
+void hal_audio_set_audio_played(void (*handler)(uint8_t buffer_index));
 
 /**
  * @brief Set callback to call when audio was recorded
@@ -79,10 +82,11 @@ uint16_t hal_audio_get_num_output_buffers(void);
 uint16_t hal_audio_get_num_output_buffer_samples(void);
 
 /**
- * @brief Reserve output buffer
+ * @brief Gey output buffer
+ * @param buffer index
  * @returns buffer
  */
-uint16_t * hal_audio_reserve_output_buffer(void);
+uint16_t * hal_audio_get_output_buffer(uint8_t buffer_index);
 
 /**
  * @brief Start stream

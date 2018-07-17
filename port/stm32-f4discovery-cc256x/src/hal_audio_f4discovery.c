@@ -41,22 +41,20 @@
 #define OUTPUT_BUFFER_NUM_SAMPLES       512
 #define NUM_OUTPUT_BUFFERS              2
 
-static void (*audio_played_handler)(void);
+static void (*audio_played_handler)(uint8_t buffer_index);
 static int started;
-static volatile int playing_buffer;
-static int buffer_to_fill;
 
 // our storage
 static uint16_t output_buffer[NUM_OUTPUT_BUFFERS * OUTPUT_BUFFER_NUM_SAMPLES * 2];   // stereo
 
 void  BSP_AUDIO_OUT_HalfTransfer_CallBack(void){
 	playing_buffer = 1;
-	(*audio_played_handler)();
+	(*audio_played_handler)(0);
 }
 
 void BSP_AUDIO_OUT_TransferComplete_CallBack(void){
 	playing_buffer = 0;
-	(*audio_played_handler)();
+	(*audio_played_handler)(1);
 }
 
 /**
@@ -108,12 +106,8 @@ uint16_t hal_audio_get_num_output_buffer_samples(void){
  * @brief Reserve output buffer
  * @returns buffer
  */
-uint16_t * hal_audio_reserve_output_buffer(void){
-	if (started && buffer_to_fill == playing_buffer) return NULL;
-
-	int16_t * buffer = buffer_to_fill == 0 ? output_buffer : &output_buffer[OUTPUT_BUFFER_NUM_SAMPLES * 2];
-	buffer_to_fill = (buffer_to_fill + 1) & 1;
-	return buffer;
+uint16_t * hal_audio_reserve_output_buffer(uint8_t buffer_index){
+	return buffer_index == 0 ? output_buffer : &output_buffer[OUTPUT_BUFFER_NUM_SAMPLES * 2];
 }
 
 /**
