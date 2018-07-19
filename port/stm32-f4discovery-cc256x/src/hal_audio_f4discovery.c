@@ -48,12 +48,10 @@ static int started;
 static uint16_t output_buffer[NUM_OUTPUT_BUFFERS * OUTPUT_BUFFER_NUM_SAMPLES * 2];   // stereo
 
 void  BSP_AUDIO_OUT_HalfTransfer_CallBack(void){
-	playing_buffer = 1;
 	(*audio_played_handler)(0);
 }
 
 void BSP_AUDIO_OUT_TransferComplete_CallBack(void){
-	playing_buffer = 0;
 	(*audio_played_handler)(1);
 }
 
@@ -64,8 +62,6 @@ void BSP_AUDIO_OUT_TransferComplete_CallBack(void){
  */
 void hal_audio_init(uint8_t channels, uint32_t sample_rate){
 	BSP_AUDIO_OUT_Init(OUTPUT_DEVICE_BOTH, 100, sample_rate);
-	buffer_to_fill = 0;
-	playing_buffer = 0;
 
 	// TODO: configure for circular DMA
 }
@@ -74,7 +70,7 @@ void hal_audio_init(uint8_t channels, uint32_t sample_rate){
  * @brief Set callback to call when audio was sent
  * @param handler
  */
-void hal_audio_set_audio_played(void (*handler)(void)){
+void hal_audio_set_audio_played(void (*handler)(uint8_t buffer_index)){
 	audio_played_handler = handler;
 }
 
@@ -106,8 +102,15 @@ uint16_t hal_audio_get_num_output_buffer_samples(void){
  * @brief Reserve output buffer
  * @returns buffer
  */
-uint16_t * hal_audio_reserve_output_buffer(uint8_t buffer_index){
-	return buffer_index == 0 ? output_buffer : &output_buffer[OUTPUT_BUFFER_NUM_SAMPLES * 2];
+uint16_t * hal_audio_get_output_buffer(uint8_t buffer_index){
+	switch (buffer_index){
+		case 0:
+			return output_buffer;
+		case 1:
+			return &output_buffer[OUTPUT_BUFFER_NUM_SAMPLES * 2];
+		default:
+			return NULL;
+	}
 }
 
 /**
@@ -115,7 +118,6 @@ uint16_t * hal_audio_reserve_output_buffer(uint8_t buffer_index){
  */
 void hal_audio_start(void){
 	started = 1;
-	playing_buffer = 0;
 	BSP_AUDIO_OUT_Play(output_buffer, OUTPUT_BUFFER_NUM_SAMPLES);
 }
 
