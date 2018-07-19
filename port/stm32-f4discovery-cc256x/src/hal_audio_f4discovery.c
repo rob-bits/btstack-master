@@ -61,7 +61,7 @@ void BSP_AUDIO_OUT_TransferComplete_CallBack(void){
  * @param Sample rate
  */
 void hal_audio_init(uint8_t channels, uint32_t sample_rate){
-	BSP_AUDIO_OUT_Init(OUTPUT_DEVICE_BOTH, 100, sample_rate);
+	BSP_AUDIO_OUT_Init(OUTPUT_DEVICE_BOTH, 80, sample_rate);
 
 	// TODO: configure for circular DMA
 }
@@ -118,7 +118,8 @@ uint16_t * hal_audio_get_output_buffer(uint8_t buffer_index){
  */
 void hal_audio_start(void){
 	started = 1;
-	BSP_AUDIO_OUT_Play(output_buffer, OUTPUT_BUFFER_NUM_SAMPLES);
+	// BSP_AUDIO_OUT_Play gets number bytes -> 1 frame - 16 bit/stereo = 4 bytes
+	BSP_AUDIO_OUT_Play(output_buffer, NUM_OUTPUT_BUFFERS * OUTPUT_BUFFER_NUM_SAMPLES * 4);
 }
 
 /**
