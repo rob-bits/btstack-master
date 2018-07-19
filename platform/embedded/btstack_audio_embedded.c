@@ -63,11 +63,11 @@ static          unsigned int output_buffer_to_fill;
 static          unsigned int output_buffer_count;
 static          unsigned int output_buffer_samples;
 
-static void (*btstack_audio_audio_played)(uint8_t buffer_index){
+static void btstack_audio_audio_played(uint8_t buffer_index){
     output_buffer_to_play = (buffer_index + 1) % output_buffer_count;
 }
 
-static void (*btstack_audio_audio_recorded)(const uint16_t * samples, uint16_t num_samples){
+static void btstack_audio_audio_recorded(const uint16_t * samples, uint16_t num_samples){
     UNUSED(samples);
     UNUSED(num_samples);
 }
@@ -78,8 +78,8 @@ static void driver_timer_handler(btstack_timer_source_t * ts){
     // playback buffer ready to fill
     if (playback_callback && output_buffer_to_play != output_buffer_to_fill){
         // fill buffer
-        int16_t * buffer = hal_audio_get_output_buffer(output_buffer_to_fill);
-        (*playback_callback)(buffer, output_buffer_samples);
+        int16_t * buffer = (int16_t*) hal_audio_get_output_buffer(output_buffer_to_fill);
+        (*playback_callback)((uint16_t*) buffer, output_buffer_samples);
 
         // next
         output_buffer_to_fill = (output_buffer_to_fill + 1 ) % output_buffer_count;
@@ -112,6 +112,7 @@ static int btstack_audio_embedded_init(
     if (recording){
         hal_audio_set_audio_recorded(&btstack_audio_audio_recorded);
     }
+    return 0;
 }
 
 static void btstack_audio_embedded_start_stream(void){
@@ -124,7 +125,7 @@ static void btstack_audio_embedded_start_stream(void){
         // pre-fill HAL buffers
         uint16_t i;
         for (i=0;i<output_buffer_count;i++){
-            int16_t * buffer = hal_audio_get_output_buffer();
+            int16_t * buffer = hal_audio_get_output_buffer(i);
             (*playback_callback)(buffer, output_buffer_samples);
         }
 
