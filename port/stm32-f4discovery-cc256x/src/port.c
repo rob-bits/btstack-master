@@ -6,6 +6,7 @@
 #include "port.h"
 #include "btstack.h"
 #include "btstack_debug.h"
+#include "btstack_audio.h"
 #include "btstack_chipset_cc256x.h"
 #include "btstack_run_loop_embedded.h"
 #include "btstack_tlv.h"
@@ -340,6 +341,9 @@ void port_main(void){
 
     // setup LE Device DB using TLV
     le_device_db_tlv_configure(btstack_tlv_impl, &btstack_tlv_flash_bank_context);
+
+    // setup audio
+   	btstack_audio_set_instance(btstack_audio_embedded_get_instance());
 
     // inform about BTstack state
     hci_event_callback_registration.callback = &packet_handler;
