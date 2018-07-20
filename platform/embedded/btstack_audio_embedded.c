@@ -44,10 +44,14 @@
  *
  */
 
+#include "btstack_config.h"
 #include "btstack_debug.h"
 #include "btstack_audio.h"
 #include "btstack_run_loop_embedded.h"
 #include "hal_audio.h"
+
+// allow to compile all files in embedded folder even if there's no audio support
+#ifdef HAVE_HAL_AUDIO
 
 #define DRIVER_POLL_INTERVAL_MS          5
 
@@ -160,3 +164,5 @@ static const btstack_audio_t btstack_audio_embedded = {
 const btstack_audio_t * btstack_audio_embedded_get_instance(void){
     return &btstack_audio_embedded;
 }
+
+#endif 

@@ -342,9 +342,11 @@ void port_main(void){
     // setup LE Device DB using TLV
     le_device_db_tlv_configure(btstack_tlv_impl, &btstack_tlv_flash_bank_context);
 
+#ifdef HAVE_HAL_AUDIO
     // setup audio
    	btstack_audio_set_instance(btstack_audio_embedded_get_instance());
-
+#endif
+   	
     // inform about BTstack state
     hci_event_callback_registration.callback = &packet_handler;
     hci_add_event_handler(&hci_event_callback_registration);
