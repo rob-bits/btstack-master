@@ -62,8 +62,8 @@ typedef struct {
 	 */
 	int (*init)(uint8_t channels,
 				uint32_t samplerate, 
-				void (*playback) (      uint16_t * buffer, uint16_t num_samples),
-				void (*recording)(const uint16_t * buffer, uint16_t num_samples));
+				void (*playback) (      int16_t * buffer, uint16_t num_samples),
+				void (*recording)(const int16_t * buffer, uint16_t num_samples));
 	
 	/** 
 	 * @brief Start stream

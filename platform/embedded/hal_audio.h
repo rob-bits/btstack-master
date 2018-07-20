@@ -67,7 +67,7 @@ void hal_audio_set_audio_played(void (*handler)(uint8_t buffer_index));
  * @brief Set callback to call when audio was recorded
  * @param handler
  */
-void hal_audio_set_audio_recorded(void (*handler)(const uint16_t * samples, uint16_t num_samples));
+void hal_audio_set_audio_recorded(void (*handler)(const int16_t * samples, uint16_t num_samples));
 
 /**
  * @brief Get number of output buffers in HAL

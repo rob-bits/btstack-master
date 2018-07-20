@@ -52,8 +52,8 @@
 #define DRIVER_POLL_INTERVAL_MS          5
 
 // client
-static void (*playback_callback)(uint16_t * buffer, uint16_t num_samples);
-static void (*recording_callback)(const uint16_t * buffer, uint16_t num_samples);
+static void (*playback_callback)(int16_t * buffer, uint16_t num_samples);
+static void (*recording_callback)(const int16_t * buffer, uint16_t num_samples);
 
 // timer to fill output ring buffer
 static btstack_timer_source_t  driver_timer;
@@ -78,8 +78,8 @@ static void driver_timer_handler(btstack_timer_source_t * ts){
     // playback buffer ready to fill
     if (playback_callback && output_buffer_to_play != output_buffer_to_fill){
         // fill buffer
-        int16_t * buffer = (int16_t*) hal_audio_get_output_buffer(output_buffer_to_fill);
-        (*playback_callback)((uint16_t*) buffer, output_buffer_samples);
+        int16_t * buffer = hal_audio_get_output_buffer(output_buffer_to_fill);
+        (*playback_callback)(buffer, output_buffer_samples);
 
         // next
         output_buffer_to_fill = (output_buffer_to_fill + 1 ) % output_buffer_count;
@@ -97,8 +97,8 @@ static void driver_timer_handler(btstack_timer_source_t * ts){
 static int btstack_audio_embedded_init(
     uint8_t channels,
     uint32_t samplerate, 
-    void (*playback)(uint16_t * buffer, uint16_t num_samples),
-    void (*recording)(const uint16_t * buffer, uint16_t num_samples)
+    void (*playback)(int16_t * buffer, uint16_t num_samples),
+    void (*recording)(const int16_t * buffer, uint16_t num_samples)
 ){
     playback_callback  = playback;
     recording_callback = recording;

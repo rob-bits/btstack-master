@@ -84,8 +84,8 @@ static btstack_ring_buffer_t decoded_audio_ring_buffer;
 static int audio_stream_started;
 
 // temp storage of lower-layer request
-static uint16_t * request_buffer;
-static int        request_samples;
+static int16_t * request_buffer;
+static int       request_samples;
 
 // WAV File
 #ifdef STORE_SBC_TO_WAV_FILE    
@@ -155,7 +155,7 @@ static uint16_t avrcp_cid = 0;
 static uint8_t  avrcp_connected = 0;
 static uint8_t  sdp_avrcp_controller_service_buffer[200];
 
-static void playback_handler(uint16_t * buffer, uint16_t num_samples){
+static void playback_handler(int16_t * buffer, uint16_t num_samples){
     
     // called from lower-layer but guaranteed to be on main thread
 

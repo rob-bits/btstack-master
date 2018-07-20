@@ -45,7 +45,7 @@ static void (*audio_played_handler)(uint8_t buffer_index);
 static int started;
 
 // our storage
-static uint16_t output_buffer[NUM_OUTPUT_BUFFERS * OUTPUT_BUFFER_NUM_SAMPLES * 2];   // stereo
+static int16_t output_buffer[NUM_OUTPUT_BUFFERS * OUTPUT_BUFFER_NUM_SAMPLES * 2];   // stereo
 
 void  BSP_AUDIO_OUT_HalfTransfer_CallBack(void){
 	(*audio_played_handler)(0);
@@ -78,7 +78,7 @@ void hal_audio_set_audio_played(void (*handler)(uint8_t buffer_index)){
  * @brief Set callback to call when audio was recorded
  * @param handler
  */
-void hal_audio_set_audio_recorded(void (*handler)(const uint16_t * samples, uint16_t num_samples)){
+void hal_audio_set_audio_recorded(void (*handler)(const int16_t * samples, uint16_t num_samples)){
 	UNUSED(handler);
 }
 
@@ -102,7 +102,7 @@ uint16_t hal_audio_get_num_output_buffer_samples(void){
  * @brief Reserve output buffer
  * @returns buffer
  */
-uint16_t * hal_audio_get_output_buffer(uint8_t buffer_index){
+int16_t * hal_audio_get_output_buffer(uint8_t buffer_index){
 	switch (buffer_index){
 		case 0:
 			return output_buffer;

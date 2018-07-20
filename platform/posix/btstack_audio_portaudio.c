@@ -62,23 +62,23 @@ static int                    num_bytes_per_sample;
 static PaStream * stream;
 
 // client
-static void (*playback_callback)(uint16_t * buffer, uint16_t num_samples);
-static void (*recording_callback)(const uint16_t * buffer, uint16_t num_samples);
+static void (*playback_callback)(int16_t * buffer, uint16_t num_samples);
+static void (*recording_callback)(const int16_t * buffer, uint16_t num_samples);
 
 // output buffer
-static uint16_t               output_buffer_a[NUM_FRAMES_PER_PA_BUFFER * 2];   // stereo
-static uint16_t               output_buffer_b[NUM_FRAMES_PER_PA_BUFFER * 2];   // stereo
-static uint16_t               output_buffer_c[NUM_FRAMES_PER_PA_BUFFER * 2];   // stereo
-static uint16_t             * output_buffers[NUM_OUTPUT_BUFFERS] = { output_buffer_a, output_buffer_b, output_buffer_c};
-static int                    output_buffer_to_play;
-static int                    output_buffer_to_fill;
+static int16_t               output_buffer_a[NUM_FRAMES_PER_PA_BUFFER * 2];   // stereo
+static int16_t               output_buffer_b[NUM_FRAMES_PER_PA_BUFFER * 2];   // stereo
+static int16_t               output_buffer_c[NUM_FRAMES_PER_PA_BUFFER * 2];   // stereo
+static int16_t             * output_buffers[NUM_OUTPUT_BUFFERS] = { output_buffer_a, output_buffer_b, output_buffer_c};
+static int                   output_buffer_to_play;
+static int                   output_buffer_to_fill;
 
 // input buffer
-static uint16_t               input_buffer_a[NUM_FRAMES_PER_PA_BUFFER * 2];   // stereo
-static uint16_t               input_buffer_b[NUM_FRAMES_PER_PA_BUFFER * 2];   // stereo
-static uint16_t             * input_buffers[NUM_INPUT_BUFFERS] = { input_buffer_a, input_buffer_b};
-static int                    input_buffer_to_record;
-static int                    input_buffer_to_fill;
+static int16_t               input_buffer_a[NUM_FRAMES_PER_PA_BUFFER * 2];   // stereo
+static int16_t               input_buffer_b[NUM_FRAMES_PER_PA_BUFFER * 2];   // stereo
+static int16_t             * input_buffers[NUM_INPUT_BUFFERS] = { input_buffer_a, input_buffer_b};
+static int                   input_buffer_to_record;
+static int                   input_buffer_to_fill;
 
 
 // timer to fill output ring buffer
@@ -148,8 +148,8 @@ static void driver_timer_handler(btstack_timer_source_t * ts){
 static int btstack_audio_portaudio_init(
     uint8_t channels,
     uint32_t samplerate, 
-    void (*playback)(uint16_t * buffer, uint16_t num_samples),
-    void (*recording)(const uint16_t * buffer, uint16_t num_samples)
+    void (*playback)(int16_t * buffer, uint16_t num_samples),
+    void (*recording)(const int16_t * buffer, uint16_t num_samples)
 ){
 
     num_channels = channels;
