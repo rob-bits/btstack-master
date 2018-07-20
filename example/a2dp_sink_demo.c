@@ -564,7 +564,7 @@ static void avrcp_controller_packet_handler(uint8_t packet_type, uint16_t channe
     printf("AVRCP demo: command status: %s, ", avrcp_ctype2str(status));
     switch (packet[2]){
         case AVRCP_SUBEVENT_NOTIFICATION_PLAYBACK_POS_CHANGED:
-            printf("notification, playback position changed, position %d ms\n", avrcp_subevent_notification_playback_pos_changed_get_playback_position_ms(packet));
+            printf("notification, playback position changed, position %d ms\n", (unsigned int) avrcp_subevent_notification_playback_pos_changed_get_playback_position_ms(packet));
             break;
         case AVRCP_SUBEVENT_NOTIFICATION_PLAYBACK_STATUS_CHANGED:
             printf("notification, playback status changed %s\n", avrcp_play_status2str(avrcp_subevent_notification_playback_status_changed_get_play_status(packet)));
