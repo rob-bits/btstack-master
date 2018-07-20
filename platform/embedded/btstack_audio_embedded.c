@@ -147,6 +147,8 @@ static void btstack_audio_embedded_start_stream(void){
 static void btstack_audio_embedded_close(void){
     // stop timer
     btstack_run_loop_remove_timer(&driver_timer);
+    // close HAL
+    hal_audio_close();
 }
 
 static const btstack_audio_t btstack_audio_embedded = {
