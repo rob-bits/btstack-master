@@ -183,7 +183,7 @@ static void sco_demo_msbc_fill_sine_audio_frame(void){
 #endif
 #endif
 
-static void playback_callback(uint16_t * buffer, uint16_t num_samples){
+static void playback_callback(int16_t * buffer, uint16_t num_samples){
 
     // config based on codec
     int bytes_to_copy   = num_samples * BYTES_PER_FRAME;
@@ -223,7 +223,7 @@ static void playback_callback(uint16_t * buffer, uint16_t num_samples){
 }
 
 #ifdef USE_AUDIO_INPUT
-static void recording_callback(const uint16_t * buffer, uint16_t num_samples){
+static void recording_callback(const int16_t * buffer, uint16_t num_samples){
     btstack_ring_buffer_write(&audio_input_ring_buffer, (uint8_t *)buffer, num_samples * 2);
 }
 #endif
@@ -244,7 +244,7 @@ static int audio_initialize(int sample_rate){
     const btstack_audio_t * audio = btstack_audio_get_instance();
     if (!audio) return 0;
 
-    void (*recording)(const uint16_t * buffer, uint16_t num_samples) = NULL;
+    void (*recording)(const int16_t * buffer, uint16_t num_samples) = NULL;
 #ifdef USE_AUDIO_INPUT
     recording = &recording_callback;
 #endif
@@ -518,19 +518,21 @@ void sco_demo_send(hci_con_handle_t sco_handle){
 
         if (!audio_input_paused){
             int num_samples = hfp_msbc_num_audio_samples_per_frame();
-            if (hfp_msbc_can_encode_audio_frame_now() && btstack_ring_buffer_bytes_available(&audio_input_ring_buffer) >= (num_samples * BYTES_PER_FRAME)){
+            if (hfp_msbc_can_encode_audio_frame_now() && btstack_ring_buffer_bytes_available(&audio_input_ring_buffer) >= (unsigned int)(num_samples * BYTES_PER_FRAME)){
                 int16_t sample_buffer[num_samples];
                 uint32_t bytes_read;
                 btstack_ring_buffer_read(&audio_input_ring_buffer, (uint8_t*) sample_buffer, num_samples * BYTES_PER_FRAME, &bytes_read);
                 hfp_msbc_encode_audio_frame(sample_buffer);
                 num_audio_frames++;
             }
+            if (hfp_msbc_num_bytes_in_stream() < sco_payload_length){
+                log_error("mSBC stream should not be empty.");
+            }
         }
 
-        if (hfp_msbc_num_bytes_in_stream() < sco_payload_length){
-            log_error("mSBC stream should not be empty.");
+        if (audio_input_paused || hfp_msbc_num_bytes_in_stream() < sco_payload_length){
             memset(sco_packet + 3, 0, sco_payload_length);
-            pa_input_paused = 1;
+            audio_input_paused = 1;
         } else {
             hfp_msbc_read_from_stream(sco_packet + 3, sco_payload_length);
             if (msbc_file_out){
@@ -542,26 +544,26 @@ void sco_demo_send(hci_con_handle_t sco_handle){
     } else {
         // CVSD
 
-        log_info("send: bytes avail %u, free %u, counter %u", btstack_ring_buffer_bytes_available(&pa_input_ring_buffer), btstack_ring_buffer_bytes_free(&pa_input_ring_buffer), pa_input_counter);
+        log_info("send: bytes avail %u, free %u", btstack_ring_buffer_bytes_available(&audio_input_ring_buffer), btstack_ring_buffer_bytes_free(&audio_input_ring_buffer));
         // fill with silence while paused
         int bytes_to_copy = sco_payload_length;
-        if (pa_input_paused){
-            if (btstack_ring_buffer_bytes_available(&pa_input_ring_buffer) >= CVSD_PA_PREBUFFER_BYTES){
+        if (audio_input_paused){
+            if (btstack_ring_buffer_bytes_available(&audio_input_ring_buffer) >= CVSD_PA_PREBUFFER_BYTES){
                 // resume sending
-                pa_input_paused = 0;
+                audio_input_paused = 0;
             }
         }
 
         // get data from ringbuffer
         uint16_t pos = 0;
         uint8_t * sample_data = &sco_packet[3];
-        if (!pa_input_paused){
+        if (!audio_input_paused){
             uint32_t bytes_read = 0;
-            btstack_ring_buffer_read(&pa_input_ring_buffer, sample_data, bytes_to_copy, &bytes_read);
+            btstack_ring_buffer_read(&audio_input_ring_buffer, sample_data, bytes_to_copy, &bytes_read);
             // flip 16 on big endian systems
             // @note We don't use (uint16_t *) casts since all sample addresses are odd which causes crahses on some systems
             if (btstack_is_big_endian()){
-                int i;
+                unsigned int i;
                 for (i=0;i<bytes_read;i+=2){
                     uint8_t tmp        = sample_data[i*2];
                     sample_data[i*2]   = sample_data[i*2+1];
@@ -575,7 +577,7 @@ void sco_demo_send(hci_con_handle_t sco_handle){
         // fill with 0 if not enough
         if (bytes_to_copy){
             memset(sample_data + pos, 0, bytes_to_copy);
-            pa_input_paused = 1;
+            audio_input_paused = 1;
         }
     }
 #else
