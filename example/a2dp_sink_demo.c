@@ -352,6 +352,7 @@ static int media_processing_init(avdtp_media_codec_configuration_sbc_t configura
 static void media_processing_close(void){
     if (!media_initialized) return;
     media_initialized = 0;
+    audio_stream_started = 0;
 
 #ifdef STORE_SBC_TO_WAV_FILE                  
     wav_writer_close();
@@ -409,7 +410,7 @@ static void handle_l2cap_media_data_packet(uint8_t seid, uint8_t *packet, uint16
     }
 
     // dump
-    printf("%6u %03u %d\n",  (int) btstack_run_loop_get_time_ms(), sbc_frames_in_buffer, sbc_samples_fix);
+    // printf("%6u %03u %d\n",  (int) btstack_run_loop_get_time_ms(), sbc_frames_in_buffer, sbc_samples_fix);
     // log_info("%03u %d", sbc_frames_in_buffer, sbc_samples_fix);
 
 #ifdef STORE_SBC_TO_SBC_FILE
