@@ -67,11 +67,10 @@ static void btstack_audio_audio_played(uint8_t buffer_index){
     output_buffer_to_play = (buffer_index + 1) % output_buffer_count;
 }
 
-static void btstack_audio_audio_recorded(const uint16_t * samples, uint16_t num_samples){
+static void btstack_audio_audio_recorded(const int16_t * samples, uint16_t num_samples){
     UNUSED(samples);
     UNUSED(num_samples);
 }
-
 
 static void driver_timer_handler(btstack_timer_source_t * ts){
 
@@ -103,15 +102,16 @@ static int btstack_audio_embedded_init(
     playback_callback  = playback;
     recording_callback = recording;
 
-    hal_audio_init(channels, samplerate);
-
-    if (playback){
-        hal_audio_set_audio_played(&btstack_audio_audio_played);
+    void (*buffer_played_callback)  (uint8_t buffer_index)                         = NULL;
+    void (*buffer_recorded_callback)(const int16_t * buffer, uint16_t num_samples) = NULL;
+    if (playback) {
+        buffer_played_callback = &btstack_audio_audio_played;
     }
-
-    if (recording){
-        hal_audio_set_audio_recorded(&btstack_audio_audio_recorded);
+    if (recording) {
+        buffer_recorded_callback = &btstack_audio_audio_recorded;
     }
+    hal_audio_init(channels, samplerate, buffer_played_callback, buffer_recorded_callback);
+
     return 0;
 }
 
