@@ -121,6 +121,8 @@ static btstack_sbc_decoder_state_t decoder_state;
 
 static btstack_cvsd_plc_state_t cvsd_plc_state;
 
+#define MAX_NUM_MSBC_SAMPLES (16*8)
+
 #ifdef ENABLE_HFP_WIDE_BAND_SPEECH
 FILE * msbc_file_in;
 FILE * msbc_file_out;
@@ -172,12 +174,11 @@ static void sco_demo_sine_wave_int16_at_16000_hz_host_endian(unsigned int num_sa
     }
 }
 
-#define MAX_NUM_SAMPLES (16*8)
 static void sco_demo_msbc_fill_sine_audio_frame(void){
     if (!hfp_msbc_can_encode_audio_frame_now()) return;
     int num_samples = hfp_msbc_num_audio_samples_per_frame();
-    if (num_samples > MAX_NUM_SAMPLES) return;
-    int16_t sample_buffer[MAX_NUM_SAMPLES];
+    if (num_samples > MAX_NUM_MSBC_SAMPLES) return;
+    int16_t sample_buffer[MAX_NUM_MSBC_SAMPLES];
     sco_demo_sine_wave_int16_at_16000_hz_host_endian(num_samples, sample_buffer);
     hfp_msbc_encode_audio_frame(sample_buffer);
     num_audio_frames++;
@@ -520,8 +521,9 @@ void sco_demo_send(hci_con_handle_t sco_handle){
 
         if (!audio_input_paused){
             int num_samples = hfp_msbc_num_audio_samples_per_frame();
+            if (num_samples > MAX_NUM_MSBC_SAMPLES) return; // assert
             if (hfp_msbc_can_encode_audio_frame_now() && btstack_ring_buffer_bytes_available(&audio_input_ring_buffer) >= (unsigned int)(num_samples * BYTES_PER_FRAME)){
-                int16_t sample_buffer[num_samples];
+                int16_t sample_buffer[MAX_NUM_MSBC_SAMPLES];
                 uint32_t bytes_read;
                 btstack_ring_buffer_read(&audio_input_ring_buffer, (uint8_t*) sample_buffer, num_samples * BYTES_PER_FRAME, &bytes_read);
                 hfp_msbc_encode_audio_frame(sample_buffer);
