@@ -196,9 +196,8 @@ static void playback_callback(int16_t * buffer, uint16_t num_samples){
             prebuffer_bytes = MSBC_PA_PREBUFFER_BYTES;
             break;
         case HFP_CODEC_CVSD:
-            prebuffer_bytes = CVSD_PA_PREBUFFER_BYTES;
-            break;
         default:
+            prebuffer_bytes = CVSD_PA_PREBUFFER_BYTES;
             break;
     }
 
