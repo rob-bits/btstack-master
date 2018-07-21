@@ -859,6 +859,7 @@ static void l2cap_emit_can_send_now(btstack_packet_handler_t packet_handler, uin
     event[1] = sizeof(event) - 2;
     little_endian_store_16(event, 2, channel);
     hci_dump_packet( HCI_EVENT_PACKET, 0, event, sizeof(event));
+    //log_info("L2CAP_EVENT_CAN_SEND_NOW for channel = 0x%02x",channel);
     packet_handler(HCI_EVENT_PACKET, channel, event, sizeof(event));
 }
 
@@ -950,7 +951,11 @@ static l2cap_channel_t * l2cap_get_channel_for_local_cid(uint16_t local_cid){
 
 void l2cap_request_can_send_now_event(uint16_t local_cid){
     l2cap_channel_t *channel = l2cap_get_channel_for_local_cid(local_cid);
-    if (!channel) return;
+    if (!channel)
+    {
+        log_error("No available channel for send request cid %d", local_cid);
+        return;
+    }
     channel->waiting_for_can_send_now = 1;
 #ifdef ENABLE_L2CAP_ENHANCED_RETRANSMISSION_MODE
     if (channel->mode == L2CAP_CHANNEL_MODE_ENHANCED_RETRANSMISSION){

@@ -560,7 +560,11 @@ int hci_can_send_acl_packet_now(hci_con_handle_t con_handle){
 
 #ifdef ENABLE_CLASSIC
 int hci_can_send_acl_classic_packet_now(void){
-    if (hci_stack->hci_packet_buffer_reserved) return 0;
+    if (hci_stack->hci_packet_buffer_reserved)
+    {
+        log_error("hci_stack->hci_packet_buffer_reserved % d", hci_stack->hci_packet_buffer_reserved);
+        return 0;
+    }
     return hci_can_send_prepared_acl_packet_for_address_type(BD_ADDR_TYPE_CLASSIC);
 }
 
@@ -3287,12 +3291,15 @@ static void hci_run(void){
                
 #ifdef ENABLE_CLASSIC
             case RECEIVED_CONNECTION_REQUEST:
+                //hci_send_cmd(&hci_reject_connection_request, hci_stack->decline_addr, 0);
+//                connection->state = SENT_CANCEL_CONNECTION;
+//                hci_send_cmd(&hci_le_create_connection_cancel);
                 connection->role  = HCI_ROLE_SLAVE;
                 if (connection->address_type == BD_ADDR_TYPE_CLASSIC){
                     log_info("sending hci_accept_connection_request, remote eSCO %u", connection->remote_supported_feature_eSCO);
                     connection->state = ACCEPTED_CONNECTION_REQUEST;
                     hci_send_cmd(&hci_accept_connection_request, connection->address, hci_stack->master_slave_policy);
-                } 
+                }
                 return;
 #endif
 

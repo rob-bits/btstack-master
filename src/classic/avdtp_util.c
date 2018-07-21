@@ -1037,7 +1037,11 @@ uint8_t avdtp_request_can_send_now_acceptor(avdtp_connection_t * connection, uin
 }
 
 uint8_t avdtp_request_can_send_now_initiator(avdtp_connection_t * connection, uint16_t l2cap_cid){
-    if (!connection) return AVDTP_CONNECTION_DOES_NOT_EXIST;
+    if (!connection)
+    {
+        printf("no connection");
+        return AVDTP_CONNECTION_DOES_NOT_EXIST;
+    }
     connection->wait_to_send_initiator = 1;
     l2cap_request_can_send_now_event(l2cap_cid);
     return ERROR_CODE_SUCCESS;

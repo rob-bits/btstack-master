@@ -291,6 +291,7 @@ void avdtp_handle_can_send_now(avdtp_connection_t * connection, uint16_t l2cap_c
                         stream_endpoint->state = AVDTP_STREAM_ENDPOINT_W4_L2CAP_FOR_MEDIA_DISCONNECTED;
                         avdtp_request_can_send_now_self(connection, connection->l2cap_signaling_cid);
                         l2cap_disconnect(stream_endpoint->l2cap_media_cid, 0);
+                        log_error("AVDTP: disconnecting for l2cap_media_cid %d", stream_endpoint->l2cap_media_cid);
                         return;
                     }
                 }
@@ -298,6 +299,7 @@ void avdtp_handle_can_send_now(avdtp_connection_t * connection, uint16_t l2cap_c
             connection->disconnect = 0;
             connection->state = AVDTP_SIGNALING_CONNECTION_W4_L2CAP_DISCONNECTED;
             l2cap_disconnect(connection->l2cap_signaling_cid, 0);
+            log_error("AVDTP: disconnecting for l2cap_signaling_cid %d", connection->l2cap_signaling_cid);
             return;
         }
     }
@@ -494,7 +496,7 @@ void avdtp_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet
     btstack_linked_list_t * avdtp_connections = &context->connections;
     btstack_linked_list_t * stream_endpoints =  &context->stream_endpoints;
     handle_media_data = context->handle_media_data;
-    // log_info("avdtp_packet_handler packet type %02x, event %02x ", packet_type, hci_event_packet_get_type(packet));
+    //log_info("avdtp_packet_handler packet type %02x, event %02x, channel: 0x%02x ", packet_type, hci_event_packet_get_type(packet));
     switch (packet_type) {
         case L2CAP_DATA_PACKET:
             connection = avdtp_connection_for_l2cap_signaling_cid(channel, context);
@@ -709,6 +711,8 @@ void avdtp_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet
                         if (!stream_endpoint->connection) break;
                         connection = stream_endpoint->connection;
                     }
+                    //log_info("Handling can send now for cid: %02x", channel);
+                    //log_info("seid: %d", connection->local_seid);
                     avdtp_handle_can_send_now(connection, channel, context);
                     break;
                 default:
@@ -756,7 +760,7 @@ uint8_t avdtp_open_stream(uint16_t avdtp_cid, uint8_t local_seid, uint8_t remote
     }
 
     if (stream_endpoint->remote_sep.seid != remote_seid){
-        log_error("avdtp_media_connect: no remote sep with seid %d registered with the stream endpoint", remote_seid);
+        log_error("avdtp_media_connect: no remote sep %d with seid %d registered with the stream endpoint", stream_endpoint->remote_sep.seid, remote_seid);
         return AVDTP_SEID_DOES_NOT_EXIST;
     }
     
@@ -912,6 +916,7 @@ uint8_t avdtp_get_capabilities(uint16_t avdtp_cid, uint8_t remote_seid, avdtp_co
     }
     if (connection->state != AVDTP_SIGNALING_CONNECTION_OPENED || 
         connection->initiator_connection_state != AVDTP_SIGNALING_CONNECTION_INITIATOR_IDLE) {
+        log_error("Wrong state, connection->state = %d, connection->initiator_connection_state = %d", connection->state, connection->initiator_connection_state);
         return AVDTP_CONNECTION_IN_WRONG_STATE;
     }
     
@@ -975,8 +980,9 @@ uint8_t avdtp_set_configuration(uint16_t avdtp_cid, uint8_t local_seid, uint8_t 
     } 
     if (stream_endpoint->state >= AVDTP_STREAM_ENDPOINT_CONFIGURED){
         log_error("Stream endpoint seid %d in wrong state %d", local_seid, stream_endpoint->state);
-        return AVDTP_STREAM_ENDPOINT_IN_WRONG_STATE;
+        //return AVDTP_STREAM_ENDPOINT_IN_WRONG_STATE;
     }
+    log_error("Connection OK for AVDTP cid 0x%02x requesting AVDTP_INITIATOR_W2_SET_CONFIGURATION, connection->l2cap_signaling_cid = %d ", avdtp_cid, connection->l2cap_signaling_cid);
     connection->active_stream_endpoint = (void*) stream_endpoint;    
     connection->is_configuration_initiated_locally = 1;
     connection->is_initiator = 1;

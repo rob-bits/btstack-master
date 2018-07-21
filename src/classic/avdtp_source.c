@@ -166,7 +166,7 @@ void avdtp_source_init(avdtp_context_t * avdtp_context){
         log_error("avdtp_source_context is NULL");
         return;
     }
-    avdtp_source_context = avdtp_context;
+    avdtp_source_context = avdtp_context; //store the avdtp_contex reference
     avdtp_source_context->stream_endpoints = NULL;
     avdtp_source_context->connections = NULL;
     avdtp_source_context->stream_endpoints_id_counter = 0;

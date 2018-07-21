@@ -1007,7 +1007,7 @@ typedef uint8_t sm_key_t[16];
 #define HCI_EVENT_GOEP_META                                0xED
 #define HCI_EVENT_PBAP_META                                0xEE
 #define HCI_EVENT_HID_META                                 0xEF
-#define HCI_EVENT_A2DP_META                                0xF0
+#define HCI_EVENT_A2DP_META                                0xF0 //dec 240
 #define HCI_EVENT_HIDS_META                                0xF1
 
 // Potential other meta groups

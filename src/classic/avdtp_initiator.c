@@ -306,12 +306,17 @@ void avdtp_initiator_stream_config_subsm_run(avdtp_connection_t * connection, av
     sent = 1;
     
     avdtp_stream_endpoint_t * stream_endpoint = NULL;
-    
+    //log_info("The connection->remote_seid: %d",connection->remote_seid);
     stream_endpoint = avdtp_stream_endpoint_associated_with_acp_seid(connection->remote_seid, context);
+    //stream_endpoint = avdtp_stream_endpoint_associated_with_acp_seid(connection->local_seid, context);
     if (!stream_endpoint){
         stream_endpoint = avdtp_stream_endpoint_with_seid(connection->local_seid, context);
     }
-    if (!stream_endpoint) return;
+    if (!stream_endpoint)
+        {
+            log_info("No stream endpoint associated with acp seid 0x%02x",connection->remote_seid);
+            return;
+        }
     
     avdtp_initiator_stream_endpoint_state_t stream_endpoint_state = stream_endpoint->initiator_config_state;
     stream_endpoint->initiator_config_state = AVDTP_INITIATOR_W4_ANSWER;
@@ -374,6 +379,7 @@ void avdtp_initiator_stream_config_subsm_run(avdtp_connection_t * connection, av
         }
     }
 
+    log_info("The stream_endpoint_state: %d",stream_endpoint_state);
     switch (stream_endpoint_state){
         case AVDTP_INITIATOR_W2_SET_CONFIGURATION:
         case AVDTP_INITIATOR_W2_RECONFIGURE_STREAM_WITH_SEID:{

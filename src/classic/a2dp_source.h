@@ -65,6 +65,11 @@ extern "C" {
 void a2dp_source_create_sdp_record(uint8_t * service, uint32_t service_record_handle, uint16_t supported_features, const char * service_name, const char * service_provider_name);
 
 /**
+ * @brief getter function up A2DP Source device.
+ */
+avdtp_context_t * a2dp_get_source_context(void);
+
+/**
  * @brief Initialize up A2DP Source device.
  */
 void a2dp_source_init(void);

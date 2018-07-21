@@ -201,6 +201,22 @@ static void a2dp_signaling_emit_control_command(btstack_packet_handler_t callbac
 }
 
 static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
+    uint8_t * pRemoteAdd;
+    //printf("A2DP - in the function %s \n", __func__);
+    //printf("A2DP - channel: %d, packet type: %d, event: %d, sc.active_remote_sep_index: %d remote_seps_index: %d \n", channel,packet_type,packet[2], sc.active_remote_sep_index, remote_seps_index);
+//    if(sc.local_stream_endpoint )
+//    {
+//        printf("A2DP - sc.local_stream_endpoint->a2dp_state: %d \n",sc.local_stream_endpoint->a2dp_state);
+//        if(sc.active_remote_sep)
+//        {
+//            printf("A2DP - sc.active_remote_sep->seid %d \n",sc.active_remote_sep->seid);
+//        }
+//        if(sc.remote_addr)
+//        {
+//            pRemoteAdd = (uint8_t *) sc.remote_addr;
+//            printf("A2DP - sc.remote_addr: %02x:%02x:%02x:%02x:%02x:%02x \n",pRemoteAdd[0],pRemoteAdd[1],pRemoteAdd[2],pRemoteAdd[3],pRemoteAdd[4],pRemoteAdd[5]);
+//        }
+//    }
     UNUSED(channel);
     UNUSED(size);
 
@@ -354,15 +370,28 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
             switch (app_state){
                 case A2DP_W2_GET_CAPABILITIES:
                     if (sc.active_remote_sep_index < remote_seps_index){
-                        sc.active_remote_sep = &remote_seps[sc.active_remote_sep_index++];
-                        avdtp_source_get_capabilities(cid, sc.active_remote_sep->seid);
+//                        sc.active_remote_sep_index = remote_seps_index - 1;
+//                        sc.active_remote_sep = &remote_seps[sc.active_remote_sep_index];
+//                        sc.active_remote_sep_index++;
+                        if(remote_seps_index < 3)
+                        {
+                            sc.active_remote_sep = &remote_seps[sc.active_remote_sep_index++];
+                        }
+                        else
+                        {
+                            sc.active_remote_sep_index++;
+                            sc.active_remote_sep = &remote_seps[sc.active_remote_sep_index++];
+                        }
+                        status = avdtp_source_get_capabilities(cid, sc.active_remote_sep->seid);
+                        log_info("A2DP_W2_GET_CAPABILITIES status: %d", status);
                     }
                     break;
                 case A2DP_W2_SET_CONFIGURATION:{
                     if (!sc.local_stream_endpoint) return;
                     log_info("A2DP initiate set configuration locally and wait for response ... ");
                     app_state = A2DP_IDLE;
-                    avdtp_source_set_configuration(cid, avdtp_stream_endpoint_seid(sc.local_stream_endpoint), sc.active_remote_sep->seid, sc.local_stream_endpoint->remote_configuration_bitmap, sc.local_stream_endpoint->remote_configuration);
+                    status = avdtp_source_set_configuration(cid, avdtp_stream_endpoint_seid(sc.local_stream_endpoint), sc.active_remote_sep->seid, sc.local_stream_endpoint->remote_configuration_bitmap, sc.local_stream_endpoint->remote_configuration);
+                    log_info("A2DP_W2_SET_CONFIGURATION status: %d, local_seid: %d", status, avdtp_stream_endpoint_seid(sc.local_stream_endpoint));
                     break;
                 }
                 case A2DP_W2_OPEN_STREAM_WITH_SEID:{
@@ -440,6 +469,11 @@ void a2dp_source_register_packet_handler(btstack_packet_handler_t callback){
     a2dp_source_context.a2dp_callback = callback;
 }
 
+avdtp_context_t * a2dp_get_source_context(void)
+{
+    return &a2dp_source_context;
+}
+
 void a2dp_source_init(void){
     avdtp_source_init(&a2dp_source_context);
 }
@@ -461,6 +495,7 @@ avdtp_stream_endpoint_t * a2dp_source_create_stream_endpoint(avdtp_media_type_t 
 }
 
 uint8_t a2dp_source_establish_stream(bd_addr_t remote_addr, uint8_t loc_seid, uint16_t * a2dp_cid){
+    a2dp_source_context.avdtp_cid = a2dp_cid;
     sc.local_stream_endpoint = avdtp_stream_endpoint_for_seid(loc_seid, &a2dp_source_context);
     if (!sc.local_stream_endpoint){
         log_error(" no local_stream_endpoint for seid %d", loc_seid);
@@ -471,14 +506,17 @@ uint8_t a2dp_source_establish_stream(bd_addr_t remote_addr, uint8_t loc_seid, ui
 }
 
 uint8_t a2dp_source_disconnect(uint16_t a2dp_cid){
+    a2dp_source_context.avdtp_cid = a2dp_cid;
     return avdtp_disconnect(a2dp_cid, &a2dp_source_context);
 }
 
 uint8_t a2dp_source_start_stream(uint16_t a2dp_cid, uint8_t local_seid){
+    a2dp_source_context.avdtp_cid = a2dp_cid;
     return avdtp_start_stream(a2dp_cid, local_seid, &a2dp_source_context);
 }
 
 uint8_t a2dp_source_pause_stream(uint16_t a2dp_cid, uint8_t local_seid){
+    a2dp_source_context.avdtp_cid = a2dp_cid;
     return avdtp_suspend_stream(a2dp_cid, local_seid, &a2dp_source_context);
 }
 
@@ -520,7 +558,8 @@ void a2dp_source_stream_endpoint_request_can_send_now(uint16_t a2dp_cid, uint8_t
     }
     if (a2dp_source_context.avdtp_cid != a2dp_cid){
         log_error("A2DP source: a2dp cid 0x%02x not known, expected 0x%02x", a2dp_cid, a2dp_source_context.avdtp_cid);
-        return;
+        a2dp_source_context.avdtp_cid = a2dp_cid;
+        //return;
     }
     stream_endpoint->send_stream = 1;
     avdtp_request_can_send_now_initiator(stream_endpoint->connection, stream_endpoint->l2cap_media_cid);
@@ -534,7 +573,8 @@ int a2dp_max_media_payload_size(uint16_t a2dp_cid, uint8_t local_seid){
     }
     if (a2dp_source_context.avdtp_cid != a2dp_cid){
         log_error("A2DP source: a2dp cid 0x%02x not known, expected 0x%02x", a2dp_cid, a2dp_source_context.avdtp_cid);
-        return 0;
+        a2dp_source_context.avdtp_cid = a2dp_cid;
+        //return 0;
     }
 
     if (stream_endpoint->l2cap_media_cid == 0){
@@ -564,8 +604,9 @@ int a2dp_source_stream_send_media_payload(uint16_t a2dp_cid, uint8_t local_seid,
         return 0;
     }
     if (a2dp_source_context.avdtp_cid != a2dp_cid){
-        log_error("A2DP source: a2dp cid 0x%02x not known, expected 0x%02x", a2dp_cid, a2dp_source_context.avdtp_cid);
-        return 0;
+        //log_error("A2DP source: a2dp cid 0x%02x not known, expected 0x%02x, l2cap_media_cid: 0x%02x", a2dp_cid, a2dp_source_context.avdtp_cid, stream_endpoint->l2cap_media_cid);
+        //return 0;
+        a2dp_source_context.avdtp_cid = a2dp_cid; //overwrite the avdtp_cid value
     }
 
     if (stream_endpoint->l2cap_media_cid == 0){
