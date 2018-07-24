@@ -581,11 +581,22 @@ static void my_a2dp_handle_timeout(uint8_t device)
     {
         // schedule sending
         //printf("API - ready \n");
-        media_tracker[localStream].sbc_ready_to_send = 1;
-        local_stream_endpoint = avdtp_stream_endpoint_for_seid(media_tracker[idx_handler.stream].local_seid, a2dp_get_source_context());
-        local_stream_endpoint->send_stream = 1;
-        local_stream_endpoint->connection->wait_to_send_initiator = 1;
-        l2cap_request_can_send_now_event(l2cap_media_cid[idx_handler.stream]);
+        if(idx_handler.stream_both) //if stream_both is set then here starts the first request for the first connected device, the second request will start immediatly after the first one is served -> A2DP_SUBEVENT_STREAMING_CAN_SEND_MEDIA_PACKET_NOW
+        {
+            media_tracker[localStream].sbc_ready_to_send = 1;
+            local_stream_endpoint = avdtp_stream_endpoint_for_seid(media_tracker[0].local_seid, a2dp_get_source_context());
+            local_stream_endpoint->send_stream = 1;
+            local_stream_endpoint->connection->wait_to_send_initiator = 1;
+            l2cap_request_can_send_now_event(l2cap_media_cid[0]);
+        }
+        else
+        {
+            media_tracker[localStream].sbc_ready_to_send = 1;
+            local_stream_endpoint = avdtp_stream_endpoint_for_seid(media_tracker[idx_handler.stream].local_seid, a2dp_get_source_context());
+            local_stream_endpoint->send_stream = 1;
+            local_stream_endpoint->connection->wait_to_send_initiator = 1;
+            l2cap_request_can_send_now_event(l2cap_media_cid[idx_handler.stream]);
+        }
 
     }
     else
